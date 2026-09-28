@@ -1,0 +1,55 @@
+# =========================
+# Environment / Secrets
+# =========================
+
+.env
+.env.*
+!.env.example
+
+web/.env
+mobile/.env
+python-reporting/.env
+
+
+# =========================
+# Laravel
+# =========================
+
+web/vendor/
+web/node_modules/
+web/public/build/
+web/public/hot
+web/storage/logs/*
+web/bootstrap/cache/*.php
+
+
+# =========================
+# Flutter
+# =========================
+
+mobile/.dart_tool/
+mobile/build/
+mobile/.flutter-plugins
+mobile/.flutter-plugins-dependencies
+mobile/.packages
+mobile/.env
+
+
+# =========================
+# Python
+# =========================
+
+python-reporting/.venv/
+python-reporting/__pycache__/
+python-reporting/.env
+*.pyc
+
+
+# =========================
+# IDE / OS
+# =========================
+
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
