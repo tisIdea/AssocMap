@@ -1,0 +1,1 @@
+<x-modal id="confirmation-modal" title="Review action"><p data-confirm-message></p><div class="notice">Interface preview only. No record or account will be changed.</div><div class="modal-actions"><button class="button" type="button" data-close-dialog>Cancel</button><button class="button button-danger" type="button" data-confirm-action>Confirm preview</button></div></x-modal>
