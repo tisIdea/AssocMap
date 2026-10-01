@@ -19,7 +19,7 @@ export function initAdminNavigation() {
     }
 
     function navigate(focus = true) {
-        let key = location.hash.slice(1) || 'dashboard';
+        let key = location.hash.slice(1) || $('[data-initial-page]')?.dataset.initialPage || 'dashboard';
         if (key === 'main-content') { $('#main-content').focus(); return; }
         if (!pages.has(key)) { key = 'dashboard'; history.replaceState(null, '', '#dashboard'); }
         pages.forEach((page, pageKey) => { page.hidden = pageKey !== key; });

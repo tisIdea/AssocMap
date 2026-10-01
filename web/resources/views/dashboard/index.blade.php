@@ -1,8 +1,18 @@
-@php($catalog = $catalog ?? require resource_path('ui/admin.php'))
+@php
+    $requestedModule = $module ?? null;
+    $catalog = $catalog ?? require resource_path('ui/admin.php');
+    if (isset($requestedModule['key'], $catalog['modules'][$requestedModule['key']])) {
+        $catalog['modules'][$requestedModule['key']] = array_replace(
+            $catalog['modules'][$requestedModule['key']],
+            $requestedModule
+        );
+    }
+@endphp
 @extends('layouts.admin')
 @section('content')
-    <div class="preview-notice"><x-icon name="info" /><span>Design preview <span class="notice-separator">/</span> Data will appear here once connected.</span></div>
-    <section class="page-view" data-page="dashboard" data-title="Dashboard">@include('admin.dashboard')</section>
+    @if(session('success'))<div class="notice notice-success" role="status"><x-icon name="check" /><span>{{ session('success') }}</span></div>@endif
+    @if(session('error'))<div class="notice notice-error" role="alert"><x-icon name="info" /><span>{{ session('error') }}</span></div>@endif
+    <section class="page-view" data-page="dashboard" data-title="Dashboard" data-initial-page="{{ $requestedModule['key'] ?? 'dashboard' }}">@include('admin.dashboard')</section>
     @foreach($catalog['modules'] as $module)
         <section class="page-view" data-page="{{ $module['key'] }}" data-title="{{ $module['title'] }}" hidden>@include('admin.'.$module['key'].'.index', ['module' => $module])</section>
         @if(isset($module['action']))

@@ -4,7 +4,7 @@
     <nav class="sidebar-nav" aria-label="Main navigation">
         <a class="nav-link active" href="#dashboard" data-nav="dashboard" aria-current="page" title="Dashboard"><x-icon name="grid" /><span>Dashboard</span></a>
         @foreach(['users', 'areas', 'associations', 'members'] as $key)
-            <a class="nav-link" href="#{{ $key }}" data-nav="{{ $key }}" title="{{ $catalog['modules'][$key]['title'] }}"><x-icon :name="$catalog['modules'][$key]['icon']" /><span>{{ $catalog['modules'][$key]['title'] }}</span></a>
+            <a class="nav-link" href="{{ $key === 'areas' ? route('admin.areas.index') : '#'.$key }}" data-nav="{{ $key }}" title="{{ $catalog['modules'][$key]['title'] }}"><x-icon :name="$catalog['modules'][$key]['icon']" /><span>{{ $catalog['modules'][$key]['title'] }}</span></a>
         @endforeach
         <button type="button" class="nav-link program-toggle" data-disclosure="program-navigation" aria-expanded="false" aria-controls="program-navigation" title="Program Operations"><x-icon name="briefcase" /><span>Program Operations</span><x-icon name="chevron" class="disclosure-chevron" /></button>
         <div class="subnav" id="program-navigation" hidden>

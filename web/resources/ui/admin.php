@@ -38,9 +38,9 @@ $modules = [
     'areas' => [
         'title' => 'Area Management', 'singular' => 'Area', 'icon' => 'pin',
         'description' => 'Manage municipality and barangay reference locations.',
-        'columns' => ['name' => 'Area Name', 'area_type' => 'Type', 'municipality' => 'Municipality', 'psgc_code' => 'PSGC Code', 'source' => 'Source', 'status' => 'Status'],
+        'columns' => ['name' => 'Area Name', 'area_type' => 'Type', 'municipality' => 'Municipality', 'associations_count' => 'Associations', 'status' => 'Status'],
         'filters' => [
-            $filter('area_type', 'Area Type', 'select', ['Municipality', 'Barangay']),
+            $filter('area_type', 'Area Type', 'select', ['Municipality', 'City', 'Barangay']),
             [...$filter('municipality', 'Municipality'), 'empty_label' => 'All Municipalities'],
             $filter('source', 'Source', 'select', ['PSGC', 'Manual']),
             $filter('status', 'Status'),

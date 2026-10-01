@@ -13,14 +13,15 @@ class Municipality extends Model
 
     public $incrementing = false;
 
-    protected $fillable = [
-        'name',
-        'psgc_code',
-        'province',
-        'region',
-        'source',
-        'is_active',
-    ];
+protected $fillable = [
+    'name',
+    'psgc_code',
+    'province',
+    'region',
+    'locality_type',
+    'source',
+    'is_active',
+];
 
     protected function casts(): array
     {

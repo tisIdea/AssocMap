@@ -8,6 +8,25 @@ use Illuminate\Validation\ValidationException;
 
 class MunicipalityService
 {
+    public function update(Municipality $municipality, array $data): void
+    {
+        $name = trim($data['name']);
+        if (Municipality::query()
+            ->where('id', '!=', $municipality->id)
+            ->whereRaw('LOWER(name) = LOWER(?)', [$name])
+            ->whereRaw('LOWER(province) = LOWER(?)', [$municipality->province])
+            ->exists()) {
+            throw ValidationException::withMessages(['name' => 'This locality already exists in the province.']);
+        }
+
+        $municipality->update(['name' => $name, 'psgc_code' => $data['psgc_code'] ?? null]);
+    }
+
+    public function deactivate(Municipality $municipality): void
+    {
+        $municipality->update(['is_active' => false]);
+    }
+
     public function create(
         array $data,
         UserProfile $currentUser

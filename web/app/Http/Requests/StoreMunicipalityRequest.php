@@ -19,9 +19,9 @@ class StoreMunicipalityRequest extends FormRequest
                 ? trim($this->name)
                 : $this->name,
 
-            'psgc_code' => filled($this->psgc_code)
-                ? trim($this->psgc_code)
-                : null,
+            'psgc_code' => is_string($this->psgc_code)
+                ? (trim($this->psgc_code) === '' ? null : trim($this->psgc_code))
+                : $this->psgc_code,
         ]);
     }
 
@@ -38,7 +38,7 @@ class StoreMunicipalityRequest extends FormRequest
                 'nullable',
                 'string',
                 'max:20',
-                Rule::unique('municipalities', 'psgc_code'),
+                Rule::unique('municipalities', 'psgc_code')->ignore($this->route('municipality')),
             ],
         ];
     }

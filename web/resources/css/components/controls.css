@@ -12,6 +12,11 @@
 .button-danger:hover { background: #921c2b; border-color: #921c2b; }
 .button-danger-outline { border-color: #efc9ce; color: var(--danger); }
 .button-block { width: 100%; }
+.area-list-switch { display: inline-flex; border: 1px solid #dce3eb; border-radius: var(--radius-sm); overflow: hidden; }
+.area-list-switch .button { border: 0; border-radius: 0; }
+.area-list-switch .button + .button { border-left: 1px solid #dce3eb; }
+.area-list-switch .button[aria-pressed="true"] { background: var(--primary); color: white; }
+.area-list-switch .button:focus-visible { outline-offset: -3px; }
 .text-button { display: inline-flex; align-items: center; gap: 5px; border: 0; padding: 4px 0; color: var(--primary); background: transparent; font-weight: 600; font-size: 12px; white-space: nowrap; }
 .text-button:hover { text-decoration: underline; }
 .text-button .icon { width: 15px; height: 15px; }
@@ -24,3 +29,6 @@
 .badge-neutral { background: #f1f4f7; color: #586778; border-color: #e4e9ef; }
 .notice { display: flex; align-items: flex-start; gap: 10px; padding: 13px 16px; background: #eef5fc; border: 1px solid #dce9f6; color: #47647f; border-radius: 8px; font-size: 12px; margin-bottom: 20px; }
 .notice .icon { width: 17px; height: 17px; margin-top: 1px; }
+.notice-success { background: #eaf6ef; border-color: #d5ecdf; color: #216845; }
+.notice-error { background: #fff0f0; border-color: #f3d4d8; color: #a12233; }
+.notice-error p { color: inherit; }

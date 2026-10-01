@@ -37,4 +37,9 @@ class Area extends Model
     {
         return $this->hasMany(Association::class, 'area_id');
     }
+
+    public function creator(): BelongsTo
+    {
+        return $this->belongsTo(UserProfile::class, 'created_by');
+    }
 }

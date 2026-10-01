@@ -12,6 +12,6 @@
     <x-confirmation-modal />
     <x-modal id="email-modal" title="Change email"><form data-form onsubmit="return false;"><p>Email changes are not connected yet.</p><x-field :field="['name' => 'new_email', 'label' => 'New Email', 'type' => 'email', 'required' => true]" prefix="email-change" /><div class="modal-actions"><button type="button" class="button" data-close-dialog>Cancel</button><button type="button" disabled class="button button-primary">Change Email</button></div></form></x-modal>
     @include('admin.areas.modals')
-    <noscript><div class="noscript-notice">Enable JavaScript to navigate this UI preview and use its controls.</div></noscript>
+    <noscript><div class="noscript-notice">Enable JavaScript to navigate the Admin workspace and use its controls.</div></noscript>
 </body>
 </html>
