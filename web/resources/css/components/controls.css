@@ -1,0 +1,26 @@
+/* Shared controls, status indicators, and cards. */
+.card { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: var(--radius-md); box-shadow: var(--shadow-sm); min-width: 0; }
+.button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 9px 14px; min-height: 39px; border: 1px solid #dce3eb; border-radius: var(--radius-sm); background: white; color: #435368; font-size: 12px; font-weight: 600; line-height: 1.4; white-space: nowrap; }
+.button:hover { background: #f3f6fa; border-color: #bacada; }
+.button .icon { width: 16px; height: 16px; }
+.button-primary { background: var(--primary); color: white; border-color: var(--primary); }
+.button-primary:hover { background: var(--primary-hover); border-color: var(--primary-hover); }
+.button-outline { border-color: #cadcee; color: var(--primary); background: #f8fbfe; }
+.button-white { color: var(--primary); border-color: transparent; }
+.button-quiet { border-color: transparent; background: transparent; }
+.button-danger { background: var(--danger); border-color: var(--danger); color: white; }
+.button-danger:hover { background: #921c2b; border-color: #921c2b; }
+.button-danger-outline { border-color: #efc9ce; color: var(--danger); }
+.button-block { width: 100%; }
+.text-button { display: inline-flex; align-items: center; gap: 5px; border: 0; padding: 4px 0; color: var(--primary); background: transparent; font-weight: 600; font-size: 12px; white-space: nowrap; }
+.text-button:hover { text-decoration: underline; }
+.text-button .icon { width: 15px; height: 15px; }
+.text-danger { color: var(--danger); }
+.badge { display: inline-flex; align-items: center; width: fit-content; padding: 3px 8px; border: 1px solid transparent; border-radius: 5px; font-size: 10px; font-weight: 600; white-space: nowrap; line-height: 1.5; }
+.badge-success { background: #eaf6ef; color: #216845; border-color: #d5ecdf; }
+.badge-warning { background: #fff5df; color: #805710; border-color: #f5e8c7; }
+.badge-danger { background: #fff0f0; color: #a12233; border-color: #f3d4d8; }
+.badge-blue { background: #eaf2fc; color: #255d97; border-color: #d9e7f7; }
+.badge-neutral { background: #f1f4f7; color: #586778; border-color: #e4e9ef; }
+.notice { display: flex; align-items: flex-start; gap: 10px; padding: 13px 16px; background: #eef5fc; border: 1px solid #dce9f6; color: #47647f; border-radius: 8px; font-size: 12px; margin-bottom: 20px; }
+.notice .icon { width: 17px; height: 17px; margin-top: 1px; }

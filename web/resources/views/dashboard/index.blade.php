@@ -1,7 +1,7 @@
-@php($catalog = require resource_path('demo/admin.php'))
+@php($catalog = $catalog ?? require resource_path('ui/admin.php'))
 @extends('layouts.admin')
 @section('content')
-    <div class="preview-notice"><x-icon name="info" /><span>Design preview <span class="notice-separator">/</span> All records are fictional. Changes are not saved.</span></div>
+    <div class="preview-notice"><x-icon name="info" /><span>Design preview <span class="notice-separator">/</span> Data will appear here once connected.</span></div>
     <section class="page-view" data-page="dashboard" data-title="Dashboard">@include('admin.dashboard')</section>
     @foreach($catalog['modules'] as $module)
         <section class="page-view" data-page="{{ $module['key'] }}" data-title="{{ $module['title'] }}" hidden>@include('admin.'.$module['key'].'.index', ['module' => $module])</section>

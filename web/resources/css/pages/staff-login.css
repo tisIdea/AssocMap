@@ -1,0 +1,54 @@
+ .staff-login-page { background: var(--public-page-bg); }
+        .staff-login-page .staff-login-main {
+            display: grid;
+            place-items: center;
+            min-height: 100vh;
+            min-height: 100svh;
+            max-width: none;
+            margin: 0;
+            padding: 40px 20px;
+        }
+        .staff-login-wrap { width: min(100%, 440px); }
+        .staff-login-brand { display: flex; justify-content: center; margin-bottom: 28px; }
+        .staff-login-card {
+            padding: 32px;
+            background: var(--public-surface);
+            border: 1px solid var(--public-border);
+            border-radius: var(--public-radius);
+            box-shadow: var(--public-shadow);
+        }
+        .staff-login-card h1 { font-size: 28px; color: var(--public-text); }
+        .staff-login-intro { font-size: 14px; margin: 10px 0 26px; }
+        .staff-login-field { margin-bottom: 20px; }
+        .staff-login-field > label { display: block; margin-bottom: 7px; font-size: 14px; font-weight: 600; }
+        .staff-login-page .staff-login-field input { min-height: 46px; font-size: 16px; }
+        .staff-password-control { display: flex; align-items: stretch; gap: 8px; }
+        .staff-password-control input { min-width: 0; flex: 1; }
+        .staff-password-toggle {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            min-width: 78px;
+            padding: 8px 10px;
+            border: 1px solid var(--public-border);
+            border-radius: 6px;
+            background: var(--public-surface);
+            color: var(--public-primary);
+            font-size: 13px;
+        }
+        .staff-password-toggle:hover { background: var(--public-primary-light); }
+        .staff-password-toggle .icon { width: 17px; height: 17px; }
+        .staff-login-options { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 24px; font-size: 13px; }
+        .staff-remember { display: inline-flex; align-items: center; gap: 8px; }
+        .staff-remember input { margin: 0; accent-color: var(--public-primary); }
+        .staff-login-page .staff-sign-in { width: 100%; }
+        .staff-login-note { margin-top: 12px; font-size: 12px; text-align: center; }
+        .staff-login-back { display: flex; justify-content: center; align-items: center; gap: 7px; margin-top: 24px; font-size: 14px; }
+        .staff-login-back .icon { width: 17px; height: 17px; }
+        .staff-login-access { display: flex; justify-content: center; align-items: center; gap: 7px; margin-top: 22px; color: var(--public-muted); font-size: 12px; }
+        .staff-login-access .icon { width: 16px; height: 16px; }
+        @media (max-width: 480px) {
+            .staff-login-page .staff-login-main { padding: 28px 16px; }
+            .staff-login-card { padding: 25px 20px; }
+        }

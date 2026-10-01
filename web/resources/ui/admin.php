@@ -1,23 +1,23 @@
 <?php
 
-// Fictional presentation data only. Replace with view data during backend integration.
+// UI field definitions and empty data slots for the admin shell.
 $options = [
-    'municipality' => ['Demo Municipality', 'Sample Municipality'],
-    'barangay' => ['Sample Barangay', 'Demo Barangay'],
-    'association' => ['Demo Coastal Association', 'Sample Fisherfolk Association'],
-    'field_officer' => ['Demo Field Officer'],
-    'project' => ['Demo Aquaculture Project'],
-    'program_year' => ['2026', '2025', '2024'],
-    'component' => ['Social Preparation', 'Food Production and Livelihood', 'Marketing Assistance and Enterprise Development', 'Program Management'],
-    'sub_component' => ['Livelihood Project', 'Demo Sub-component'],
-    'activity' => ['Livelihood Project Delivery', 'Beneficiary Needs Assessment', 'Participatory Rural Appraisal', 'Beneficiary Profiling', 'Project Tagging', 'Market Scanning', 'Partnerships', 'Policy Formulation', 'Capacity Development'],
+    'municipality' => [],
+    'barangay' => [],
+    'association' => [],
+    'field_officer' => [],
+    'project' => [],
+    'program_year' => [],
+    'component' => [],
+    'sub_component' => [],
+    'activity' => [],
     'project_status' => ['Planned', 'Ongoing', 'Completed', 'Suspended', 'Cancelled'],
     'status' => ['Active', 'Inactive'],
     'quarter' => ['Q1', 'Q2', 'Q3', 'Q4'],
     'sex' => ['Female', 'Male'],
     'classification' => ['Fisherfolk', 'Senior Citizen', 'PWD', 'Indigenous People', 'Youth'],
     'fisheries_category' => ['Aquaculture', 'Capture Fisheries', 'Post-Harvest'],
-    'commodity' => ['Demo Commodity'],
+    'commodity' => [],
     'delivery_status' => ['Planned', 'Not Delivered', 'Partially Delivered', 'Delivered'],
 ];
 $field = static fn ($name, $label, $type = 'text', $choices = [], $required = true, $help = '') => compact('name', 'label', 'type', 'choices', 'required', 'help');
@@ -34,7 +34,6 @@ $modules = [
         'columns' => ['name' => 'Name', 'email' => 'Email', 'role' => 'Role', 'association' => 'Association', 'contact_number' => 'Contact Number', 'status' => 'Account Status', 'created_at' => 'Date Created'],
         'filters' => [$filter('role', 'Role', 'select', ['Field Officer', 'Association Member Account', 'System Administrator']), $filter('status', 'Account Status', 'select', ['Active', 'Inactive', 'Pending'])],
         'sections' => [$section('Account information', [$field('role', 'Account Role', 'select', ['Field Officer', 'Association Member Account']), $field('full_name', 'Full Name'), $field('display_name', 'Display Name'), $field('email', 'Email', 'email'), $field('contact_number', 'Contact Number', 'tel'), $select('association', 'Association')])],
-        'record' => ['name' => 'Demo Field Officer', 'full_name' => 'Demo Field Officer', 'email' => 'officer@example.test', 'role' => 'Field Officer', 'association' => '—', 'contact_number' => '—', 'status' => 'Active', 'created_at' => '2026-01-10'],
     ],
     'areas' => [
         'title' => 'Area Management', 'singular' => 'Area', 'icon' => 'pin',
@@ -45,10 +44,6 @@ $modules = [
             [...$filter('municipality', 'Municipality'), 'empty_label' => 'All Municipalities'],
             $filter('source', 'Source', 'select', ['PSGC', 'Manual']),
             $filter('status', 'Status'),
-        ],
-        'rows' => [
-            ['name' => 'Demo Municipality', 'area_type' => 'Municipality', 'municipality' => '—', 'psgc_code' => 'DEMO-MUN-001', 'province' => 'Cebu', 'region' => 'Region VII', 'source' => 'Manual', 'status' => 'Active', 'created_at' => '2026-01-01'],
-            ['name' => 'Sample Barangay', 'area_type' => 'Barangay', 'municipality' => 'Demo Municipality', 'psgc_code' => 'DEMO-BRGY-001', 'source' => 'Manual', 'status' => 'Active', 'created_at' => '2026-01-02'],
         ],
     ],
     'associations' => [
@@ -61,7 +56,6 @@ $modules = [
             $section('SAAD information', [$field('joined_at', 'SAAD Phase II Joining Date', 'date'), $select('field_officer', 'Primary Field Officer')]),
             $section('Government registrations', [$field('agency', 'Registration Agency', 'select', ['CDA', 'DOLE']), $field('number', 'Registration Number'), $field('registration_date', 'Registration Date', 'date'), $field('expiration_date', 'Expiration Date', 'date', [], false), $field('primary', 'Primary Registration', 'checkbox', [], false), $field('remarks', 'Remarks', 'textarea', [], false)], 'registrations', 'Add Registration'),
         ],
-        'record' => ['name' => 'Demo Coastal Association', 'acronym' => 'DCA', 'municipality' => 'Demo Municipality', 'barangay' => 'Sample Barangay', 'field_officer' => 'Demo Field Officer', 'joined_at' => '2026-01-15', 'status' => 'Active', 'address' => 'Demo coastal road (fictional)', 'registrations' => [['agency' => 'CDA', 'number' => 'DEMO-REG-001', 'registration_date' => '2026-01-10', 'primary' => true, 'remarks' => 'Fictional registration for preview.']]],
     ],
     'members' => [
         'title' => 'Member Management', 'singular' => 'Member', 'icon' => 'user', 'readonly' => true,
@@ -69,7 +63,6 @@ $modules = [
         'columns' => ['name' => 'Member Name', 'association' => 'Association', 'municipality' => 'Municipality', 'fishr_number' => 'FishR Registration Number', 'sex' => 'Sex', 'classification' => 'Classification', 'association_role' => 'Role in Association', 'status' => 'Status'],
         'filters' => [...$geographyFilters, $filter('classification', 'Member Classification', 'checkboxes'), $filter('sex', 'Sex'), $filter('status', 'Status')],
         'details' => ['name' => 'Full Name', 'birth_date' => 'Birth Date', 'age' => 'Age', 'sex' => 'Sex', 'fishr_number' => 'FishR Registration Number', 'association' => 'Association', 'association_role' => 'Role in Association', 'classification' => 'Member Classifications', 'registered_at' => 'Date Registered', 'status' => 'Member Status'],
-        'record' => ['name' => 'Demo Member', 'association' => 'Demo Coastal Association', 'municipality' => 'Demo Municipality', 'fishr_number' => 'DEMO-FISHR-001', 'sex' => 'Female', 'classification' => ['Fisherfolk', 'Youth'], 'association_role' => 'Member', 'status' => 'Active', 'birth_date' => '2002-05-12', 'age' => '— (not calculated)', 'registered_at' => '2026-01-20'],
     ],
     'projects' => [
         'title' => 'Projects', 'singular' => 'Project', 'icon' => 'briefcase', 'action' => 'Add Project',
@@ -83,7 +76,6 @@ $modules = [
             $section('Implementation', [$select('program_year', 'Program Year'), $field('implementation_date', 'Implementation Start Date', 'date'), $field('implementation_end_date', 'Implementation End Date', 'date'), $field('status', 'Project Status', 'select', $options['project_status']), $field('remarks', 'Remarks', 'textarea', [], false)]),
             $section('Project materials', [$field('name', 'Item Name'), $field('planned_quantity', 'Planned Quantity', 'number'), $field('delivered_quantity', 'Delivered Quantity', 'number'), $field('unit', 'Unit'), $field('unit_cost', 'Unit Cost', 'number'), $select('delivery_status', 'Delivery Status'), $field('delivery_date', 'Delivery Date', 'date', [], false), $field('remarks', 'Remarks', 'textarea', [], false)], 'materials', 'Add Material'),
         ],
-        'record' => ['title' => 'Demo Aquaculture Project', 'association' => 'Demo Coastal Association', 'municipality' => 'Demo Municipality', 'component' => 'Food Production and Livelihood', 'sub_component' => 'Livelihood Project', 'activity' => 'Livelihood Project Delivery', 'fisheries_category' => 'Aquaculture', 'commodity' => 'Demo Commodity', 'program_year' => '2026', 'implementation_date' => '2026-02-01', 'implementation_end_date' => '2026-12-15', 'status' => 'Ongoing', 'description' => 'Fictional livelihood project for interface demonstration.', 'materials' => [['name' => 'Demo fishing net', 'planned_quantity' => '10', 'delivered_quantity' => '10', 'unit' => 'pieces', 'unit_cost' => '100', 'delivery_status' => 'Delivered', 'delivery_date' => '2026-02-05']]],
     ],
     'trainings' => [
         'title' => 'Trainings', 'singular' => 'Training', 'icon' => 'graduation', 'action' => 'Add Training',
@@ -94,7 +86,6 @@ $modules = [
             $section('Association and project', [$select('association', 'Association'), $select('project', 'Related Project', false)]), $classification,
             $section('Training information', [$field('title', 'Title'), $field('description', 'Description', 'textarea'), $select('program_year', 'Program Year'), $field('start_date', 'Start Date', 'date'), $field('end_date', 'End Date', 'date'), $field('venue', 'Venue'), $field('conducted_by', 'Conducted By'), $field('training_cost', 'Training Cost', 'number', [], false), $field('status', 'Status', 'select', ['Planned', 'Ongoing', 'Completed', 'Cancelled']), $field('remarks', 'Remarks', 'textarea', [], false)]),
         ],
-        'record' => ['title' => 'Demo Leadership Training', 'association' => 'Demo Coastal Association', 'municipality' => 'Demo Municipality', 'component' => 'Social Preparation', 'sub_component' => 'Demo Sub-component', 'activity' => 'Beneficiary Profiling', 'program_year' => '2026', 'start_date' => '2026-03-10', 'end_date' => '2026-03-10', 'participants_count' => '1', 'status' => 'Completed', 'description' => 'Fictional training record.', 'venue' => 'Demo community hall', 'conducted_by' => 'Demo Facilitator', 'participants' => [['name' => 'Demo Member', 'attendance' => 'Present']]],
     ],
     'monitoring' => [
         'title' => 'Monitoring', 'singular' => 'Monitoring Record', 'icon' => 'trend', 'action' => 'Add Monitoring',
@@ -105,10 +96,9 @@ $modules = [
             $section('Monitoring information', [$select('project', 'Project'), $field('year', 'Year', 'number'), $select('quarter', 'Quarter'), $field('monitoring_date', 'Monitoring Date', 'date'), $field('site_validated', 'Site Validated', 'checkbox', [], false), $select('project_status', 'Project Status')]),
             $section('Production monitoring', [$field('target_output', 'Target Output', 'number'), $field('actual_output', 'Actual Output', 'number'), $field('unit', 'Unit')]),
             $section('Gross income monitoring', [$field('month', 'Month', 'month'), $field('gross_income', 'Gross Income', 'number'), $field('remarks', 'Remarks', 'textarea', [], false)], 'gross_income_records', 'Add Month'),
-            $section('Materials monitoring', [$field('project_material', 'Project Material', 'select', ['Demo fishing net']), $field('delivery_status', 'Delivery Status', 'display', [], false, 'Delivery status comes from the selected project material.'), $field('condition', 'Condition', 'select', ['Good', 'Needs Maintenance', 'Damaged', 'For Replacement']), $field('scheduled_maintenance', 'Scheduled Maintenance', 'date', [], false), $field('actual_maintenance', 'Actual Maintenance', 'date', [], false), $field('remarks', 'Remarks', 'textarea', [], false)], 'material_checks', 'Add Material Check'),
+            $section('Materials monitoring', [$field('project_material', 'Project Material', 'select', []), $field('delivery_status', 'Delivery Status', 'display', [], false, 'Delivery status comes from the selected project material.'), $field('condition', 'Condition', 'select', ['Good', 'Needs Maintenance', 'Damaged', 'For Replacement']), $field('scheduled_maintenance', 'Scheduled Maintenance', 'date', [], false), $field('actual_maintenance', 'Actual Maintenance', 'date', [], false), $field('remarks', 'Remarks', 'textarea', [], false)], 'material_checks', 'Add Material Check'),
             $section('Findings', [$field('issues', 'Issues Encountered', 'textarea', [], false), $field('actions_taken', 'Actions Taken', 'textarea', [], false), $field('remarks', 'Overall Remarks', 'textarea', [], false)]),
         ],
-        'record' => ['project' => 'Demo Aquaculture Project', 'association' => 'Demo Coastal Association', 'municipality' => 'Demo Municipality', 'year' => '2026', 'quarter' => 'Q1', 'monitoring_date' => '2026-03-20', 'project_status' => 'Ongoing', 'site_validated' => 'Yes', 'target_output' => '100', 'actual_output' => '80', 'unit' => 'kg', 'gross_income_records' => [['month' => '2026-03', 'gross_income' => '8000', 'remarks' => 'Fictional demonstration amount.']], 'material_checks' => [['project_material' => 'Demo fishing net', 'delivery_status' => 'Delivered', 'condition' => 'Good']], 'remarks' => 'Fictional performance record.'],
     ],
     'program-activities' => [
         'title' => 'Program Activities', 'singular' => 'Program Activity', 'icon' => 'calendar', 'action' => 'Add Activity',
@@ -116,19 +106,18 @@ $modules = [
         'columns' => ['activity' => 'Activity', 'component' => 'SAAD Component', 'sub_component' => 'Sub-component', 'association' => 'Association', 'project' => 'Related Project', 'program_year' => 'Program Year', 'activity_date' => 'Activity Date', 'status' => 'Status'],
         'filters' => [...$programFilters, $filter('status', 'Status', 'select', ['Planned', 'Ongoing', 'Completed', 'Cancelled'])],
         'sections' => [$classification, $section('Activity information', [$select('association', 'Association', false), $select('project', 'Related Project', false), $field('title', 'Title'), $field('description', 'Description', 'textarea'), $select('program_year', 'Program Year'), $field('activity_date', 'Activity Date', 'date'), $field('venue', 'Venue'), $field('status', 'Status', 'select', ['Planned', 'Ongoing', 'Completed', 'Cancelled']), $field('conducted_by', 'Conducted By'), $field('remarks', 'Remarks', 'textarea', [], false)])],
-        'record' => ['title' => 'Demo Needs Assessment', 'activity' => 'Beneficiary Needs Assessment', 'component' => 'Social Preparation', 'sub_component' => 'Demo Sub-component', 'association' => 'Demo Coastal Association', 'municipality' => 'Demo Municipality', 'project' => 'Demo Aquaculture Project', 'program_year' => '2026', 'activity_date' => '2026-01-25', 'status' => 'Completed', 'description' => 'Fictional assessment activity.', 'venue' => 'Demo community hall', 'conducted_by' => 'Demo Field Officer'],
     ],
     'audit-logs' => [
         'title' => 'Audit Log', 'singular' => 'Audit Event', 'icon' => 'receipt', 'readonly' => true,
         'description' => 'Review a read-only history of system activity.',
         'columns' => ['created_at' => 'Date & Time', 'user' => 'User', 'role' => 'Role', 'action' => 'Action', 'module' => 'Module', 'entity' => 'Record / Entity', 'ip_address' => 'IP Address'],
-        'filters' => [$filter('user', 'User', 'select', ['Demo Administrator', 'Demo Field Officer']), $filter('role', 'Role', 'select', ['System Administrator', 'Field Officer', 'Association Member Account']), $filter('module', 'Module', 'select', ['Users', 'Areas', 'Associations', 'Members', 'Projects', 'Trainings', 'Monitoring', 'Program Activities', 'GIS Mapping', 'Reports']), $filter('action', 'Action', 'select', ['CREATE', 'UPDATE', 'ARCHIVE', 'APPROVE', 'REJECT', 'LOGIN', 'LOGOUT', 'INVITE USER', 'CHANGE EMAIL', 'PUBLISH GIS', 'UNPUBLISH GIS', 'EXPORT REPORT']), $filter('date_from', 'Date From', 'date'), $filter('date_to', 'Date To', 'date')],
-        'record' => ['created_at' => '2026-03-20 09:30', 'user' => 'Demo Administrator', 'role' => 'System Administrator', 'action' => 'INVITE USER', 'module' => 'Users', 'entity' => 'Demo Field Officer', 'ip_address' => '192.0.2.10'],
+        'filters' => [$filter('user', 'User', 'select', []), $filter('role', 'Role', 'select', ['System Administrator', 'Field Officer', 'Association Member Account']), $filter('module', 'Module', 'select', ['Users', 'Areas', 'Associations', 'Members', 'Projects', 'Trainings', 'Monitoring', 'Program Activities', 'GIS Mapping', 'Reports']), $filter('action', 'Action', 'select', ['CREATE', 'UPDATE', 'ARCHIVE', 'APPROVE', 'REJECT', 'LOGIN', 'LOGOUT', 'INVITE USER', 'CHANGE EMAIL', 'PUBLISH GIS', 'UNPUBLISH GIS', 'EXPORT REPORT']), $filter('date_from', 'Date From', 'date'), $filter('date_to', 'Date To', 'date')],
     ],
 ];
 foreach ($modules as $key => &$module) {
     $module['key'] = $key;
-    $module['rows'] = $module['rows'] ?? [$module['record']];
+    $module['rows'] = [];
+    $module['record'] = [];
 }
 unset($module);
 return ['options' => $options, 'modules' => $modules];

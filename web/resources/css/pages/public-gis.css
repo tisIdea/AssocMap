@@ -1,0 +1,70 @@
+        .public-gis-page { background: var(--public-page-bg); }
+        .public-gis-header { background: var(--public-surface); border-bottom: 1px solid var(--public-border); }
+        .public-gis-page .gis-shell-container { width: min(1440px, calc(100% - 48px)); margin-inline: auto; }
+        .gis-shell-navbar { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 18px; padding-block: 20px; }
+        .gis-shell-back { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; }
+        .public-gis-page .gis-shell-main { max-width: none; min-height: 0; padding-block: 32px 40px; padding-inline: 0; }
+        .gis-shell-heading h1 { color: var(--public-primary); font-size: clamp(26px, 3vw, 34px); }
+        .gis-shell-heading p { max-width: 760px; margin-top: 10px; font-size: 14px; }
+        .gis-shell-notice { display: flex; align-items: flex-start; gap: 10px; margin-block: 24px; padding: 14px 18px; background: var(--public-primary-light); border: 1px solid var(--public-border); border-radius: 8px; }
+        .gis-shell-notice .icon { color: var(--public-primary); margin-top: 2px; }
+        .gis-shell-notice p { font-size: 13px; }
+        .gis-shell-filters { padding: 22px; background: var(--public-surface); border: 1px solid var(--public-border); border-radius: var(--public-radius); margin-bottom: 22px; }
+        .gis-shell-filters fieldset { min-width: 0; }
+        .gis-shell-filters legend { color: var(--public-text); font-size: 16px; font-weight: 650; margin-bottom: 16px; }
+        .gis-shell-filter-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 16px; }
+        .gis-shell-filter-grid label { display: block; margin-bottom: 7px; font-size: 13px; font-weight: 600; }
+        .gis-shell-filter-grid > div { min-width: 0; }
+        .public-gis-page .gis-shell-filter-grid select { font-size: 14px; min-height: 44px; }
+        .gis-shell-filter-footer { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 14px; margin-top: 18px; }
+        .gis-shell-filter-footer p { font-size: 12px; }
+        .public-gis-page .gis-shell-reset { min-height: 40px; padding: 8px 14px; font-size: 13px; }
+        .gis-shell-workspace { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 22px; align-items: start; }
+        .gis-shell-map { min-width: 0; margin: 0; overflow: hidden; background: var(--public-surface); border: 1px solid var(--public-border); border-radius: var(--public-radius); }
+        .gis-shell-map-title { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 16px 20px; }
+        .gis-shell-map-title h2 { display: inline-flex; align-items: center; gap: 8px; font-size: 15px; }
+        .gis-shell-label { font-size: 11px; color: var(--public-primary); background: var(--public-primary-light); border-radius: 5px; padding: 4px 8px; }
+        .gis-shell-canvas { position: relative; min-height: 470px; background: #e8eff4; border-block: 1px solid var(--public-border); overflow: hidden; }
+        .gis-shell-art { position: absolute; inset: 0; width: 100%; height: 100%; }
+        .gis-shell-marker { position: absolute; display: grid; place-items: center; width: 38px; height: 38px; border: 3px solid white; border-radius: 50%; color: white; background: var(--public-primary); box-shadow: var(--public-shadow); }
+        .gis-shell-marker .icon { width: 18px; height: 18px; }
+        .gis-shell-association { top: 32%; left: 32%; }
+        .gis-shell-project { top: 49%; left: 55%; background: #3d786a; }
+        .gis-shell-controls { position: absolute; top: 18px; left: 18px; display: flex; flex-direction: column; gap: 6px; }
+        .gis-shell-controls button, .gis-shell-layers { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border: 1px solid #c9d6e1; border-radius: 6px; background: white; color: var(--public-primary); }
+        .gis-shell-layers { position: absolute; top: 18px; right: 18px; }
+        .gis-shell-canvas button:disabled { opacity: 1; }
+        .gis-shell-map-note { position: absolute; bottom: 18px; left: 18px; right: 18px; width: fit-content; max-width: calc(100% - 36px); background: rgb(255 255 255 / 95%); color: var(--public-muted); padding: 8px 12px; border: 1px solid var(--public-border); border-radius: 6px; font-size: 12px; }
+        .gis-shell-legend { list-style: none; margin: 0; padding: 18px 20px 10px; display: flex; flex-wrap: wrap; gap: 12px 22px; color: var(--public-muted); font-size: 12px; }
+        .gis-shell-legend li { display: inline-flex; align-items: center; gap: 7px; }
+        .gis-shell-legend .icon { width: 15px; height: 15px; color: var(--public-primary); }
+        .gis-shell-legend .gis-shell-project-icon { color: #3d786a; }
+        .gis-shell-boundary-key { width: 14px; height: 11px; border: 1px dashed var(--public-primary); background: var(--public-primary-light); }
+        .gis-shell-map figcaption { padding: 4px 20px 18px; font-size: 12px; color: var(--public-muted); }
+        .gis-shell-details { padding: 24px; border: 1px solid var(--public-border); border-radius: var(--public-radius); background: var(--public-surface); }
+        .gis-shell-details h2 { font-size: 17px; }
+        .gis-shell-empty { padding-block: 24px; text-align: center; border-bottom: 1px solid var(--public-border); }
+        .gis-shell-empty > .icon { width: 30px; height: 30px; color: var(--public-primary); margin-bottom: 12px; }
+        .gis-shell-empty h3 { font-size: 15px; }
+        .gis-shell-empty p { margin-top: 8px; font-size: 13px; }
+        .gis-shell-details dl { margin: 20px 0 0; display: grid; gap: 15px; }
+        .gis-shell-details dt { font-size: 12px; color: var(--public-muted); }
+        .gis-shell-details dd { font-size: 14px; color: var(--public-text); }
+        .gis-shell-footer { margin-top: 26px; color: var(--public-muted); font-size: 12px; }
+        @media (max-width: 1100px) {
+            .gis-shell-filter-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+            .gis-shell-workspace { grid-template-columns: minmax(0, 1fr) 260px; }
+        }
+        @media (max-width: 800px) {
+            .gis-shell-workspace { grid-template-columns: minmax(0, 1fr); }
+            .gis-shell-details dl { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .gis-shell-filter-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        }
+        @media (max-width: 480px) {
+            .public-gis-page .gis-shell-container { width: calc(100% - 32px); }
+            .gis-shell-navbar { padding-block: 16px; }
+            .gis-shell-filter-grid, .gis-shell-details dl { grid-template-columns: minmax(0, 1fr); }
+            .gis-shell-filters, .gis-shell-details { padding: 18px; }
+            .gis-shell-canvas { min-height: 360px; }
+            .public-gis-page .gis-shell-filter-grid select { font-size: 16px; }
+        }
