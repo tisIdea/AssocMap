@@ -3,7 +3,7 @@
 @if($module['key'] === 'monitoring')<div class="notice"><x-icon name="info" /><span>Monitoring tracks project performance. Production, gross income, and materials are recorded in one monitoring record.</span></div>@endif
 <section class="card list-card" data-list="{{ $module['key'] }}">
     @if($module['key'] === 'areas')
-        <div class="area-intro"><div><h2>Geographic reference directory</h2><p>Municipalities and barangays · official geographic data will be pre-seeded.</p></div><div class="area-selector"><label for="area-municipality-search">Search or select municipality</label><input type="search" id="area-municipality-search" list="area-municipalities" placeholder="All municipalities" data-area-municipality><datalist id="area-municipalities">@foreach($catalog['options']['municipality'] as $municipality)<option value="{{ $municipality }}">@endforeach</datalist></div></div>
+        <div class="area-intro"><div><h2>Geographic reference directory</h2><p>Municipalities and barangays · official geographic data will be pre-seeded.</p></div><div class="area-selector"><label for="area-municipality-search">Search or select municipality</label><input type="search" id="area-municipality-search" list="area-municipalities" placeholder="All municipalities" data-area-municipality><datalist id="area-municipalities">@foreach($catalog['options']['municipality'] ?? [] as $municipality)<option value="{{ $municipality }}">@endforeach</datalist></div></div>
     @endif
     <div class="table-toolbar">
         <x-search-box :id="$module['key'].'-search'" :placeholder="$module['key'] === 'areas' ? 'Search municipality or barangay…' : 'Search '.strtolower($module['title']).'…'" />
@@ -15,7 +15,17 @@
             <a class="button button-primary" href="#{{ $module['key'] }}/create"><x-icon name="plus" />{{ $module['action'] }}</a>
         @endif
     </div>
-    <x-filter-panel :id="$module['key'].'-filters'" :fields="$module['filters']" />
+    @php
+        $filterFields = $module['filters'];
+        if ($module['key'] === 'areas') {
+            foreach ($filterFields as $index => $field) {
+                if ($field['name'] === 'municipality') {
+                    $filterFields[$index]['choices'] = $catalog['options']['municipality'] ?? ($field['choices'] ?? []);
+                }
+            }
+        }
+    @endphp
+    <x-filter-panel :id="$module['key'].'-filters'" :fields="$filterFields" />
     <x-data-table :module="$module" :rows="$module['rows'] ?? []" />
     <x-pagination :count="count($module['rows'] ?? [])" />
 </section>

@@ -7,11 +7,11 @@
             </div>
             <div class="form-grid field-wide" data-area-fields="Municipality">
                 <div class="field-wide"><x-field :field="['name' => 'municipality_name', 'label' => 'Municipality Name', 'required' => true]" prefix="area-editor" /></div>
-                <x-field :field="['name' => 'province', 'label' => 'Province']" prefix="area-editor" value="Cebu" />
-                <x-field :field="['name' => 'region', 'label' => 'Region']" prefix="area-editor" value="Region VII" />
+                <x-field :field="['name' => 'province', 'label' => 'Province']" prefix="area-editor" />
+                <x-field :field="['name' => 'region', 'label' => 'Region']" prefix="area-editor" />
             </div>
             <div class="form-grid field-wide" data-area-fields="Barangay" hidden>
-                <x-field :field="['name' => 'municipality', 'label' => 'Municipality', 'type' => 'search-select', 'choices' => $catalog['options']['municipality'], 'required' => true, 'help' => 'Municipalities will appear once connected.']" prefix="area-editor" />
+                <x-field :field="['name' => 'municipality', 'label' => 'Municipality', 'type' => 'search-select', 'choices' => $catalog['options']['municipality'] ?? [], 'required' => true]" prefix="area-editor" />
                 <x-field :field="['name' => 'barangay_name', 'label' => 'Barangay Name', 'required' => true]" prefix="area-editor" />
             </div>
             <x-field :field="['name' => 'psgc_code', 'label' => 'PSGC Code']" prefix="area-editor" />
