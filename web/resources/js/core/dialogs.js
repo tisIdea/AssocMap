@@ -20,6 +20,9 @@ export function initDialogs() {
             $('[name=area_record_id]', form).value = record?.id || '';
             $$('[name=name]', form).forEach(input => { input.value = record?.name || ''; });
             $('[name=psgc_code]', form).value = record?.psgc_code || '';
+            $('[data-specific-municipality]', form).value = '';
+            $('[name=barangay_id]', form).value = '';
+            $('[name=address]', form).value = '';
             const parent = $('[name=municipality_id]', form);
             $$('[data-current-parent]', parent).forEach(option => option.remove());
             if (record?.municipality_id && !Array.from(parent.options).some(option => option.value === record.municipality_id)) {
@@ -42,7 +45,10 @@ export function initDialogs() {
                 const value = record[element.dataset.areaDetail];
                 element.textContent = value === null || value === undefined || value === '' ? '—' : value;
             });
-            $('[data-area-detail=municipality]').closest('div').hidden = record.area_type !== 'Barangay';
+            $('[data-area-detail=municipality]').closest('div').hidden = !['Barangay', 'Specific Area'].includes(record.area_type);
+            $('[data-area-detail=barangay]').closest('div').hidden = record.area_type !== 'Specific Area';
+            $('[data-area-detail=psgc_code]').closest('div').hidden = record.area_type === 'Specific Area';
+            $('[data-area-detail=name]').previousElementSibling.textContent = record.area_type === 'Specific Area' ? 'Area / Address' : 'Area Name';
             $('[data-area-province]').hidden = !record.province;
             $('[data-area-region]').hidden = !record.region;
         }
@@ -53,10 +59,17 @@ export function initDialogs() {
             $('[data-confirm-action]').textContent = button.dataset.confirmLabel || 'Confirm';
             const form = $('[data-confirm-form]');
             const areaAction = button.hasAttribute('data-area-deactivate');
+            const associationUrl = button.hasAttribute('data-association-unarchive') ? button.dataset.unarchiveUrl : button.dataset.archiveUrl;
+            const associationAction = button.matches('[data-association-archive], [data-association-unarchive]') && Boolean(associationUrl);
+            const memberUrl = button.hasAttribute('data-member-unarchive') ? button.dataset.unarchiveUrl : button.dataset.archiveUrl;
+            const memberAction = button.matches('[data-member-archive], [data-member-unarchive]') && Boolean(memberUrl);
             form.dataset.areaAction = String(areaAction);
-            form.action = areaAction ? JSON.parse(button.closest('[data-area-record]').dataset.areaRecord).deactivate_url : '';
-            $('[data-confirm-action]').disabled = !areaAction;
-            $('[data-confirm-placeholder]').hidden = areaAction;
+            form.dataset.associationAction = String(associationAction);
+            form.dataset.memberAction = String(memberAction);
+            form.action = areaAction ? JSON.parse(button.closest('[data-area-record]').dataset.areaRecord).deactivate_url
+                : (associationAction ? associationUrl : (memberAction ? memberUrl : ''));
+            $('[data-confirm-action]').disabled = !(areaAction || associationAction || memberAction);
+            $('[data-confirm-placeholder]').hidden = areaAction || associationAction || memberAction;
         }
         const dialog = id && document.getElementById(id);
         if (!(dialog instanceof HTMLDialogElement)) return;
@@ -64,7 +77,7 @@ export function initDialogs() {
         dialog.showModal();
     });
     $('[data-confirm-form]')?.addEventListener('submit', event => {
-        if (event.currentTarget.dataset.areaAction !== 'true') event.preventDefault();
+        if (event.currentTarget.dataset.areaAction !== 'true' && event.currentTarget.dataset.associationAction !== 'true' && event.currentTarget.dataset.memberAction !== 'true') event.preventDefault();
     });
     $$('dialog').forEach(dialog => {
         dialog.addEventListener('close', () => openers.get(dialog)?.focus());

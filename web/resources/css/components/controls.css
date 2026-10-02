@@ -12,8 +12,8 @@
 .button-danger:hover { background: #921c2b; border-color: #921c2b; }
 .button-danger-outline { border-color: #efc9ce; color: var(--danger); }
 .button-block { width: 100%; }
-.area-list-switch { display: inline-flex; border: 1px solid #dce3eb; border-radius: var(--radius-sm); overflow: hidden; }
-.area-list-switch .button { border: 0; border-radius: 0; }
+.area-list-switch { display: inline-flex; max-width: 100%; border: 1px solid #dce3eb; border-radius: var(--radius-sm); overflow: hidden; }
+.area-list-switch .button { flex: 1; white-space: normal; border: 0; border-radius: 0; }
 .area-list-switch .button + .button { border-left: 1px solid #dce3eb; }
 .area-list-switch .button[aria-pressed="true"] { background: var(--primary); color: white; }
 .area-list-switch .button:focus-visible { outline-offset: -3px; }

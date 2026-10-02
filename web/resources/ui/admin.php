@@ -38,9 +38,9 @@ $modules = [
     'areas' => [
         'title' => 'Area Management', 'singular' => 'Area', 'icon' => 'pin',
         'description' => 'Manage municipality and barangay reference locations.',
-        'columns' => ['name' => 'Area Name', 'area_type' => 'Type', 'municipality' => 'Municipality', 'associations_count' => 'Associations', 'status' => 'Status'],
+        'columns' => ['name' => 'Area Name', 'area_type' => 'Type', 'barangay' => 'Barangay', 'municipality' => 'Municipality', 'associations_count' => 'Associations', 'status' => 'Status'],
         'filters' => [
-            $filter('area_type', 'Area Type', 'select', ['Municipality', 'City', 'Barangay']),
+            $filter('area_type', 'Area Type', 'select', ['Municipality', 'City', 'Barangay', 'Specific Area']),
             [...$filter('municipality', 'Municipality'), 'empty_label' => 'All Municipalities'],
             $filter('source', 'Source', 'select', ['PSGC', 'Manual']),
             $filter('status', 'Status'),
@@ -48,21 +48,20 @@ $modules = [
     ],
     'associations' => [
         'title' => 'Association Management', 'singular' => 'Association', 'icon' => 'building', 'action' => 'Add Association',
-        'description' => 'Maintain association profiles, locations, and government registrations.',
-        'columns' => ['name' => 'Association Name', 'acronym' => 'Acronym', 'municipality' => 'Municipality', 'barangay' => 'Barangay', 'field_officer' => 'Assigned Field Officer', 'joined_at' => 'SAAD Phase II Join Date', 'status' => 'Status'],
+        'description' => 'Maintain association profiles, locations, and primary Field Officer assignments.',
+        'columns' => ['name' => 'Association Name', 'acronym' => 'Acronym', 'municipality' => 'Municipality', 'barangay' => 'Barangay', 'area' => 'Specific Area', 'field_officer' => 'Primary Field Officer', 'joined_at' => 'SAAD Phase II Join Date', 'status' => 'Status'],
         'filters' => [$filter('municipality', 'Municipality'), $filter('barangay', 'Barangay'), $filter('field_officer', 'Field Officer'), $filter('status', 'Status')],
         'sections' => [
-            $section('Basic information', [$field('name', 'Association Name'), $field('acronym', 'Acronym'), $select('municipality', 'Municipality'), $select('barangay', 'Barangay'), $field('address', 'Address', 'textarea')]),
-            $section('SAAD information', [$field('joined_at', 'SAAD Phase II Joining Date', 'date'), $select('field_officer', 'Primary Field Officer')]),
-            $section('Government registrations', [$field('agency', 'Registration Agency', 'select', ['CDA', 'DOLE']), $field('number', 'Registration Number'), $field('registration_date', 'Registration Date', 'date'), $field('expiration_date', 'Expiration Date', 'date', [], false), $field('primary', 'Primary Registration', 'checkbox', [], false), $field('remarks', 'Remarks', 'textarea', [], false)], 'registrations', 'Add Registration'),
+            $section('Basic information', [$field('name', 'Association Name'), $field('acronym', 'Acronym', 'text', [], false), $field('area_id', 'Specific Area', 'select')]),
+            $section('SAAD information', [$field('saad_phase2_join_date', 'SAAD Phase II Join Date', 'date'), $field('primary_field_officer_id', 'Primary Field Officer', 'select'), $field('status', 'Status', 'select', [['value' => 'active', 'label' => 'Active'], ['value' => 'inactive', 'label' => 'Inactive']])]),
         ],
     ],
     'members' => [
         'title' => 'Member Management', 'singular' => 'Member', 'icon' => 'user', 'readonly' => true,
-        'description' => 'View current official members and their association profiles.',
-        'columns' => ['name' => 'Member Name', 'association' => 'Association', 'municipality' => 'Municipality', 'fishr_number' => 'FishR Registration Number', 'sex' => 'Sex', 'classification' => 'Classification', 'association_role' => 'Role in Association', 'status' => 'Status'],
-        'filters' => [...$geographyFilters, $filter('classification', 'Member Classification', 'checkboxes'), $filter('sex', 'Sex'), $filter('status', 'Status')],
-        'details' => ['name' => 'Full Name', 'birth_date' => 'Birth Date', 'age' => 'Age', 'sex' => 'Sex', 'fishr_number' => 'FishR Registration Number', 'association' => 'Association', 'association_role' => 'Role in Association', 'classification' => 'Member Classifications', 'registered_at' => 'Date Registered', 'status' => 'Member Status'],
+        'description' => 'Monitor official member records and manage archiving and restoration.',
+        'columns' => ['full_name' => 'Member Name', 'association' => 'Association', 'municipality' => 'Municipality', 'barangay' => 'Barangay', 'area' => 'Specific Area', 'sex' => 'Sex', 'position' => 'Position', 'fishr_registration_number' => 'FishR Registration Number', 'date_registered' => 'Date Registered', 'status' => 'Status'],
+        'filters' => [$filter('association', 'Association'), $filter('municipality', 'Municipality'), $filter('barangay', 'Barangay'), $filter('sex', 'Sex'), $filter('position', 'Position'), $filter('status', 'Status')],
+        'details' => ['full_name' => 'Full Name', 'association' => 'Association', 'municipality' => 'Municipality', 'barangay' => 'Barangay', 'area' => 'Specific Area', 'birth_date' => 'Birth Date', 'sex' => 'Sex', 'contact_number' => 'Contact Number', 'fishr_registration_number' => 'FishR Registration Number', 'position' => 'Position', 'position_other_text' => 'Other Position Text', 'date_registered' => 'Date Registered', 'status' => 'Member Status', 'archived' => 'Archived', 'archived_at' => 'Archived At'],
     ],
     'projects' => [
         'title' => 'Projects', 'singular' => 'Project', 'icon' => 'briefcase', 'action' => 'Add Project',

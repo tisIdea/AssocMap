@@ -1,10 +1,12 @@
 @php
-    $areaType = old('area_type', old('municipality_id') ? 'Barangay' : 'Municipality');
-    $areaType = in_array($areaType, ['Municipality', 'Barangay']) ? $areaType : 'Municipality';
+    $areaType = old('area_type', old('barangay_id') ? 'Specific Area' : (old('municipality_id') ? 'Barangay' : 'Municipality'));
+    $areaType = in_array($areaType, ['Municipality', 'Barangay', 'Specific Area']) ? $areaType : 'Municipality';
     $editingArea = collect($catalog['modules']['areas']['rows'] ?? [])->first(fn ($row) =>
-        $row['id'] === old('area_record_id') &&
+        $areaType !== 'Specific Area' && $row['id'] === old('area_record_id') &&
         ($row['area_type'] === 'Barangay') === ($areaType === 'Barangay'));
     $municipalityChoices = $catalog['options']['municipality_records'] ?? [];
+    $barangayChoices = $catalog['options']['barangay_records'] ?? [];
+    $specificMunicipality = collect($barangayChoices)->firstWhere('value', old('barangay_id'))['municipality_id'] ?? '';
     if ($editingArea && $areaType === 'Barangay' && !in_array($editingArea['municipality_id'], array_column($municipalityChoices, 'value'))) {
         $municipalityChoices[] = ['value' => $editingArea['municipality_id'], 'label' => $editingArea['municipality']];
     }
@@ -12,9 +14,11 @@
 <x-modal id="area-editor" :title="$editingArea ? 'Edit Area' : 'Add Area'">
     <form
         method="POST"
-        action="{{ $editingArea['update_url'] ?? ($areaType === 'Barangay' ? route('admin.barangays.store') : route('admin.municipalities.store')) }}"
+        action="{{ $editingArea['update_url'] ?? ($areaType === 'Specific Area' ? route('admin.areas.store') : ($areaType === 'Barangay' ? route('admin.barangays.store') : route('admin.municipalities.store'))) }}"
         data-municipality-action="{{ route('admin.municipalities.store') }}"
         data-barangay-action="{{ route('admin.barangays.store') }}"
+        data-specific-area-action="{{ route('admin.areas.store') }}"
+        data-barangay-records="{{ json_encode($barangayChoices) }}"
         data-form
         data-area-form
         data-mode="{{ $editingArea ? 'edit' : 'create' }}"
@@ -46,7 +50,7 @@
         <div class="form-grid">
             <div class="field-wide">
                 <x-field
-                    :field="['name' => 'area_type', 'label' => 'Area Type', 'type' => 'select', 'choices' => ['Municipality', 'Barangay'], 'required' => true]"
+                    :field="['name' => 'area_type', 'label' => 'Area Type', 'type' => 'select', 'choices' => ['Municipality', 'Barangay', 'Specific Area'], 'required' => true]"
                     prefix="area-editor"
                     :value="$areaType"
                 />
@@ -76,6 +80,29 @@
                 />
             </div>
 
+            <div class="form-grid field-wide" data-area-fields="Specific Area" @if($areaType !== 'Specific Area') hidden @endif>
+                <div class="field">
+                    <label for="area-editor-specific-municipality">Municipality / City <span class="field-hint">*</span></label>
+                    <select id="area-editor-specific-municipality" data-specific-municipality required>
+                        <option value="">Select…</option>
+                        @foreach($catalog['options']['municipality_records'] ?? [] as $choice)
+                            <option value="{{ $choice['value'] }}" @selected($specificMunicipality === $choice['value'])>{{ $choice['label'] }}</option>
+                        @endforeach
+                    </select>
+                </div>
+                <x-field
+                    :field="['name' => 'barangay_id', 'label' => 'Barangay', 'type' => 'select', 'choices' => array_values(array_filter($barangayChoices, fn ($choice) => $choice['municipality_id'] === $specificMunicipality)), 'required' => true]"
+                    prefix="area-editor-specific"
+                    :value="old('barangay_id')"
+                />
+                <x-field
+                    :field="['name' => 'address', 'label' => 'Address / Sitio / Location', 'type' => 'textarea', 'required' => true]"
+                    prefix="area-editor-specific"
+                    :value="old('address')"
+                />
+            </div>
+
+            <div class="form-grid field-wide" data-area-reference-fields @if($areaType === 'Specific Area') hidden @endif>
             <div>
                 <label>Province</label>
                 <div class="form-static-value" data-area-editor-detail="province">
@@ -113,6 +140,7 @@
                     {{ $editingArea['status'] ?? 'Active' }}
                 </div>
             </div>
+            </div>
         </div>
 
         <div class="modal-actions">
@@ -129,7 +157,7 @@
                 class="button button-primary"
                 data-area-submit
             >
-                {{ $editingArea ? 'Save Changes' : ($areaType === 'Barangay' ? 'Save Barangay' : 'Save Municipality') }}
+                {{ $editingArea ? 'Save Changes' : ($areaType === 'Specific Area' ? 'Save Area' : ($areaType === 'Barangay' ? 'Save Barangay' : 'Save Municipality')) }}
             </button>
         </div>
     </form>
@@ -163,6 +191,7 @@
             <dt>PSGC Code</dt>
             <dd data-area-detail="psgc_code">—</dd>
         </div>
+        <div hidden><dt>Barangay</dt><dd data-area-detail="barangay">—</dd></div>
 
         <div data-area-province>
             <dt>Province</dt>

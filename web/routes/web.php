@@ -5,6 +5,8 @@ use App\Http\Controllers\Admin\MunicipalityController;
 use App\Http\Controllers\Admin\BarangayController;
 use App\Http\Controllers\Admin\AreaController;
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\Admin\AssociationController;
+use App\Http\Controllers\Admin\MemberController;
 
 Route::view('/', 'public.landing')
     ->name('home');
@@ -62,4 +64,59 @@ Route::middleware([
 
     Route::post('/admin/areas', [AreaController::class, 'store'])
         ->name('admin.areas.store');
+
+    Route::get('/admin/associations',[AssociationController::class, 'index'])
+    ->name('admin.associations.index');
+
+    Route::post('/admin/associations',[AssociationController::class, 'store'])
+    ->name('admin.associations.store');
+
+    Route::patch(
+    '/admin/associations/{association}',
+    [AssociationController::class, 'update']
+    )
+        ->whereUuid('association')
+        ->name('admin.associations.update');
+
+    Route::patch(
+        '/admin/associations/{association}/archive',
+        [AssociationController::class, 'archive']
+    )
+        ->whereUuid('association')
+        ->name('admin.associations.archive');
+    Route::patch(
+        '/admin/associations/{association}/unarchive',
+        [AssociationController::class, 'unarchive']
+    )
+        ->whereUuid('association')
+        ->name('admin.associations.unarchive');
+
+    Route::get('/admin/members',[MemberController::class, 'index'])
+        ->name('admin.members.index');
+
+Route::post(
+    '/admin/members',
+    [MemberController::class, 'store']
+)->name('admin.members.store');
+
+Route::patch(
+    '/admin/members/{member}',
+    [MemberController::class, 'update']
+)
+    ->whereUuid('member')
+    ->name('admin.members.update');
+
+Route::patch(
+    '/admin/members/{member}/archive',
+    [MemberController::class, 'archive']
+)
+    ->whereUuid('member')
+    ->name('admin.members.archive');
+
+Route::patch(
+    '/admin/members/{member}/unarchive',
+    [MemberController::class, 'unarchive']
+)
+    ->whereUuid('member')
+    ->name('admin.members.unarchive');
 });
