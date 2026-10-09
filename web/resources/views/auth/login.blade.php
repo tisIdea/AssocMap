@@ -43,7 +43,7 @@
                 <h1 id="staff-login-title">Staff Sign In</h1>
 
                 <p class="staff-login-intro">
-                    Staff access for System Administrators and Field Officers.
+                    Sign in to access your authorized AssocMap workspace..
                 </p>
 
                 <form
@@ -135,7 +135,7 @@
                         id="staff-login-note"
                         class="staff-login-note"
                     >
-                        Authorized AssocMap staff accounts only.
+                        Authorized AssocMap accounts only.
                     </p>
                 </form>
 

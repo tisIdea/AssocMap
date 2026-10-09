@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light">
+    <title>Member Applications · AssocMap</title>
+    @vite(['resources/css/app.css', 'resources/js/app.js'])
+</head>
+<body>
+    <a class="skip-link" href="#main-content">Skip to content</a>
+    <aside class="sidebar" id="association-sidebar" aria-label="Association Account navigation">
+        <a class="brand" href="{{ route('association.member-applications.index') }}" aria-label="AssocMap member applications">
+            <span class="brand-symbol"><x-icon name="map" /></span>
+            <span class="brand-copy"><strong>Assoc<span>Map</span></strong><small>ASSOCIATION WORKSPACE</small></span>
+        </a>
+        <div class="sidebar-section-label">WORKSPACE</div>
+        <nav class="sidebar-nav" aria-label="Main navigation">
+            <a class="nav-link active" href="{{ route('association.member-applications.index') }}" aria-current="page"><x-icon name="users" /><span>Member Applications</span></a>
+        </nav>
+    </aside>
+    <button type="button" class="sidebar-backdrop" data-aa-close hidden aria-label="Close navigation"></button>
+    <div class="main-shell">
+        <header class="topbar">
+            <div class="topbar-context">
+                <button type="button" class="icon-button mobile-menu" data-aa-open aria-label="Open navigation" aria-controls="association-sidebar" aria-expanded="false"><x-icon name="menu" /></button>
+                <span>Member Applications</span>
+            </div>
+            <div class="topbar-account">
+                <div class="account-copy"><strong>{{ $currentUser->display_name ?? 'Association Account' }}</strong><small>Association Account workspace</small></div>
+                <form method="POST" action="{{ route('logout') }}">@csrf<button type="submit" class="text-button">Logout</button></form>
+            </div>
+        </header>
+        <main id="main-content" tabindex="-1">
+            @if(session('success'))<div class="notice notice-success" role="status"><x-icon name="check" /><span>{{ session('success') }}</span></div>@endif
+            @if(session('error'))<div class="notice notice-error" role="alert"><x-icon name="info" /><span>{{ session('error') }}</span></div>@endif
+            @if($errors->any())
+                <div class="notice notice-error" role="alert"><x-icon name="info" /><div>@foreach($errors->all() as $error)<p>{{ $error }}</p>@endforeach</div></div>
+            @endif
+            @yield('content')
+        </main>
+        <footer class="app-footer"><span>AssocMap · GIS-Based Program Monitoring Information System</span><span>BFAR Region VII / SAAD Phase II</span></footer>
+    </div>
+    @stack('dialogs')
+    <noscript><div class="notice">Enable JavaScript to open application details and the submission form.</div></noscript>
+    <script type="module">
+        const sidebar = document.getElementById('association-sidebar');
+        const shell = document.querySelector('.main-shell');
+        const opener = document.querySelector('[data-aa-open]');
+        const backdrop = document.querySelector('[data-aa-close]');
+        const mobile = window.matchMedia('(max-width: 1020px)');
+        function setDrawer(open, restore = true) {
+            document.body.classList.toggle('drawer-open', open);
+            backdrop.hidden = !open;
+            opener.setAttribute('aria-expanded', String(open));
+            sidebar.inert = mobile.matches && !open;
+            shell.inert = open;
+            if (open) sidebar.querySelector('a').focus();
+            else if (restore && mobile.matches) opener.focus();
+        }
+        opener.addEventListener('click', () => setDrawer(true));
+        backdrop.addEventListener('click', () => setDrawer(false));
+        document.addEventListener('keydown', event => {
+            if (!document.body.classList.contains('drawer-open')) return;
+            if (event.key === 'Escape') setDrawer(false);
+            if (event.key === 'Tab') {
+                const links = Array.from(sidebar.querySelectorAll('a'));
+                const first = links[0];
+                const last = links.at(-1);
+                if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+                else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+            }
+        });
+        mobile.addEventListener('change', () => setDrawer(false, false));
+        setDrawer(false, false);
+        @stack('scripts')
+    </script>
+</body>
+</html>

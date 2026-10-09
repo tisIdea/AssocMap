@@ -71,12 +71,16 @@ class StaffAuthController extends Controller
 
         if (! in_array(
             $profile->role->code,
-            ['system_admin', 'field_officer'],
+            [
+                'system_admin',
+                'field_officer',
+                'association_account',
+            ],
             true
         )) {
             return back()
                 ->withErrors([
-                    'email' => 'This account is not authorized for staff web access.',
+                    'email' => 'This account is not authorized for web access.',
                 ])
                 ->onlyInput('email');
         }
@@ -94,14 +98,17 @@ class StaffAuthController extends Controller
             return redirect()->route('admin.dashboard');
         }
 
-        /*
-         * Field Officer dashboard will be implemented in the next user-side phase.
-         */
-        return redirect()->route('home')
-            ->with(
-                'status',
-                'Field Officer access will be configured next.'
-            );
+        if ($profile->role->code === 'field_officer') {
+            return redirect()
+                ->route('field-officer.member-applications.index');
+        }
+
+        if ($profile->role->code === 'association_account') {
+            return redirect()
+                ->route('association.member-applications.index');
+        }
+
+        return redirect()->route('home');
     }
 
     public function destroy(Request $request): RedirectResponse

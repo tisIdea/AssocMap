@@ -19,6 +19,27 @@ export function initAdminNavigation() {
     }
 
     function navigate(focus = true) {
+        if (pages.size === 0) {
+            const sidebar = $('#admin-sidebar');
+            const workspace = $('[data-workspace-module]');
+            const module = workspace?.dataset.workspaceModule || 'projects';
+            const title = workspace?.dataset.workspaceTitle || 'Projects';
+            $$('a[href^="#"]', sidebar).forEach(link => {
+                link.href = sidebar.dataset.dashboardUrl + link.getAttribute('href');
+            });
+            $$('[data-nav]').forEach(link => {
+                const active = link.dataset.nav === module;
+                link.classList.toggle('active', active);
+                if (active) link.setAttribute('aria-current', 'page');
+                else link.removeAttribute('aria-current');
+            });
+            $('.program-toggle').classList.add('active');
+            setDisclosure($('.program-toggle'), true);
+            $('#current-context').textContent = title;
+            document.title = `${title} · AssocMap`;
+            setDrawer(false, false);
+            return;
+        }
         let key = location.hash.slice(1) || $('[data-initial-page]')?.dataset.initialPage || 'dashboard';
         if (key === 'main-content') { $('#main-content').focus(); return; }
         if (!pages.has(key)) { key = 'dashboard'; history.replaceState(null, '', '#dashboard'); }

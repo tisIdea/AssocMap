@@ -41,6 +41,7 @@ class MemberController extends Controller
                 'association.area.barangay.municipality',
                 'sex',
                 'position',
+                'classifications',
             ])
             ->when(
                 $statusFilter === 'archived',
@@ -117,17 +118,10 @@ class MemberController extends Controller
 
         $module['rows'] = $members
             ->map(function (Member $member) {
-                $association =
-                    $member->association;
-
-                $area =
-                    $association?->area;
-
-                $barangay =
-                    $area?->barangay;
-
-                $municipality =
-                    $barangay?->municipality;
+                $association = $member->association;
+                $area = $association?->area;
+                $barangay = $area?->barangay;
+                $municipality = $barangay?->municipality;
 
                 return [
                     'id' => $member->id,
@@ -187,6 +181,12 @@ class MemberController extends Controller
                     'position_other_text' =>
                         $member->position_other_text,
 
+                    'classifications' =>
+                        $member->classifications
+                            ->pluck('name')
+                            ->values()
+                            ->all(),
+
                     'date_registered' =>
                         $member->date_registered
                             ? \Illuminate\Support\Carbon::parse(
@@ -222,12 +222,6 @@ class MemberController extends Controller
                                 $member->archived_at
                             )->toIso8601String()
                             : null,
-
-                    'update_url' =>
-                        route(
-                            'admin.members.update',
-                            $member
-                        ),
 
                     'archive_url' =>
                         route(

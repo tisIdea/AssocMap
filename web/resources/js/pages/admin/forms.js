@@ -250,7 +250,10 @@ function initRecordList(moduleKey) {
             });
         } else $('[data-association-archived-date]', modal).hidden = !record.archived_at;
         $$(`[data-${prefix}-detail]`, modal).forEach(element => {
-            element.textContent = record[element.dataset[`${prefix}Detail`]] || '—';
+            const key = element.dataset[`${prefix}Detail`];
+            element.textContent = memberList && key === 'classifications'
+                ? (record.classifications?.length ? record.classifications.join(', ') : 'None recorded')
+                : (record[key] || '—');
         });
     });
     update();

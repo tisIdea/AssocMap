@@ -12,6 +12,7 @@
                     <dt>{{ $label }}</dt><dd data-member-detail="{{ $key }}">—</dd>
                 </div>
             @endforeach
+            <div><dt>Member Classifications</dt><dd data-member-detail="classifications">None recorded</dd></div>
         </dl>
     </x-modal>
 @endif
