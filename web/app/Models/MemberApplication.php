@@ -31,6 +31,8 @@ class MemberApplication extends Model
         'fishr_registration_number',
         'position_id',
         'position_other_text',
+        'endorsement_letter',
+        'applicant_photo_path',
         'status',
         'reviewed_by',
         'reviewed_at',
@@ -41,6 +43,8 @@ class MemberApplication extends Model
         'birth_date' => 'date',
         'reviewed_at' => 'datetime',
     ];
+
+    protected $hidden = ['endorsement_letter', 'applicant_photo_path'];
 
     public function association(): BelongsTo
     {

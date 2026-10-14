@@ -9,12 +9,12 @@
         <button type="button" class="nav-link program-toggle" data-disclosure="program-navigation" aria-expanded="false" aria-controls="program-navigation" title="Program Operations"><x-icon name="briefcase" /><span>Program Operations</span><x-icon name="chevron" class="disclosure-chevron" /></button>
         <div class="subnav" id="program-navigation" hidden>
             @foreach(['projects', 'trainings', 'monitoring', 'program-activities'] as $key)
-                <a class="nav-link" href="{{ in_array($key, ['projects', 'trainings', 'program-activities']) ? route('admin.'.$key.'.index') : '#'.$key }}" data-nav="{{ $key }}" title="{{ $catalog['modules'][$key]['title'] }}"><x-icon :name="$catalog['modules'][$key]['icon']" /><span>{{ $catalog['modules'][$key]['title'] }}</span></a>
+                <a class="nav-link" href="{{ route('admin.'.$key.'.index') }}" data-nav="{{ $key }}" title="{{ $catalog['modules'][$key]['title'] }}"><x-icon :name="$catalog['modules'][$key]['icon']" /><span>{{ $catalog['modules'][$key]['title'] }}</span></a>
             @endforeach
         </div>
-        <a class="nav-link" href="#gis" data-nav="gis" title="GIS Mapping"><x-icon name="map" /><span>GIS Mapping</span></a>
+        <a class="nav-link" href="{{ route('admin.gis.index') }}" data-nav="gis" title="GIS Mapping"><x-icon name="map" /><span>GIS Mapping</span></a>
         <a class="nav-link" href="#reports" data-nav="reports" title="Reports & Analytics"><x-icon name="chart" /><span>Reports &amp; Analytics</span></a>
-        <a class="nav-link" href="#audit-logs" data-nav="audit-logs" title="Audit Log"><x-icon name="receipt" /><span>Audit Log</span></a>
+        <a class="nav-link" href="{{ route('admin.audit-logs.index') }}" data-nav="audit-logs" title="Audit Log"><x-icon name="receipt" /><span>Audit Log</span></a>
     </nav>
     <div class="sidebar-footer"><div class="sidebar-program"><x-icon name="shield" /><div><strong>BFAR Region VII</strong><small>Community livelihood monitoring</small></div></div><button type="button" class="sidebar-collapse" data-collapse-sidebar aria-label="Collapse sidebar" aria-expanded="true"><x-icon name="back" /><span>Collapse sidebar</span></button></div>
 </aside>

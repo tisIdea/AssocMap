@@ -64,6 +64,7 @@
                         @push('dialogs')
                             <x-modal :id="'application-'.$application->id" title="Application Details">
                                 <dl class="detail-grid">@foreach($details as $label => $value)<div><dt>{{ $label }}</dt><dd>{{ filled($value) ? $value : '—' }}</dd></div>@endforeach</dl>
+                                @include('partials.member-application-evidence', ['photoRoute' => 'association.member-applications.photo'])
                                 <div class="modal-actions"><button type="button" class="button" data-close-dialog>Close</button></div>
                             </x-modal>
                         @endpush
@@ -84,16 +85,16 @@
         @if($errors->any())
             <div class="notice notice-error" role="alert"><div>@foreach($errors->all() as $error)<p>{{ $error }}</p>@endforeach</div></div>
         @endif
-        <form method="POST" action="{{ route('association.member-applications.store') }}" id="member-application-form">
+        <form method="POST" action="{{ route('association.member-applications.store') }}" id="member-application-form" enctype="multipart/form-data">
             @csrf
             <div class="form-grid">
                 @foreach([
-                    ['name' => 'first_name', 'label' => 'First Name', 'required' => true, 'max' => 150],
-                    ['name' => 'middle_name', 'label' => 'Middle Name', 'required' => false, 'max' => 150],
-                    ['name' => 'last_name', 'label' => 'Last Name', 'required' => true, 'max' => 150],
-                    ['name' => 'suffix', 'label' => 'Suffix', 'required' => false, 'max' => 50],
+                    ['name' => 'first_name', 'label' => 'First Name', 'required' => true, 'max' => 120],
+                    ['name' => 'middle_name', 'label' => 'Middle Name', 'required' => false, 'max' => 120],
+                    ['name' => 'last_name', 'label' => 'Last Name', 'required' => true, 'max' => 120],
+                    ['name' => 'suffix', 'label' => 'Suffix', 'required' => false, 'max' => 20],
                     ['name' => 'birth_date', 'label' => 'Birth Date', 'required' => true, 'type' => 'date'],
-                    ['name' => 'contact_number', 'label' => 'Contact Number', 'required' => false, 'max' => 50, 'type' => 'tel'],
+                    ['name' => 'contact_number', 'label' => 'Contact Number', 'required' => false, 'max' => 30, 'type' => 'tel'],
                     ['name' => 'fishr_registration_number', 'label' => 'FishR Registration Number', 'required' => false, 'max' => 100],
                 ] as $field)
                     <div class="field">
@@ -120,8 +121,20 @@
                 </div>
                 <div class="field" id="application-other-field" @if(!$isOtherPosition) hidden @endif>
                     <label for="application-other">Other Position Text <span class="field-hint">*</span></label>
-                    <input id="application-other" name="position_other_text" type="text" value="{{ old('position_other_text') }}" maxlength="150" @required($isOtherPosition) @disabled(!$isOtherPosition) aria-describedby="application-other-error" @if($errors->has('position_other_text')) aria-invalid="true" @endif>
+                    <input id="application-other" name="position_other_text" type="text" value="{{ old('position_other_text') }}" maxlength="100" @required($isOtherPosition) @disabled(!$isOtherPosition) aria-describedby="application-other-error" @if($errors->has('position_other_text')) aria-invalid="true" @endif>
                     <span class="field-error" id="application-other-error">@error('position_other_text'){{ $message }}@enderror</span>
+                </div>
+                <div class="field field-wide">
+                    <label for="application-endorsement">Endorsement Letter <span class="field-hint">*</span></label>
+                    <textarea id="application-endorsement" name="endorsement_letter" rows="8" required maxlength="10000" aria-describedby="application-endorsement-help application-endorsement-error" @if($errors->has('endorsement_letter')) aria-invalid="true" @endif>{{ is_string(old('endorsement_letter')) ? old('endorsement_letter') : '' }}</textarea>
+                    <small class="field-help" id="application-endorsement-help">Enter the letter provided by an association officer. Typed content does not verify authorship. Maximum 10,000 characters. This letter is private application information.</small>
+                    <span class="field-error" id="application-endorsement-error">@error('endorsement_letter'){{ $message }}@enderror</span>
+                </div>
+                <div class="field field-wide">
+                    <label for="application-photo">Applicant Photo <span class="field-hint">*</span></label>
+                    <input id="application-photo" name="applicant_photo" type="file" accept=".jpg,.jpeg,.png,image/jpeg,image/png" required aria-describedby="application-photo-help application-photo-error" @if($errors->has('applicant_photo')) aria-invalid="true" @endif>
+                    <small class="field-help" id="application-photo-help">Private JPEG or PNG photo with a matching filename extension. Maximum 2 MiB and 2048 by 2048 pixels. Reselect the file after any validation error.</small>
+                    <span class="field-error" id="application-photo-error">@error('applicant_photo'){{ $message }}@enderror</span>
                 </div>
                 <div class="field field-wide">
                     <fieldset aria-describedby="application-classifications-help application-classifications-error">

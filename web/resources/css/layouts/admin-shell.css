@@ -25,7 +25,7 @@
 .sidebar-collapse { display: flex; gap: 10px; align-items: center; margin-top: 17px; padding: 0; border: 0; color: #c9dbef; background: transparent; font-size: 11px; }
 .sidebar-collapse .icon { width: 16px; height: 16px; }
 .main-shell { margin-left: var(--sidebar-width); min-width: 0; }
-.topbar { min-height: 77px; background: #fff; border-bottom: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between; padding: 16px 32px; gap: 16px; }
+.topbar { position: sticky; top: 0; z-index: 30; min-height: 77px; background: #fff; border-bottom: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between; padding: 16px 32px; gap: 16px; }
 .topbar-context, .topbar-account { display: flex; align-items: center; gap: 15px; }
 .topbar-context { font-size: 12px; color: var(--text-secondary); }
 .topbar-context .icon { width: 12px; }

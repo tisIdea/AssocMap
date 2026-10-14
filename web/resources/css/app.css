@@ -8,6 +8,8 @@
 @import './components/forms.css';
 @import './pages/admin-gis.css';
 @import './pages/admin-reports.css';
+@import './pages/admin-audit-logs.css';
 @import './layouts/admin-footer.css';
 @import './layouts/admin-responsive.css';
 @import './pages/public-landing.css';
+@import './pages/gis-workspace.css';

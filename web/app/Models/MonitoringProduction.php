@@ -50,6 +50,17 @@ class MonitoringProduction extends Model
         );
     }
 
+    public function monthlySubtotal(): string
+    {
+        $cents = $this->monthlyDetails->sum(fn ($detail) => (int) str_replace('.', '', $detail->total_quantity));
+        return sprintf('%d.%02d', intdiv($cents, 100), $cents % 100);
+    }
+
+    public function monthlyDetails(): HasMany
+    {
+        return $this->hasMany(MonitoringProductionMonthly::class, 'monitoring_production_id')->orderBy('month');
+    }
+
     public function income(): HasMany
     {
         return $this->hasMany(

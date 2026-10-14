@@ -53,10 +53,10 @@ class StaffAuthController extends Controller
                 ->onlyInput('email');
         }
 
-        if (! $profile->is_active) {
+        if (! $profile->canAccessApplication($supabaseUser)) {
             return back()
                 ->withErrors([
-                    'email' => 'This AssocMap account is inactive.',
+                    'email' => 'This AssocMap account or role is unavailable.',
                 ])
                 ->onlyInput('email');
         }

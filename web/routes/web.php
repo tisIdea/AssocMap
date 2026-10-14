@@ -1,6 +1,8 @@
 <?php
 
 use App\Http\Controllers\Auth\StaffAuthController;
+use App\Http\Controllers\Auth\InvitationActivationController;
+use App\Http\Controllers\Admin\UserInvitationController;
 
 use App\Http\Controllers\Admin\MunicipalityController;
 use App\Http\Controllers\Admin\BarangayController;
@@ -17,6 +19,9 @@ use App\Http\Controllers\AssociationAccount\MemberApplicationController
 
 use App\Http\Controllers\FieldOfficer\MemberApplicationController
     as FieldOfficerMemberApplicationController;
+
+use App\Http\Controllers\MemberApplicationPhotoController;
+use App\Http\Middleware\MemberApplicationEvidenceHeaders;
 
 use App\Http\Controllers\FieldOfficer\ProjectController
     as FieldOfficerProjectController;
@@ -47,15 +52,29 @@ Route::view('/login', 'auth.login')
 Route::post(
     '/login',
     [StaffAuthController::class, 'store']
-)->name('login.store');
+)->middleware('throttle:staff-login')->name('login.store');
 
 Route::post(
     '/logout',
     [StaffAuthController::class, 'destroy']
 )->name('logout');
 
-Route::view('/map', 'public.gis')
-    ->name('public.gis');
+Route::middleware([\App\Http\Middleware\GisRequestGuard::class, 'throttle:gis-read'])->group(function () {
+    Route::get('/map', [\App\Http\Controllers\PublicGisController::class, 'index'])->name('public.gis');
+    Route::get('/map/data', [\App\Http\Controllers\PublicGisController::class, 'data'])->name('public.gis.data');
+    Route::get('/map/associations', [\App\Http\Controllers\PublicGisController::class, 'associations'])->name('public.gis.associations');
+});
+
+Route::prefix('invitation')->name('invitation.')->middleware('throttle:invitation-activation')
+    ->group(function () {
+        Route::get('/', [InvitationActivationController::class, 'showVerification'])->block(120, 3)->name('verify');
+        Route::post('/verify', [InvitationActivationController::class, 'verify'])->block(120, 3)->name('verify.store');
+        Route::get('/password', [InvitationActivationController::class, 'showPassword'])->block(120, 3)->name('password');
+        Route::post('/password', [InvitationActivationController::class, 'setPassword'])->block(120, 3)->name('password.store');
+        Route::get('/recover', [InvitationActivationController::class, 'showRecovery'])->block(120, 3)->name('recovery');
+        Route::post('/recover', [InvitationActivationController::class, 'recover'])->block(120, 3)->name('recovery.store');
+        Route::get('/result', [InvitationActivationController::class, 'result'])->block(120, 3)->name('result');
+    });
 
 /*
 |--------------------------------------------------------------------------
@@ -64,9 +83,22 @@ Route::view('/map', 'public.gis')
 */
 
 Route::middleware([
+    \App\Http\Middleware\AuditRequestGuard::class,
+    'supabase.auth',
+    'role:system_admin',
+    'throttle:60,1',
+])->prefix('admin/audit-logs')->name('admin.audit-logs.')->group(function () {
+    Route::get('/', [\App\Http\Controllers\Admin\AuditLogController::class, 'index'])->name('index');
+    Route::get('/{auditLog}', [\App\Http\Controllers\Admin\AuditLogController::class, 'show'])->whereUuid('auditLog')->name('show');
+});
+
+Route::middleware([
     'supabase.auth',
     'role:system_admin',
 ])->group(function () {
+
+    Route::post('/admin/user-invitations', [UserInvitationController::class, 'store'])
+        ->middleware('throttle:user-invitations')->name('admin.user-invitations.store');
 
     Route::get('/dashboard', function () {
         return view('dashboard.index', [
@@ -312,7 +344,7 @@ Route::middleware([
 
     Route::get(
         '/admin/monitoring',
-        [AdminMonitoringController::class, 'index']
+        [\App\Http\Controllers\MonitoringWorkspaceController::class, 'index']
     )->name('admin.monitoring.index');
 
     Route::post(
@@ -326,6 +358,22 @@ Route::middleware([
     )
         ->whereUuid('monitoringRecord')
         ->name('admin.monitoring.update');
+
+    Route::get(
+        '/admin/monitoring/{monitoringRecord}/visit-reports',
+        [AdminMonitoringController::class, 'indexVisitReports']
+    )->whereUuid('monitoringRecord')->name('admin.monitoring.visit-reports.index');
+
+    Route::post(
+        '/admin/monitoring/{monitoringRecord}/visit-reports',
+        [AdminMonitoringController::class, 'storeVisitReport']
+    )->whereUuid('monitoringRecord')->name('admin.monitoring.visit-reports.store');
+
+    Route::patch(
+        '/admin/monitoring/{monitoringRecord}/visit-reports/{visitReport}',
+        [AdminMonitoringController::class, 'updateVisitReport']
+    )->whereUuid('monitoringRecord')->whereUuid('visitReport')->scopeBindings()
+        ->name('admin.monitoring.visit-reports.update');
 });
 
 /*
@@ -351,9 +399,14 @@ Route::middleware([
             FieldOfficerMemberApplicationController::class,
             'index',
         ]
-    )->name(
+    )->middleware(MemberApplicationEvidenceHeaders::class)->name(
         'field-officer.member-applications.index'
     );
+
+    Route::get('/field-officer/member-applications/{memberApplication}/photo', MemberApplicationPhotoController::class)
+        ->whereUuid('memberApplication')
+        ->middleware(MemberApplicationEvidenceHeaders::class)
+        ->name('field-officer.member-applications.photo');
 
     Route::patch(
         '/field-officer/member-applications/{memberApplication}/approve',
@@ -498,7 +551,7 @@ Route::middleware([
 
     Route::get(
         '/field-officer/monitoring',
-        [FieldOfficerMonitoringController::class, 'index']
+        [\App\Http\Controllers\MonitoringWorkspaceController::class, 'index']
     )->name('field-officer.monitoring.index');
 
     Route::post(
@@ -512,6 +565,22 @@ Route::middleware([
     )
         ->whereUuid('monitoringRecord')
         ->name('field-officer.monitoring.update');
+
+    Route::get(
+        '/field-officer/monitoring/{monitoringRecord}/visit-reports',
+        [FieldOfficerMonitoringController::class, 'indexVisitReports']
+    )->whereUuid('monitoringRecord')->name('field-officer.monitoring.visit-reports.index');
+
+    Route::post(
+        '/field-officer/monitoring/{monitoringRecord}/visit-reports',
+        [FieldOfficerMonitoringController::class, 'storeVisitReport']
+    )->whereUuid('monitoringRecord')->name('field-officer.monitoring.visit-reports.store');
+
+    Route::patch(
+        '/field-officer/monitoring/{monitoringRecord}/visit-reports/{visitReport}',
+        [FieldOfficerMonitoringController::class, 'updateVisitReport']
+    )->whereUuid('monitoringRecord')->whereUuid('visitReport')->scopeBindings()
+        ->name('field-officer.monitoring.visit-reports.update');
 });
 
 /*
@@ -531,9 +600,14 @@ Route::middleware([
             AssociationAccountMemberApplicationController::class,
             'index',
         ]
-    )->name(
+    )->middleware(MemberApplicationEvidenceHeaders::class)->name(
         'association.member-applications.index'
     );
+
+    Route::get('/association/member-applications/{memberApplication}/photo', MemberApplicationPhotoController::class)
+        ->whereUuid('memberApplication')
+        ->middleware(MemberApplicationEvidenceHeaders::class)
+        ->name('association.member-applications.photo');
 
     Route::post(
         '/association/member-applications',
@@ -541,7 +615,50 @@ Route::middleware([
             AssociationAccountMemberApplicationController::class,
             'store',
         ]
-    )->name(
+    )->middleware(MemberApplicationEvidenceHeaders::class)->name(
         'association.member-applications.store'
     );
 });
+
+foreach (['admin' => 'system_admin', 'field-officer' => 'field_officer', 'association' => 'association_account'] as $area => $role) {
+    Route::middleware([\App\Http\Middleware\GisRequestGuard::class, 'supabase.auth', 'role:'.$role, 'throttle:gis-read'])
+        ->prefix($area.'/gis')->name($area.'.gis.')->group(function () use ($role) {
+            $controller = \App\Http\Controllers\GisWorkspaceController::class;
+            Route::get('/', [$controller, 'index'])->name('index');
+            Route::get('/data', [$controller, 'data'])->name('data');
+            Route::get('/parents', [$controller, 'parents'])->name('parents');
+            if ($role !== 'association_account') {
+                Route::get('/create', [$controller, 'create'])->name('create');
+                Route::get('/{location}/edit', [$controller, 'edit'])->whereUuid('location')->name('edit');
+                Route::post('/', [$controller, 'store'])->middleware('throttle:gis-write')->name('store');
+                Route::patch('/{location}', [$controller, 'update'])->whereUuid('location')->middleware('throttle:gis-write')->name('update');
+                Route::delete('/{location}', [$controller, 'destroy'])->whereUuid('location')->middleware('throttle:gis-write')->name('destroy');
+                Route::patch('/{location}/{action}', [$controller, 'lifecycle'])->whereUuid('location')
+                    ->whereIn('action', ['publish', 'unpublish', 'archive'])->middleware('throttle:gis-write')->name('lifecycle');
+            }
+            Route::get('/{location}', [$controller, 'show'])->whereUuid('location')->name('show');
+        });
+}
+
+// Shared Monitoring pages retain the existing role-specific URL namespaces.
+foreach (['admin' => 'system_admin', 'field-officer' => 'field_officer', 'association' => 'association_account'] as $area => $role) {
+    Route::middleware(['supabase.auth', 'role:'.$role])->prefix($area.'/monitoring')
+        ->name($area.'.monitoring.')->group(function () use ($role) {
+            $controller = \App\Http\Controllers\MonitoringWorkspaceController::class;
+            if ($role === 'association_account') Route::get('/', [$controller, 'index'])->name('index');
+            if ($role !== 'association_account') {
+                Route::get('/create', [$controller, 'createPage'])->name('create');
+                Route::get('/{monitoringRecord}/edit', [$controller, 'editOverview'])->whereUuid('monitoringRecord')->name('overview.edit');
+                Route::patch('/{monitoringRecord}/overview', [$controller, 'saveOverview'])->whereUuid('monitoringRecord')->name('overview.update');
+                Route::get('/{monitoringRecord}/sections/{section}/edit', [$controller, 'editSection'])->whereUuid('monitoringRecord')->whereIn('section', ['production', 'income', 'materials'])->name('section.edit');
+                Route::patch('/{monitoringRecord}/sections/{section}', [$controller, 'saveSection'])->whereUuid('monitoringRecord')->whereIn('section', ['production', 'income', 'materials'])->name('section.update');
+                Route::get('/{monitoringRecord}/visits/create', [$controller, 'visitPage'])->whereUuid('monitoringRecord')->name('visit.create');
+                Route::post('/{monitoringRecord}/visits', [$controller, 'saveVisit'])->whereUuid('monitoringRecord')->name('visit.store');
+                Route::get('/{monitoringRecord}/visits/{reportId}/edit', [$controller, 'visitPage'])->whereUuid('monitoringRecord')->whereUuid('reportId')->name('visit.edit');
+                Route::patch('/{monitoringRecord}/visits/{reportId}', [$controller, 'saveVisit'])->whereUuid('monitoringRecord')->whereUuid('reportId')->name('visit.update');
+            }
+            Route::get('/{monitoringRecord}/workspace/{section?}', [$controller, 'workspace'])->whereUuid('monitoringRecord')->whereIn('section', ['overview', 'production', 'income', 'materials'])->name('workspace');
+            Route::get('/{monitoringRecord}/visits', [$controller, 'visits'])->whereUuid('monitoringRecord')->name('visits');
+            Route::get('/{monitoringRecord}/visits/{reportId}', [$controller, 'visitPage'])->whereUuid('monitoringRecord')->whereUuid('reportId')->name('visit.view');
+        });
+}

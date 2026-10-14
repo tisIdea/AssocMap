@@ -425,6 +425,7 @@ class TrainingService
                 'association_id',
                 $association->id
             )
+            ->where('member_status', 'active')
             ->whereNull('archived_at')
             ->pluck('id');
 

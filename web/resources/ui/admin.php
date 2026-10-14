@@ -109,8 +109,8 @@ $modules = [
     'audit-logs' => [
         'title' => 'Audit Log', 'singular' => 'Audit Event', 'icon' => 'receipt', 'readonly' => true,
         'description' => 'Review a read-only history of system activity.',
-        'columns' => ['created_at' => 'Date & Time', 'user' => 'User', 'role' => 'Role', 'action' => 'Action', 'module' => 'Module', 'entity' => 'Record / Entity', 'ip_address' => 'IP Address'],
-        'filters' => [$filter('user', 'User', 'select', []), $filter('role', 'Role', 'select', ['System Administrator', 'Field Officer', 'Association Member Account']), $filter('module', 'Module', 'select', ['Users', 'Areas', 'Associations', 'Members', 'Projects', 'Trainings', 'Monitoring', 'Program Activities', 'GIS Mapping', 'Reports']), $filter('action', 'Action', 'select', ['CREATE', 'UPDATE', 'ARCHIVE', 'APPROVE', 'REJECT', 'LOGIN', 'LOGOUT', 'INVITE USER', 'CHANGE EMAIL', 'PUBLISH GIS', 'UNPUBLISH GIS', 'EXPORT REPORT']), $filter('date_from', 'Date From', 'date'), $filter('date_to', 'Date To', 'date')],
+        'columns' => ['performed_at' => 'Date & Time', 'actor_user_id' => 'Actor', 'action_type' => 'Action', 'module' => 'Module', 'entity_type' => 'Entity Type', 'entity_id' => 'Record Identifier'],
+        'filters' => [$filter('action_type', 'Action', 'text'), $filter('module', 'Module', 'text'), $filter('entity_type', 'Entity Type', 'text'), $filter('actor_user_id', 'Actor Identifier', 'text'), $filter('date_from', 'Date From', 'date'), $filter('date_to', 'Date To', 'date')],
     ],
 ];
 foreach ($modules as $key => &$module) {

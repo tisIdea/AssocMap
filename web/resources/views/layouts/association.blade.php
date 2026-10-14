@@ -1,10 +1,11 @@
 <!DOCTYPE html>
+@php $workspaceHeading = request()->routeIs('association.gis.*') ? 'GIS Mapping' : (request()->routeIs('association.monitoring.*') ? 'Monitoring' : 'Member Applications'); @endphp
 <html lang="en">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="color-scheme" content="light">
-    <title>Member Applications · AssocMap</title>
+    <title>{{ $workspaceHeading }} · AssocMap</title>
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
 <body>
@@ -16,7 +17,9 @@
         </a>
         <div class="sidebar-section-label">WORKSPACE</div>
         <nav class="sidebar-nav" aria-label="Main navigation">
-            <a class="nav-link active" href="{{ route('association.member-applications.index') }}" aria-current="page"><x-icon name="users" /><span>Member Applications</span></a>
+            <a class="nav-link {{ request()->routeIs('association.gis.*') ? 'active' : '' }}" href="{{ route('association.gis.index') }}" @if(request()->routeIs('association.gis.*')) aria-current="page" @endif><x-icon name="map" /><span>GIS Mapping</span></a>
+            <a class="nav-link {{ request()->routeIs('association.member-applications.*') ? 'active' : '' }}" href="{{ route('association.member-applications.index') }}" @if(request()->routeIs('association.member-applications.*')) aria-current="page" @endif><x-icon name="users" /><span>Member Applications</span></a>
+            <a class="nav-link {{ request()->routeIs('association.monitoring.*') ? 'active' : '' }}" href="{{ route('association.monitoring.index') }}" @if(request()->routeIs('association.monitoring.*')) aria-current="page" @endif><x-icon name="map" /><span>Monitoring</span></a>
         </nav>
     </aside>
     <button type="button" class="sidebar-backdrop" data-aa-close hidden aria-label="Close navigation"></button>
@@ -24,7 +27,7 @@
         <header class="topbar">
             <div class="topbar-context">
                 <button type="button" class="icon-button mobile-menu" data-aa-open aria-label="Open navigation" aria-controls="association-sidebar" aria-expanded="false"><x-icon name="menu" /></button>
-                <span>Member Applications</span>
+                <span>{{ $workspaceHeading }}</span>
             </div>
             <div class="topbar-account">
                 <div class="account-copy"><strong>{{ $currentUser->display_name ?? 'Association Account' }}</strong><small>Association Account workspace</small></div>

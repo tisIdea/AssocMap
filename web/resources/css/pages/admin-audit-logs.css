@@ -1,0 +1,17 @@
+.audit-module .audit-filters { padding: 20px; }
+.audit-module .audit-filters legend { font-size: 15px; }
+.audit-module .audit-filters .field-help { margin-bottom: 14px; }
+.audit-module .audit-caption { padding: 12px 18px; text-align: left; color: var(--text-secondary); }
+.audit-module .audit-identifier { display: block; overflow-wrap: anywhere; font-size: 11px; margin-top: 5px; }
+.audit-module .audit-details, .audit-error-page .audit-details { padding: 22px; }
+.audit-module .audit-details h2 { margin-bottom: 16px; }
+.audit-module .audit-snapshots { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; margin-top: 20px; }
+.audit-module .audit-snapshot { margin: 0; padding: 14px; max-height: 32rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; background: #f8fafc; border: 1px solid var(--border-color); border-radius: var(--radius-sm); font-size: 12px; }
+.audit-module .audit-pagination { display: flex; gap: 8px; flex-wrap: wrap; }
+.audit-module .notice { margin: 16px 0; }
+.audit-module .table-footer { flex-wrap: wrap; }
+.audit-error-page { max-width: 720px; margin: 60px auto; padding: 20px; }
+@media (max-width: 720px) {
+    .audit-module .filter-grid, .audit-module .audit-snapshots { grid-template-columns: 1fr; }
+    .audit-module .filter-actions { flex-wrap: wrap; }
+}

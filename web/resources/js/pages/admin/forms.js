@@ -17,6 +17,14 @@ function syncForm(form) {
             .map(record => [record.barangay_id, { value: record.barangay_id, label: record.barangay }]));
         populate(barangay, Array.from(barangays.values()), 'Select barangay');
         populate(area, matching.filter(record => barangay.value && record.barangay_id === barangay.value), 'Select specific area');
+        const registration = $('[data-association-registration]', form);
+        if (registration) {
+            const editing = !$('[data-association-method]', form).disabled;
+            const toggle = $('[data-registration-toggle]', form);
+            registration.hidden = editing;
+            toggle.disabled = editing;
+            $('[data-registration-fields]', form).disabled = editing || !toggle.checked;
+        }
     }
     const role = $('[name=role]', form)?.value || 'Field Officer';
     if (form.dataset.module === 'users') {
@@ -219,6 +227,9 @@ function initRecordList(moduleKey) {
                 ? records.get(editorButton.closest('tr')) : null;
             if (record?.archived_at) return;
             form.reset();
+            $('[data-registration-toggle]', form).checked = false;
+            $$('[data-registration-fields] input, [data-registration-fields] textarea, [data-registration-fields] select', form)
+                .forEach(input => { input.value = input.name === 'registration[is_primary]' ? '0' : ''; });
             form.action = record ? record.update_url : form.dataset.createAction;
             $('[data-association-method]', form).disabled = !record;
             const recordId = $('[name=association_record_id]', form);
@@ -249,6 +260,26 @@ function initRecordList(moduleKey) {
                 element.hidden = !record[element.dataset.memberOptional];
             });
         } else $('[data-association-archived-date]', modal).hidden = !record.archived_at;
+        if (!memberList) {
+            const registrations = $('[data-association-registrations]', modal);
+            registrations.replaceChildren();
+            (record.registrations || []).forEach(registration => {
+                const card = document.createElement('div'); card.className = 'repeat-row';
+                const details = document.createElement('dl'); details.className = 'detail-grid';
+                [['Agency', registration.agency], ['Kind', registration.kind], ['Number', registration.number],
+                    ['Registration date', registration.date], ['Expiration date', registration.expiration],
+                    ['Primary', registration.primary ? 'Yes' : 'No']].forEach(([label, value]) => {
+                    const row = document.createElement('div'), term = document.createElement('dt'), detail = document.createElement('dd');
+                    term.textContent = label; detail.textContent = value || 'Not recorded';
+                    row.append(term, detail); details.append(row);
+                });
+                card.append(details); registrations.append(card);
+            });
+            if (!registrations.childElementCount) {
+                const message = document.createElement('p'); message.textContent = 'No registration records are recorded for this association.';
+                registrations.append(message);
+            }
+        }
         $$(`[data-${prefix}-detail]`, modal).forEach(element => {
             const key = element.dataset[`${prefix}Detail`];
             element.textContent = memberList && key === 'classifications'

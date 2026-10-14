@@ -82,6 +82,14 @@ class MonitoringRecord extends Model
         );
     }
 
+    public function visitReports(): HasMany
+    {
+        return $this->hasMany(MonitoringVisitReport::class, 'monitoring_record_id')
+            ->orderByDesc('monitoring_date')
+            ->orderByDesc('created_at')
+            ->orderByDesc('id');
+    }
+
     public function production(): HasMany
     {
         return $this->hasMany(

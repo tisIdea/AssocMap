@@ -45,7 +45,7 @@ class EnsureSupabaseAuthenticated
         $profile = UserProfile::with('role')
             ->find($supabaseUser['id']);
 
-        if (! $profile || ! $profile->is_active) {
+        if (! $profile || ! $profile->canAccessApplication($supabaseUser)) {
             $request->session()->invalidate();
             $request->session()->regenerateToken();
 

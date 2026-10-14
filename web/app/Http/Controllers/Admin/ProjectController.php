@@ -10,13 +10,14 @@ use App\Models\Commodity;
 use App\Models\FisheriesProjectCategory;
 use App\Models\Project;
 use App\Services\ProjectService;
+use App\Services\GisQueryService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 
 class ProjectController extends Controller
 {
-    public function index(Request $request): View
+    public function index(Request $request, GisQueryService $gis): View
     {
         $catalog = require resource_path('ui/admin.php');
 
@@ -119,10 +120,11 @@ class ProjectController extends Controller
 
         $module = $catalog['modules']['projects'];
         $module['status_filter'] = $statusFilter;
+        $locations = $gis->projectLocations($request->attributes->get('current_user'), $projects->modelKeys());
 
         $module['rows'] = $projects
             ->map(fn (Project $project) =>
-                $this->mapProjectRow($project)
+                $this->mapProjectRow($project) + ['gis_locations' => $locations[$project->id] ?? [], 'gis_locations_available' => $locations !== null]
             )
             ->values()
             ->all();
@@ -170,8 +172,18 @@ class ProjectController extends Controller
             $currentUser
         );
 
+        $navigation = [];
+        $section = $request->query('resource_section');
+        if ($request->boolean('from_monitoring') && in_array($section, ['products', 'materials'], true)) {
+            $navigation = ['from_monitoring' => 1, 'project_id' => $project->id, 'resource_section' => $section];
+            $record = $request->query('monitoring_record');
+            if (is_string($record) && \Illuminate\Support\Str::isUuid($record)) {
+                $navigation['monitoring_record'] = $record;
+            }
+        }
+
         return redirect()
-            ->route('admin.projects.index')
+            ->route('admin.projects.index', $navigation)
             ->with(
                 'success',
                 'Project updated successfully.'

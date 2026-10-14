@@ -10,6 +10,8 @@ use Illuminate\Validation\ValidationException;
 
 class MemberService
 {
+    public function __construct(private MemberExecutivePositionService $executivePositions) {}
+
     public function create(
         array $data,
         UserProfile $currentUser
@@ -42,7 +44,7 @@ class MemberService
             'member_status' => $data['member_status'],
         ]);
 
-        $member->save();
+        $this->executivePositions->save($member);
 
         return $member;
     }
@@ -87,7 +89,7 @@ class MemberService
             'member_status' => $data['member_status'],
         ]);
 
-        $member->save();
+        $this->executivePositions->save($member);
 
         return $member;
     }
@@ -125,7 +127,7 @@ class MemberService
         $member->archived_at = null;
         $member->archived_by = null;
 
-        $member->save();
+        $this->executivePositions->save($member);
 
         return $member;
     }

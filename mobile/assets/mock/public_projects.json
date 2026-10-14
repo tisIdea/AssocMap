@@ -1,0 +1,62 @@
+{
+  "notice": "SYNTHETIC fixtures only. Not actual BFAR, SAAD, association, or project records. demoVisibility is not a Laravel publication contract.",
+  "projects": [
+    {
+      "id": "demo-project-01",
+      "demoVisibility": "published",
+      "title": "Demo Coastal Grow-Out",
+      "associationName": "Demo Harbor Livelihood Association",
+      "category": "Aquaculture",
+      "areaLabel": "Sample Coastal Zone A",
+      "summary": "A fictional coastal livelihood project illustrating a public location and a single polygon boundary. No actual project operates at this sample location.",
+      "location": [124.97, 11.15],
+      "boundary": {
+        "type": "Polygon",
+        "coordinates": [
+          [[124.963, 11.144], [124.978, 11.144], [124.978, 11.156], [124.963, 11.156], [124.963, 11.144]],
+          [[124.966, 11.146], [124.968, 11.146], [124.968, 11.148], [124.966, 11.148], [124.966, 11.146]]
+        ]
+      }
+    },
+    {
+      "id": "demo-project-02",
+      "demoVisibility": "published",
+      "title": "Demo Community Gardens",
+      "associationName": "Demo Greenfields Livelihood Association",
+      "category": "Agriculture",
+      "areaLabel": "Sample Inland Zone B",
+      "summary": "A fictional community project showing two separate boundary areas through MultiPolygon geometry. Names, locations, and boundaries are synthetic.",
+      "location": [124.943, 11.17],
+      "boundary": {
+        "type": "MultiPolygon",
+        "coordinates": [
+          [[[124.939, 11.167], [124.947, 11.167], [124.947, 11.174], [124.939, 11.174], [124.939, 11.167]]],
+          [[[124.95, 11.176], [124.956, 11.176], [124.956, 11.182], [124.95, 11.182], [124.95, 11.176]]]
+        ]
+      }
+    },
+    {
+      "id": "demo-project-03",
+      "demoVisibility": "published",
+      "title": "Demo Shared Processing Hub",
+      "associationName": "Demo Riverside Livelihood Association",
+      "category": "Processing",
+      "areaLabel": "Sample Community Zone C",
+      "summary": "A fictional shared processing project. Only a marker is provided, demonstrating how a public record appears when no boundary is available.",
+      "location": [124.995, 11.132],
+      "boundary": null
+    },
+    {
+      "id": "demo-hidden-draft",
+      "demoVisibility": "draft",
+      "title": "Hidden synthetic draft",
+      "location": [124.98, 11.16]
+    },
+    {
+      "id": "demo-hidden-archived",
+      "demoVisibility": "archived",
+      "title": "Hidden synthetic archive",
+      "location": [124.98, 11.16]
+    }
+  ]
+}

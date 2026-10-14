@@ -15,7 +15,7 @@ class EnsureRole
     ): Response {
         $profile = $request->attributes->get('current_user');
 
-        if (! $profile || ! $profile->role) {
+        if (! $profile || ! $profile->canAccessApplication()) {
             abort(403, 'Unauthorized.');
         }
 

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\AssociationAccount;
 
+use App\Exceptions\MemberApplicationPhotoUnavailableException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreMemberApplicationRequest;
 use App\Models\AssociationAccount;
@@ -10,10 +11,12 @@ use App\Models\MemberApplication;
 use App\Models\MemberClassification;
 use App\Models\SexCategory;
 use App\Services\MemberApplicationService;
-use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
+use PDOException;
+use Symfony\Component\HttpFoundation\Response;
 
 class MemberApplicationController extends Controller
 {
@@ -114,13 +117,33 @@ class MemberApplicationController extends Controller
     public function store(
         StoreMemberApplicationRequest $request,
         MemberApplicationService $memberApplicationService
-    ): RedirectResponse {
+    ): Response {
         $currentUser = $request->attributes->get('current_user');
 
-        $memberApplicationService->submit(
-            $request->validated(),
-            $currentUser
-        );
+        try {
+            $memberApplicationService->submit(
+                $request->validated(),
+                $currentUser
+            );
+        } catch (MemberApplicationPhotoUnavailableException $exception) {
+            $message = $exception->getMessage();
+            if ($request->expectsJson()) return response()->json(['message' => $message], 503);
+            $request->flashOnly(['first_name', 'middle_name', 'last_name', 'suffix', 'birth_date', 'sex_id',
+                'contact_number', 'fishr_registration_number', 'position_id', 'position_other_text',
+                'classification_ids', 'endorsement_letter']);
+
+            return response()->view('association.member-applications.storage-unavailable', compact('message'), 503);
+        } catch (PDOException $exception) {
+            // Database exception messages can contain private evidence in SQL bindings.
+            Log::warning('Member application submission could not be confirmed.', [
+                'code' => 'application_submission_database_failure',
+            ]);
+
+            return redirect()->route('association.member-applications.index')->with(
+                'error',
+                'Submission could not be confirmed. Review your application list before submitting again. If it is unavailable, contact the administrator.'
+            );
+        }
 
         return back()
             ->with(

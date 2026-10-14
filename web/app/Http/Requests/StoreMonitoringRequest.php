@@ -2,6 +2,9 @@
 
 namespace App\Http\Requests;
 
+use App\Models\ProjectProduct;
+use App\Models\Quarter;
+use Illuminate\Support\Str;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
@@ -10,7 +13,8 @@ class StoreMonitoringRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return true;
+        return in_array($this->attributes->get('current_user')?->role?->code,
+            ['system_admin', 'field_officer'], true);
     }
 
     protected function prepareForValidation(): void
@@ -111,15 +115,17 @@ class StoreMonitoringRequest extends FormRequest
                     )
                     : null,
 
-            'production' => $production,
-
             'materials' => $materials,
-        ]);
+        ] + ($this->exists('production') ? ['production' => $production] : []));
     }
 
     public function rules(): array
     {
-        return [
+        $record = $this->route('monitoringRecord');
+        $projectId = $this->input('project_id');
+        $projectId = is_string($projectId) && Str::isUuid($projectId) ? $projectId : null;
+
+        $rules = [
             /*
             |--------------------------------------------------------------------------
             | MONITORING RECORD
@@ -186,6 +192,17 @@ class StoreMonitoringRequest extends FormRequest
             |--------------------------------------------------------------------------
             */
 
+            'conducted_by_user_id' => ['nullable', 'uuid'],
+            'conducted_by' => ['nullable', 'string', 'max:255'],
+            'production.*.monthly_details' => ['sometimes', 'nullable', 'array', 'max:3'],
+            'production.*.monthly_details.*' => ['array:id,month,activity_count,total_quantity,remarks'],
+            'production.*.monthly_details.*.id' => ['nullable', 'uuid'],
+            'production.*.monthly_details.*.month' => ['required', 'integer', 'between:1,12'],
+            'production.*.monthly_details.*.activity_count' => ['required', 'integer', 'min:1', 'max:2147483647'],
+            'production.*.monthly_details.*.total_quantity' => ['required', 'numeric', 'decimal:0,2', 'min:0', 'max:999999999999.99'],
+            'production.*.monthly_details.*.remarks' => ['nullable', 'string'],
+            'production.*.deleted_monthly_ids' => ['sometimes', 'array', 'max:3'],
+            'production.*.deleted_monthly_ids.*' => ['required', 'uuid', 'distinct'],
             'production' => [
                 'nullable',
                 'array',
@@ -194,31 +211,34 @@ class StoreMonitoringRequest extends FormRequest
             'production.*.id' => [
                 'nullable',
                 'uuid',
-                'exists:monitoring_production,id',
+                Rule::exists('monitoring_production', 'id')->where('monitoring_record_id', $record?->getKey()),
+                Rule::prohibitedIf($record === null),
             ],
 
             'production.*.project_product_id' => [
-                'required_with:production',
+                'nullable',
                 'uuid',
-                'exists:project_products,id',
+                Rule::exists('project_products', 'id')->where('project_id', $projectId),
             ],
 
             'production.*.target_output' => [
                 'required_with:production',
                 'numeric',
                 'min:0',
+                'max:999999999999.99',
             ],
 
             'production.*.actual_output' => [
                 'required_with:production',
                 'numeric',
                 'min:0',
+                'max:999999999999.99',
             ],
 
             'production.*.unit' => [
                 'required_with:production',
                 'string',
-                'max:100',
+                'max:50',
             ],
 
             'production.*.remarks' => [
@@ -261,6 +281,7 @@ class StoreMonitoringRequest extends FormRequest
                 'required_with:production.*.income',
                 'numeric',
                 'min:0',
+                'max:999999999999.99',
             ],
 
             'production.*.income.*.remarks' => [
@@ -282,19 +303,20 @@ class StoreMonitoringRequest extends FormRequest
             'materials.*.id' => [
                 'nullable',
                 'uuid',
-                'exists:monitoring_materials,id',
+                Rule::exists('monitoring_materials', 'id')->where('monitoring_record_id', $record?->getKey()),
+                Rule::prohibitedIf($record === null),
             ],
 
             'materials.*.project_material_id' => [
-                'required_with:materials',
+                'nullable',
                 'uuid',
-                'exists:project_materials,id',
+                Rule::exists('project_materials', 'id')->where('project_id', $projectId),
             ],
 
             'materials.*.condition' => [
                 'required_with:materials',
                 'string',
-                'max:100',
+                'max:50',
             ],
 
             'materials.*.scheduled_maintenance' => [
@@ -312,12 +334,93 @@ class StoreMonitoringRequest extends FormRequest
                 'string',
             ],
         ];
+
+        $rules['production.*'] = ['array'];
+        $rules['materials.*'] = ['array'];
+        $rules['production.*.income.*'] = ['array'];
+
+        foreach (['production' => 'new_product', 'materials' => 'new_material'] as $collection => $payload) {
+            $rows = $this->input($collection, []);
+            if (! is_array($rows)) {
+                continue;
+            }
+
+            foreach ($rows as $index => $row) {
+                if (! is_array($row)) {
+                    continue;
+                }
+
+                $prefix = "{$collection}.{$index}.{$payload}";
+                $new = array_key_exists($payload, $row) && $row[$payload] !== null;
+                $rules[$prefix] = $record !== null ? ['prohibited'] : ['nullable', $payload === 'new_product'
+                    ? 'array:product_name,product_type,default_unit,description,is_active'
+                    : 'array:item_name,quantity_planned,quantity_delivered,unit,unit_cost,delivery_status,delivery_date,remarks'];
+
+                if ($new && $record === null) {
+                    $fields = $payload === 'new_product' ? [
+                        'product_name' => ['required', 'string', 'max:255'],
+                        'product_type' => ['required', Rule::in(['raw', 'processed', 'other'])],
+                        'default_unit' => ['nullable', 'string', 'max:50'],
+                        'description' => ['nullable', 'string'],
+                        'is_active' => ['nullable', 'boolean'],
+                    ] : [
+                        'item_name' => ['required', 'string', 'max:255'],
+                        'quantity_planned' => ['required', 'numeric', 'min:0', 'max:999999999999.99'],
+                        'quantity_delivered' => ['nullable', 'numeric', 'min:0', 'max:999999999999.99'],
+                        'unit' => ['required', 'string', 'max:50'],
+                        'unit_cost' => ['nullable', 'numeric', 'min:0', 'max:999999999999.99'],
+                        'delivery_status' => ['required', Rule::in(['planned', 'not_delivered', 'partially_delivered', 'delivered'])],
+                        'delivery_date' => ['nullable', 'date'],
+                        'remarks' => ['nullable', 'string'],
+                    ];
+                    foreach ($fields as $field => $fieldRules) {
+                        $rules["{$prefix}.{$field}"] = $fieldRules;
+                    }
+                }
+
+                if ($collection === 'production' && is_array($row['income'] ?? null)) {
+                    $parentId = $row['id'] ?? null;
+                    $parentId = is_string($parentId) && Str::isUuid($parentId) ? $parentId : null;
+                    foreach ($row['income'] as $incomeIndex => $income) {
+                        $rules["production.{$index}.income.{$incomeIndex}.id"] = [
+                            'nullable', 'uuid', Rule::prohibitedIf($record === null || $parentId === null),
+                            Rule::exists('monitoring_income', 'id')->where('monitoring_production_id', $parentId),
+                        ];
+                    }
+                }
+            }
+        }
+
+        if ($record !== null) {
+            foreach (['project_id', 'year', 'quarter_id'] as $field) {
+                $rules[$field][] = Rule::in([$record->getAttribute($field)]);
+            }
+        }
+
+        return $rules;
+    }
+
+    public function messages(): array
+    {
+        return [
+            'project_id.in' => 'Project cannot be changed after the Monitoring record has been created.',
+            'year.in' => 'Year cannot be changed after the Monitoring record has been created.',
+            'quarter_id.in' => 'Quarter cannot be changed after the Monitoring record has been created.',
+            'production.*.unit.max' => 'Production unit must not exceed 50 characters.',
+            'materials.*.condition.max' => 'Material condition must not exceed 50 characters.',
+            'production.*.project_product_id.exists' => 'Select a product belonging to the selected project.',
+            'materials.*.project_material_id.exists' => 'Select a material belonging to the selected project.',
+            'production.*.new_product.prohibited' => 'New products can only be registered when adding Monitoring.',
+            'materials.*.new_material.prohibited' => 'New materials can only be registered when adding Monitoring.',
+        ];
     }
 
     public function after(): array
     {
         return [
             function (Validator $validator): void {
+                $this->validateResourceSelections($validator);
+
                 $this->validateIncomePeriods(
                     $validator
                 );
@@ -333,6 +436,55 @@ class StoreMonitoringRequest extends FormRequest
         ];
     }
 
+    private function validateResourceSelections(Validator $validator): void
+    {
+        $productNames = [];
+        foreach (['production' => ['project_product_id', 'new_product'], 'materials' => ['project_material_id', 'new_material']] as $collection => [$reference, $payload]) {
+            $rows = $this->input($collection, []);
+            if (! is_array($rows)) {
+                continue;
+            }
+
+            foreach ($rows as $index => $row) {
+                if (! is_array($row)) {
+                    continue;
+                }
+                $existing = isset($row[$reference]) && $row[$reference] !== '';
+                $new = array_key_exists($payload, $row) && $row[$payload] !== null;
+                if ($this->route('monitoringRecord') !== null && $new) {
+                    $validator->errors()->add("{$collection}.{$index}.{$payload}", 'Inline registration is available only when adding Monitoring.');
+                }
+                if ($existing === $new) {
+                    $validator->errors()->add("{$collection}.{$index}.{$reference}", 'Select an existing resource or register a new resource, using exactly one option.');
+                }
+
+                if ($payload !== 'new_product' || ! is_array($row[$payload] ?? null)) {
+                    continue;
+                }
+                $name = $row[$payload]['product_name'] ?? null;
+                if (! is_string($name)) {
+                    continue;
+                }
+                $name = trim($name);
+                $key = mb_strtolower($name);
+                $field = "production.{$index}.new_product.product_name";
+                if ($name === '') {
+                    $validator->errors()->add($field, 'Enter the new project product name.');
+                    continue;
+                }
+                if (isset($productNames[$key])) {
+                    $validator->errors()->add($field, 'The same new product cannot be registered twice in this submission.');
+                }
+                $productNames[$key] = true;
+                if (! $validator->errors()->has('project_id') && ProjectProduct::query()
+                    ->where('project_id', $this->input('project_id'))
+                    ->whereRaw('LOWER(product_name) = LOWER(?)', [$name])->exists()) {
+                    $validator->errors()->add($field, 'This product already exists under the project. Select the existing product instead.');
+                }
+            }
+        }
+    }
+
     private function validateIncomePeriods(
         Validator $validator
     ): void {
@@ -342,6 +494,9 @@ class StoreMonitoringRequest extends FormRequest
         if (! is_array($production)) {
             return;
         }
+
+        $quarterNumber = $validator->errors()->has('quarter_id') ? null : Quarter::query()
+            ->where('id', $this->input('quarter_id'))->value('quarter_number');
 
         foreach (
             $production as $productionIndex => $productionItem
@@ -358,6 +513,7 @@ class StoreMonitoringRequest extends FormRequest
             }
 
             $monthlyMonths = [];
+            $periodTypes = [];
             $quarterlyCount = 0;
 
             foreach (
@@ -372,6 +528,13 @@ class StoreMonitoringRequest extends FormRequest
 
                 $month =
                     $incomeItem['month'] ?? null;
+
+                if (in_array($periodType, ['monthly', 'quarterly'], true)) {
+                    $periodTypes[$periodType] = true;
+                    if (count($periodTypes) > 1) {
+                        $validator->errors()->add("production.{$productionIndex}.income.{$incomeIndex}.period_type", 'Use monthly or quarterly income for this production entry, not both.');
+                    }
+                }
 
                 if ($periodType === 'monthly') {
                     if (
@@ -388,6 +551,13 @@ class StoreMonitoringRequest extends FormRequest
 
                     $monthNumber =
                         (int) $month;
+
+                    if ($quarterNumber !== null) {
+                        $firstMonth = (((int) $quarterNumber - 1) * 3) + 1;
+                        if ($monthNumber < $firstMonth || $monthNumber > $firstMonth + 2) {
+                            $validator->errors()->add("production.{$productionIndex}.income.{$incomeIndex}.month", 'Select a month within the selected monitoring quarter and year.');
+                        }
+                    }
 
                     if (
                         in_array(

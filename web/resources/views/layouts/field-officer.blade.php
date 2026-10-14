@@ -1,10 +1,13 @@
 <!DOCTYPE html>
+@php
+    $workspaceHeading = request()->routeIs('field-officer.gis.*') ? 'GIS Mapping' : (request()->routeIs('field-officer.monitoring.*') ? 'Monitoring' : (request()->routeIs('field-officer.program-activities.*') ? 'Program Activities' : (request()->routeIs('field-officer.trainings.*') ? 'Trainings' : (request()->routeIs('field-officer.projects.*') ? 'Projects' : 'Member Applications'))));
+@endphp
 <html lang="en">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="color-scheme" content="light">
-    <title>{{ request()->routeIs('field-officer.program-activities.*') ? 'Program Activities' : (request()->routeIs('field-officer.trainings.*') ? 'Trainings' : (request()->routeIs('field-officer.projects.*') ? 'Projects' : 'Member Applications')) }} · AssocMap</title>
+    <title>{{ $workspaceHeading }} · AssocMap</title>
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
 <body>
@@ -16,10 +19,12 @@
         </a>
         <div class="sidebar-section-label">WORKSPACE</div>
         <nav class="sidebar-nav" aria-label="Main navigation">
+            <a class="nav-link {{ request()->routeIs('field-officer.gis.*') ? 'active' : '' }}" href="{{ route('field-officer.gis.index') }}" @if(request()->routeIs('field-officer.gis.*')) aria-current="page" @endif><x-icon name="map" /><span>GIS Mapping</span></a>
             <a class="nav-link {{ request()->routeIs('field-officer.program-activities.*') ? 'active' : '' }}" href="{{ route('field-officer.program-activities.index') }}" @if(request()->routeIs('field-officer.program-activities.*')) aria-current="page" @endif><x-icon name="briefcase" /><span>Program Activities</span></a>
             <a class="nav-link {{ request()->routeIs('field-officer.trainings.*') ? 'active' : '' }}" href="{{ route('field-officer.trainings.index') }}" @if(request()->routeIs('field-officer.trainings.*')) aria-current="page" @endif><x-icon name="users" /><span>Trainings</span></a>
             <a class="nav-link {{ request()->routeIs('field-officer.member-applications.*') ? 'active' : '' }}" href="{{ route('field-officer.member-applications.index') }}" @if(request()->routeIs('field-officer.member-applications.*')) aria-current="page" @endif><x-icon name="users" /><span>Member Applications</span></a>
             <a class="nav-link {{ request()->routeIs('field-officer.projects.*') ? 'active' : '' }}" href="{{ route('field-officer.projects.index') }}" @if(request()->routeIs('field-officer.projects.*')) aria-current="page" @endif><x-icon name="briefcase" /><span>Projects</span></a>
+            <a class="nav-link {{ request()->routeIs('field-officer.monitoring.*') ? 'active' : '' }}" href="{{ route('field-officer.monitoring.index') }}" @if(request()->routeIs('field-officer.monitoring.*')) aria-current="page" @endif><x-icon name="chart" /><span>Monitoring</span></a>
         </nav>
     </aside>
     <button type="button" class="sidebar-backdrop" data-fo-close hidden aria-label="Close navigation"></button>
@@ -27,7 +32,7 @@
         <header class="topbar">
             <div class="topbar-context">
                 <button type="button" class="icon-button mobile-menu" data-fo-open aria-label="Open navigation" aria-controls="field-officer-sidebar" aria-expanded="false"><x-icon name="menu" /></button>
-                <span>{{ request()->routeIs('field-officer.program-activities.*') ? 'Program Activities' : (request()->routeIs('field-officer.trainings.*') ? 'Trainings' : (request()->routeIs('field-officer.projects.*') ? 'Projects' : 'Member Applications')) }}</span>
+                <span>{{ $workspaceHeading }}</span>
             </div>
             <div class="topbar-account">
                 <div class="account-copy"><strong>{{ $currentUser->display_name ?? 'Field Officer' }}</strong><small>Field Officer workspace</small></div>

@@ -9,7 +9,8 @@
         @php
             $associationAreas = collect($catalog['options']['area_records']);
             $editingAssociation = collect($module['rows'])->firstWhere('id', old('association_record_id'));
-            $associationEditorErrors = $errors->hasAny(['name', 'acronym', 'area_id', 'saad_phase2_join_date', 'primary_field_officer_id', 'status']);
+            $associationEditorErrors = $errors->hasAny(['name', 'acronym', 'area_id', 'saad_phase2_join_date', 'primary_field_officer_id', 'status'])
+                || collect($errors->keys())->contains(fn ($key) => $key === 'registration' || str_starts_with($key, 'registration.'));
             $selectedAssociationArea = $associationAreas->firstWhere('value', old('area_id'));
             $associationMunicipalities = $associationAreas->filter(fn ($area) => filled($area['municipality_id']))->unique('municipality_id');
             $selectedMunicipality = $selectedAssociationArea['municipality_id'] ?? '';
@@ -56,6 +57,21 @@
                     <x-field :field="['name' => 'primary_field_officer_id', 'label' => 'Primary Field Officer', 'type' => 'select', 'choices' => $catalog['options']['field_officer_records'] ?? [], 'required' => true]" prefix="association-editor" :value="old('primary_field_officer_id')" />
                     <x-field :field="['name' => 'status', 'label' => 'Status', 'type' => 'select', 'choices' => [['value' => 'active', 'label' => 'Active'], ['value' => 'inactive', 'label' => 'Inactive']], 'required' => true]" prefix="association-editor" :value="old('status', 'active')" />
                 </div>
+                <div data-association-registration @if($editingAssociation) hidden @endif>
+                    <h3>Existing registration or accreditation</h3>
+                    <p>Optional: record details from an existing document. This does not approve an association or issue a registration.</p>
+                    <label><input type="checkbox" data-registration-toggle @checked(old('registration') !== null)> Record an existing registration</label>
+                    <fieldset class="form-grid" data-registration-fields @disabled($editingAssociation || old('registration') === null)>
+                        <legend>Registration details</legend>
+                        <div class="field"><label for="association-registration-agency">Registration agency *</label><select id="association-registration-agency" name="registration[agency_id]" required><option value="">Select agency</option>@foreach($catalog['options']['registration_agencies'] ?? [] as $agency)<option value="{{ $agency['value'] }}" @selected((string) old('registration.agency_id') === (string) $agency['value'])>{{ $agency['label'] }}</option>@endforeach</select></div>
+                        <div class="field"><label for="association-registration-number">Registration number *</label><input id="association-registration-number" name="registration[registration_number]" maxlength="150" value="{{ old('registration.registration_number') }}" required></div>
+                        <div class="field"><label for="association-registration-date">Registration date *</label><input id="association-registration-date" name="registration[registration_date]" type="date" value="{{ old('registration.registration_date') }}" required></div>
+                        <div class="field"><label for="association-registration-expiration">Expiration date (optional)</label><input id="association-registration-expiration" name="registration[expiration_date]" type="date" value="{{ old('registration.expiration_date') }}"></div>
+                        <div class="field"><label for="association-registration-primary">Primary registration</label><select id="association-registration-primary" name="registration[is_primary]"><option value="0">No</option><option value="1" @selected(old('registration.is_primary') == '1')>Yes</option></select><small>A primary registration must not post-date SAAD Phase II joining.</small></div>
+                        <div class="field"><label for="association-registration-remarks">Remarks (optional)</label><textarea id="association-registration-remarks" name="registration[remarks]" maxlength="4000" rows="2">{{ old('registration.remarks') }}</textarea></div>
+                    </fieldset>
+                    @if(empty($catalog['options']['registration_agencies']))<p class="notice">No active registration agencies are available. The association may be added without registration details.</p>@endif
+                </div>
                 <p class="notice notice-error" role="alert" data-association-unavailable hidden>The current area or Field Officer is no longer an available active choice. Select an active Specific Area and Field Officer before saving.</p>
                 @if($associationAreas->isEmpty())<p class="notice notice-error" role="alert">No active Specific Areas are available. Add an area before creating an association.</p>@endif
                 @if(empty($catalog['options']['field_officer_records']))<p class="notice notice-error" role="alert">No active Field Officers are available.</p>@endif
@@ -69,10 +85,12 @@
     <x-modal id="association-modal" title="Association Details">
         <dl class="detail-grid">
             @foreach($module['columns'] as $key => $label)
-                <div><dt>{{ $label }}</dt><dd data-association-detail="{{ $key }}">—</dd></div>
+                @if($key !== 'area')<div><dt>{{ $label }}</dt><dd data-association-detail="{{ $key }}">—</dd></div>@endif
             @endforeach
             <div><dt>Archived</dt><dd data-association-detail="archived">—</dd></div>
             <div data-association-archived-date hidden><dt>Archived At</dt><dd data-association-detail="archived_at">—</dd></div>
         </dl>
+        <h3>Registration and accreditation records</h3>
+        <div data-association-registrations></div>
     </x-modal>
 @endif

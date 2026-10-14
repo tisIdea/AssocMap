@@ -3,6 +3,18 @@
 @php
     $prefix = $projectRoutePrefix ?? 'admin.projects';
     $rows = collect($module['rows']);
+    $monitoringPrefix = $prefix === 'admin.projects' ? 'admin.monitoring' : 'field-officer.monitoring';
+    $resourceSection = request()->query('resource_section');
+    $fromMonitoring = request()->boolean('from_monitoring') && in_array($resourceSection, ['products', 'materials'], true);
+    $requestedProject = request()->query('project_id');
+    $navigationProject = $fromMonitoring && is_string($requestedProject)
+        ? $rows->first(fn ($row) => (string) $row['id'] === $requestedProject && !$row['archived_at'] && collect($catalog['options']['association_records'])->contains('value', $row['association_id']))
+        : null;
+    $returnRecord = request()->query('monitoring_record');
+    $returnRecord = is_string($returnRecord) && Illuminate\Support\Str::isUuid($returnRecord) ? $returnRecord : null;
+    $monitoringReturnUrl = $navigationProject && $returnRecord
+        ? route($monitoringPrefix.'.workspace', [$returnRecord, $resourceSection === 'products' ? 'production' : 'materials'])
+        : route($monitoringPrefix.'.index');
     $statuses = ['planned' => 'Planned', 'ongoing' => 'Ongoing', 'completed' => 'Completed', 'suspended' => 'Suspended', 'cancelled' => 'Cancelled'];
     $delivery = ['planned' => 'Planned', 'not_delivered' => 'Not Delivered', 'partially_delivered' => 'Partially Delivered', 'delivered' => 'Delivered'];
     $productTypes = ['raw' => 'Raw', 'processed' => 'Processed', 'other' => 'Other'];
@@ -23,6 +35,10 @@
     $columns = ['title' => 'Project Title', 'association' => 'Association', 'municipality' => 'Municipality', 'component' => 'SAAD Classification', 'fisheries_category' => 'Fisheries Category', 'commodity' => 'Commodity', 'program_year' => 'Program Year', 'implementation_start_date' => 'Implementation Date'];
 @endphp
 <header class="page-header"><div><div class="eyebrow">{{ $prefix === 'admin.projects' ? 'Program Operations' : 'Field Officer' }}</div><h1 tabindex="-1">Projects</h1><p>{{ $prefix === 'admin.projects' ? 'Manage association projects and material deliveries.' : 'Manage projects for your assigned associations.' }}</p></div></header>
+@if($fromMonitoring)
+    <p class="notice">Register resources in Project Management, save the project, then return to Monitoring to select them. <a class="button" href="{{ $monitoringReturnUrl }}" data-return-monitoring>Return to Monitoring</a></p>
+    @if(!$navigationProject)<p class="notice notice-error" role="alert">The requested project is unavailable or is outside your current project permissions.</p>@endif
+@endif
 @if($prefix === 'admin.projects')
     @if(session('success'))<div class="notice notice-success" role="status">{{ session('success') }}</div>@endif
     @if(session('error'))<div class="notice notice-error" role="alert">{{ session('error') }}</div>@endif
@@ -49,6 +65,7 @@
     <x-modal :id="'project-view-'.$row['id']" title="Project Details">
         <dl class="detail-grid">@foreach($columns + ['description' => 'Description', 'implementation_end_date' => 'Implementation End Date', 'status' => 'Status', 'remarks' => 'Remarks', 'archived_at' => 'Archived At'] as $key => $label)<div><dt>{{ $label }}</dt><dd>{{ filled($row[$key] ?? null) ? $row[$key] : '—' }}</dd></div>@endforeach</dl>
         @if($row['archived_at'])<p class="notice">This project is archived. Unarchive it before editing.</p>@endif
+        @include('projects.partials.location', ['row' => $row])
         <h3>Project Materials</h3>
         @forelse($row['materials'] as $material)<div class="repeat-row"><dl class="detail-grid">@foreach($materialFields as $key => $definition)<div><dt>{{ $definition[0] }}</dt><dd>{{ $key === 'delivery_status' ? ($delivery[$material[$key]] ?? $material[$key]) : (filled($material[$key] ?? null) ? $material[$key] : '—') }}</dd></div>@endforeach</dl></div>@empty<p>No materials recorded.</p>@endforelse
         <h3>Project Products</h3>
@@ -83,11 +100,11 @@
             <div class="field" id="project-new-commodity" hidden><label for="project-new-name">New Commodity Name *</label><input id="project-new-name" name="new_commodity_name" maxlength="255" value="{{ $restore ? old('new_commodity_name') : '' }}" disabled></div>
         </div>
         <h3>Implementation</h3><div class="form-grid">@foreach(array_slice($fields, 4) as $field)<x-field :field="$field" prefix="project" :value="$restore ? old($field['name']) : ($field['name'] === 'status' ? 'planned' : '')" />@endforeach</div>
-        <h3>Project Materials</h3><p>Removing a row requests deletion when saved. Materials with monitoring history cannot be removed.</p>
+        <h3 id="project-materials-heading" tabindex="-1">Project Materials</h3><p>Removing a row requests deletion when saved. Materials with monitoring history cannot be removed.</p>
         <input type="hidden" name="materials" value=""><div id="project-materials"></div><button type="button" class="button" id="project-add-material"><x-icon name="plus" />Add Material</button>
-        <h3>Project Products</h3><p>Removing a row requests deletion when saved. Products with monitoring history cannot be removed.</p>
+        <h3 id="project-products-heading" tabindex="-1">Project Products</h3><p>Removing a row requests deletion when saved. Products with monitoring history cannot be removed.</p>
         <input type="hidden" name="products" value=""><div id="project-products"></div><button type="button" class="button" id="project-add-product"><x-icon name="plus" />Add Product</button>
-        <div class="modal-actions"><button type="button" class="button" data-close-dialog>Cancel</button><button type="submit" class="button button-primary">Save Project</button></div>
+        <div class="modal-actions">@if($fromMonitoring)<a class="button" href="{{ $monitoringReturnUrl }}" data-return-monitoring>Return to Monitoring</a>@endif<button type="button" class="button" data-close-dialog>Cancel</button><button type="submit" class="button button-primary">Save Project</button></div>
     </form>
 </x-modal>
 <template id="project-material-template"><fieldset class="repeat-row"><legend>Material</legend><div class="repeat-row-heading"><strong data-material-heading></strong><button type="button" class="text-button text-danger" data-remove-material>Remove Material</button></div><div class="form-grid">
@@ -110,11 +127,15 @@
         </div>
     </fieldset>
 </template>
+<x-confirmation-modal :navigation="true" />
 <script type="module">
     const records = {{ Illuminate\Support\Js::from($rows->values()) }};
     const commodities = {{ Illuminate\Support\Js::from($catalog['options']['commodity_records']) }};
     const initial = {{ Illuminate\Support\Js::from($restore ? old() : []) }};
     const restore = {{ Illuminate\Support\Js::from($restore) }};
+    const navigationProject = {{ Illuminate\Support\Js::from($navigationProject['id'] ?? null) }};
+    const resourceSection = {{ Illuminate\Support\Js::from($fromMonitoring ? $resourceSection : null) }};
+    const returnRecord = {{ Illuminate\Support\Js::from($returnRecord) }};
     const createUrl = {{ Illuminate\Support\Js::from(route($prefix.'.store')) }};
     const form = document.getElementById('project-form');
     const category = form.elements.fisheries_category_id;
@@ -180,7 +201,14 @@
     }
     function populate(values, record = null) {
         form.reset();
-        form.action = record?.update_url ?? createUrl;
+        const action = new URL(record?.update_url ?? createUrl, window.location.origin);
+        if (record && navigationProject === String(record.id)) {
+            action.searchParams.set('from_monitoring', '1');
+            action.searchParams.set('project_id', record.id);
+            action.searchParams.set('resource_section', resourceSection);
+            if (returnRecord) action.searchParams.set('monitoring_record', returnRecord);
+        }
+        form.action = action.href;
         form.elements._method.disabled = !record;
         form.elements.project_record_id.value = record?.id ?? '';
         document.getElementById('project-editor-title').textContent = record ? 'Edit Project' : 'Add Project';
@@ -226,5 +254,25 @@
     });
     populate(initial, restore ? records.find(row => String(row.id) === String(initial.project_record_id) && !row.archived_at) : null);
     if (restore) document.getElementById('project-editor').showModal();
+    else if (navigationProject) {
+        const record = records.find(row => String(row.id) === navigationProject && !row.archived_at);
+        if (record) {
+            populate({...record, status: record.status_value}, record);
+            document.getElementById('project-editor').showModal();
+            const heading = document.getElementById('project-' + resourceSection + '-heading');
+            heading.scrollIntoView({block: 'start'});
+            heading.focus({preventScroll: true});
+        }
+    }
+    document.querySelectorAll('[data-return-monitoring]').forEach(link => link.addEventListener('click', event => {
+        if (!document.getElementById('project-editor').open) return;
+        event.preventDefault();
+        document.dispatchEvent(new CustomEvent('assocmap:confirm-navigation', {detail: {
+            link,
+            title: 'Return to Monitoring?',
+            message: 'Unsaved Project changes will be discarded. Save Project first to register your resources.',
+            label: 'Leave and Return to Monitoring',
+        }}));
+    }));
 </script>
 @endsection

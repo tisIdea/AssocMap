@@ -8,113 +8,133 @@ use App\Models\Member;
 use App\Models\MemberApplication;
 use App\Models\UserProfile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Support\Carbon;
-use App\Models\MemberClassification;
+use Throwable;
 
 class MemberApplicationService
 {
-public function submit(
-    array $data,
-    UserProfile $currentUser
-): MemberApplication {
-    $associationAccount = AssociationAccount::query()
-        ->where('user_id', $currentUser->id)
-        ->where('is_active', true)
-        ->first();
+    public function __construct(
+        private MemberExecutivePositionService $executivePositions,
+        private MemberApplicationPhotoService $photos
+    ) {}
 
-    if (! $associationAccount) {
-        throw ValidationException::withMessages([
-            'account' =>
-                'No active Association Account is linked to this user.',
-        ]);
+    public function submit(array $data, UserProfile $currentUser): MemberApplication
+    {
+        $this->ensureAssociationAccountCanSubmit($currentUser);
+        $associationAccount = AssociationAccount::query()
+            ->where('user_id', $currentUser->id)
+            ->where('is_active', true)
+            ->first();
+
+        if (! $associationAccount) {
+            throw ValidationException::withMessages([
+                'account' => 'No active Association Account is linked to this user.',
+            ]);
+        }
+
+        $this->validatePositionOtherText($data);
+        $this->ensureFishRAvailable($data['fishr_registration_number'] ?? null);
+
+        $applicationId = (string) Str::uuid();
+        $photoPath = $this->photos->store($data['applicant_photo'], $applicationId);
+        $callbackCompleted = false;
+
+        try {
+            return DB::transaction(function () use ($data, $currentUser, $associationAccount,
+                $applicationId, $photoPath, &$callbackCompleted) {
+                $actor = UserProfile::query()->with('role')->whereKey($currentUser->id)->lockForUpdate()->first();
+                $this->ensureAssociationAccountCanSubmit($actor);
+                $link = AssociationAccount::query()
+                    ->whereKey($associationAccount->id)
+                    ->where('user_id', $actor->id)
+                    ->where('association_id', $associationAccount->association_id)
+                    ->where('is_active', true)
+                    ->lockForUpdate()
+                    ->first();
+
+                if (! $link) {
+                    throw ValidationException::withMessages([
+                        'account' => 'Your active association link changed. Refresh the page before submitting again.',
+                    ]);
+                }
+
+                $application = new MemberApplication([
+                    'association_id' => $link->association_id,
+                    'submitted_by_user_id' => $actor->id,
+                    'first_name' => $data['first_name'],
+                    'middle_name' => $data['middle_name'] ?? null,
+                    'last_name' => $data['last_name'],
+                    'suffix' => $data['suffix'] ?? null,
+                    'birth_date' => $data['birth_date'],
+                    'sex_id' => $data['sex_id'],
+                    'contact_number' => $data['contact_number'] ?? null,
+                    'fishr_registration_number' => $data['fishr_registration_number'] ?? null,
+                    'position_id' => $data['position_id'],
+                    'position_other_text' => $this->resolvePositionOtherText($data),
+                    'endorsement_letter' => $data['endorsement_letter'],
+                    'applicant_photo_path' => $photoPath,
+                    'status' => 'pending',
+                    'reviewed_by' => null,
+                    'reviewed_at' => null,
+                    'rejection_reason' => null,
+                ]);
+                $application->id = $applicationId;
+                $application->save();
+                $application->classifications()->sync($data['classification_ids'] ?? []);
+                $callbackCompleted = true;
+
+                return $application;
+            });
+        } catch (Throwable $exception) {
+            // Commit failures may have an unknown outcome; retain evidence for reconciliation.
+            if (! $callbackCompleted && DB::transactionLevel() === 0) {
+                $this->photos->discard($photoPath, $applicationId);
+            } else {
+                Log::warning('Member application submission requires reconciliation.', [
+                    'application_id' => $applicationId,
+                    'code' => 'submission_outcome_uncertain',
+                ]);
+            }
+
+            throw $exception;
+        }
     }
 
-    $this->validatePositionOtherText($data);
-
-    $this->ensureFishRAvailable(
-        $data['fishr_registration_number'] ?? null
-    );
-
-    return DB::transaction(function () use (
-        $data,
-        $currentUser,
-        $associationAccount
-    ) {
-        $application = new MemberApplication([
-            'association_id' =>
-                $associationAccount->association_id,
-
-            'submitted_by_user_id' =>
-                $currentUser->id,
-
-            'first_name' =>
-                $data['first_name'],
-
-            'middle_name' =>
-                $data['middle_name'] ?? null,
-
-            'last_name' =>
-                $data['last_name'],
-
-            'suffix' =>
-                $data['suffix'] ?? null,
-
-            'birth_date' =>
-                $data['birth_date'],
-
-            'sex_id' =>
-                $data['sex_id'],
-
-            'contact_number' =>
-                $data['contact_number'] ?? null,
-
-            'fishr_registration_number' =>
-                $data['fishr_registration_number'] ?? null,
-
-            'position_id' =>
-                $data['position_id'],
-
-            'position_other_text' =>
-                $this->resolvePositionOtherText($data),
-
-            'status' => 'pending',
-
-            'reviewed_by' => null,
-            'reviewed_at' => null,
-            'rejection_reason' => null,
-        ]);
-
-        $application->save();
-
-        $application->classifications()->sync(
-            $data['classification_ids'] ?? []
-        );
-
-        return $application;
-    });
-}
+    private function ensureAssociationAccountCanSubmit(?UserProfile $actor): void
+    {
+        if (! $actor || ! $actor->canAccessApplication() || $actor->role?->code !== 'association_account') {
+            abort(403, 'Only an active authorized Association Account may submit applications.');
+        }
+    }
 
     public function approve(
         MemberApplication $application,
         UserProfile $fieldOfficer
     ): Member {
-        if ($application->status !== 'pending') {
-            throw ValidationException::withMessages([
-                'application' =>
-                    'Only pending applications can be approved.',
-            ]);
-        }
-
-        $this->ensureFieldOfficerCanReview(
-            $application,
-            $fieldOfficer
-        );
-
         return DB::transaction(function () use (
             $application,
             $fieldOfficer
         ) {
+            $application = MemberApplication::query()
+                ->whereKey($application->getKey())
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            $this->ensureFieldOfficerCanReview(
+                $application,
+                $fieldOfficer
+            );
+
+            if ($application->status !== 'pending') {
+                throw ValidationException::withMessages([
+                    'application' =>
+                        'This application has already been reviewed. Refresh the list before making another decision.',
+                ])->status(409);
+            }
+
             $member = new Member([
                 'association_id' =>
                     $application->association_id,
@@ -157,7 +177,7 @@ public function submit(
                 'member_status' => 'active',
             ]);
 
-            $member->save();
+            $this->executivePositions->save($member);
             $member->classifications()->sync(
                 $application
                     ->classifications()
@@ -179,35 +199,46 @@ public function submit(
         UserProfile $fieldOfficer,
         string $reason
     ): MemberApplication {
-        if ($application->status !== 'pending') {
-            throw ValidationException::withMessages([
-                'application' =>
-                    'Only pending applications can be rejected.',
-            ]);
-        }
-
-        $this->ensureFieldOfficerCanReview(
+        return DB::transaction(function () use (
             $application,
-            $fieldOfficer
-        );
+            $fieldOfficer,
+            $reason
+        ) {
+            $application = MemberApplication::query()
+                ->whereKey($application->getKey())
+                ->lockForUpdate()
+                ->firstOrFail();
 
-        $reason = trim($reason);
+            $this->ensureFieldOfficerCanReview(
+                $application,
+                $fieldOfficer
+            );
 
-        if ($reason === '') {
-            throw ValidationException::withMessages([
-                'rejection_reason' =>
-                    'A rejection reason is required.',
-            ]);
-        }
+            if ($application->status !== 'pending') {
+                throw ValidationException::withMessages([
+                    'application' =>
+                        'This application has already been reviewed. Refresh the list before making another decision.',
+                ])->status(409);
+            }
 
-        $application->status = 'rejected';
-        $application->reviewed_by = $fieldOfficer->id;
-        $application->reviewed_at = Carbon::now();
-        $application->rejection_reason = $reason;
+            $reason = trim($reason);
 
-        $application->save();
+            if ($reason === '') {
+                throw ValidationException::withMessages([
+                    'rejection_reason' =>
+                        'A rejection reason is required.',
+                ]);
+            }
 
-        return $application;
+            $application->status = 'rejected';
+            $application->reviewed_by = $fieldOfficer->id;
+            $application->reviewed_at = Carbon::now();
+            $application->rejection_reason = $reason;
+
+            $application->save();
+
+            return $application;
+        });
     }
 
     private function ensureFieldOfficerCanReview(

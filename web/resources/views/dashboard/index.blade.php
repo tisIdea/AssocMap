@@ -106,6 +106,9 @@
                     Open Monitoring
                 </a>
 
+            @elseif($module['key'] === 'audit-logs')
+                <header class="page-header"><div><h1 tabindex="-1">Audit Logs</h1><p>Review recorded application events and permitted change details.</p></div></header>
+                <a class="button button-primary" href="{{ route('admin.audit-logs.index') }}">Open Audit Logs</a>
             @else
                 @include(
                     'admin.'.$module['key'].'.index',
@@ -122,6 +125,7 @@
                     'trainings',
                     'program-activities',
                     'monitoring',
+                    'audit-logs',
                 ],
                 true
             )
@@ -161,6 +165,7 @@
                     'trainings',
                     'program-activities',
                     'monitoring',
+                    'audit-logs',
                 ],
                 true
             )

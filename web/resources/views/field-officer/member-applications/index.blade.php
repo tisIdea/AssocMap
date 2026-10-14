@@ -64,6 +64,7 @@
                         @push('dialogs')
                             <x-modal :id="'application-'.$application->id" title="Application Details">
                                 <dl class="detail-grid">@foreach($details as $label => $value)<div><dt>{{ $label }}</dt><dd>{{ filled($value) ? $value : '—' }}</dd></div>@endforeach</dl>
+                                @include('partials.member-application-evidence', ['photoRoute' => 'field-officer.member-applications.photo'])
                                 <div class="modal-actions"><button type="button" class="button" data-close-dialog>Close</button></div>
                             </x-modal>
                             @if($application->status === 'pending')

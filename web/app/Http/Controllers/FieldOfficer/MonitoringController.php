@@ -4,13 +4,16 @@ namespace App\Http\Controllers\FieldOfficer;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreMonitoringRequest;
+use App\Http\Requests\StoreMonitoringVisitReportRequest;
 use App\Models\Association;
 use App\Models\MonitoringRecord;
+use App\Models\MonitoringVisitReport;
 use App\Models\Project;
 use App\Models\Quarter;
 use App\Models\UserProfile;
 use App\Services\MonitoringService;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 use Illuminate\Support\Carbon;
@@ -37,7 +40,7 @@ class MonitoringController extends Controller
 
         $projects = Project::query()
             ->with([
-                'association',
+                'association.primaryFieldOfficer.role',
                 'products',
                 'materials',
             ])
@@ -59,7 +62,9 @@ class MonitoringController extends Controller
                 'monitoredBy',
                 'production.projectProduct',
                 'production.income',
+                'production.monthlyDetails',
                 'materials.projectMaterial',
+                'visitReports.conductedByUser:id,display_name',
             ])
             ->whereIn(
                 'project_id',
@@ -151,6 +156,60 @@ class MonitoringController extends Controller
             );
     }
 
+    public function indexVisitReports(
+        Request $request,
+        MonitoringRecord $monitoringRecord,
+        MonitoringService $service
+    ): JsonResponse {
+        return response()->json([
+            'data' => $service->getVisitReports($monitoringRecord, $request->attributes->get('current_user')),
+        ]);
+    }
+
+    public function storeVisitReport(
+        StoreMonitoringVisitReportRequest $request,
+        MonitoringRecord $monitoringRecord,
+        MonitoringService $service
+    ): JsonResponse|RedirectResponse {
+        $service->createVisitReport(
+            $monitoringRecord,
+            $request->validated(),
+            $request->attributes->get('current_user')
+        );
+
+        if ($request->expectsJson()) {
+            return response()->json([
+                'data' => $service->getVisitReports($monitoringRecord, $request->attributes->get('current_user')),
+            ], 201);
+        }
+
+        return redirect()->route('field-officer.monitoring.index')
+            ->with('success', 'Monitoring visit report created successfully.');
+    }
+
+    public function updateVisitReport(
+        StoreMonitoringVisitReportRequest $request,
+        MonitoringRecord $monitoringRecord,
+        MonitoringVisitReport $visitReport,
+        MonitoringService $service
+    ): JsonResponse|RedirectResponse {
+        $service->updateVisitReport(
+            $monitoringRecord,
+            $visitReport->id,
+            $request->validated(),
+            $request->attributes->get('current_user')
+        );
+
+        if ($request->expectsJson()) {
+            return response()->json([
+                'data' => $service->getVisitReports($monitoringRecord, $request->attributes->get('current_user')),
+            ]);
+        }
+
+        return redirect()->route('field-officer.monitoring.index')
+            ->with('success', 'Monitoring visit report updated successfully.');
+    }
+
     private function mapMonitoringRecord(
         MonitoringRecord $record
     ): array {
@@ -163,6 +222,9 @@ class MonitoringController extends Controller
 
             'project_title' =>
                 $record->project?->title,
+
+            'association_id' =>
+                $record->project?->association_id,
 
             'association_name' =>
                 $record->project
@@ -178,6 +240,9 @@ class MonitoringController extends Controller
             'quarter_name' =>
                 $record->quarter?->name,
 
+            'quarter_number' =>
+                $record->quarter?->quarter_number,
+
             'monitoring_date' =>
                 $record->monitoring_date
                     ? Carbon::parse(
@@ -187,9 +252,7 @@ class MonitoringController extends Controller
 
             'monitored_by' =>
                 $record->monitoredBy
-                    ?->name
-                ?? $record->monitoredBy
-                    ?->email
+                    ?->display_name
                 ?? 'Unknown',
 
             'site_validated' =>
@@ -206,6 +269,9 @@ class MonitoringController extends Controller
 
             'overall_remarks' =>
                 $record->overall_remarks,
+
+            'visit_reports' =>
+                $record->visitReports->toArray(),
 
             'production' =>
                 $record->production
@@ -237,6 +303,8 @@ class MonitoringController extends Controller
                             'remarks' =>
                                 $production->remarks,
 
+                            'monthly_details' => $production->monthlyDetails->toArray(),
+                            'monthly_subtotal' => $production->monthlySubtotal(),
                             'income' =>
                                 $production->income
                                     ->map(
@@ -317,6 +385,12 @@ class MonitoringController extends Controller
 
             'association_name' =>
                 $project->association?->name,
+
+            'assigned_officer' => $project->association?->primaryFieldOfficer?->is_active
+                && $project->association?->primaryFieldOfficer?->role?->is_active
+                && $project->association?->primaryFieldOfficer?->role?->code === 'field_officer'
+                ? ['id' => $project->association->primaryFieldOfficer->id, 'name' => $project->association->primaryFieldOfficer->display_name]
+                : null,
 
             'program_year' =>
                 $project->program_year,

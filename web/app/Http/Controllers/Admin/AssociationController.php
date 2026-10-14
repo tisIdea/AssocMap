@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreAssociationRequest;
 use App\Models\Area;
 use App\Models\Association;
+use App\Models\RegistrationAgency;
 use App\Models\UserProfile;
 use App\Services\AssociationService;
 use Illuminate\Http\RedirectResponse;
@@ -24,6 +25,7 @@ class AssociationController extends Controller
             ->with([
                 'area.barangay.municipality',
                 'primaryFieldOfficer',
+                'registrations.agency',
             ])
             ->when($statusFilter === 'archived',
                 fn ($query) => $query->whereNotNull('archived_at'),
@@ -71,6 +73,11 @@ class AssociationController extends Controller
             ->values()
             ->all();
 
+        $catalog['options']['registration_agencies'] = RegistrationAgency::where('is_active', true)
+            ->orderBy('name')->get()->map(fn ($agency) => [
+                'value' => $agency->id, 'label' => $agency->name.' ('.$agency->registration_kind.')',
+            ])->values()->all();
+
         $module = $catalog['modules']['associations'];
         $module['status_filter'] = $statusFilter;
 
@@ -80,6 +87,14 @@ class AssociationController extends Controller
                     'id' => $association->id,
 
                     'name' => $association->name,
+                    'registrations' => $association->registrations->sortByDesc('is_primary')->map(fn ($registration) => [
+                        'agency' => $registration->agency?->name,
+                        'kind' => $registration->agency?->registration_kind,
+                        'number' => $registration->registration_number,
+                        'date' => $registration->registration_date?->format('Y-m-d'),
+                        'expiration' => $registration->expiration_date?->format('Y-m-d'),
+                        'primary' => $registration->is_primary,
+                    ])->values()->all(),
                     'acronym' => $association->acronym ?? '—',
 
                     'area' => $association->area?->address ?? '—',

@@ -2,6 +2,27 @@ import { $, $$ } from './helpers.js';
 
 export function initDialogs() {
     const openers = new WeakMap();
+    const navigationDialog = $('#navigation-confirmation-modal');
+    let navigationUrl = null;
+    if (navigationDialog) {
+        navigationDialog.setAttribute('aria-describedby', 'navigation-confirmation-message');
+        document.addEventListener('assocmap:confirm-navigation', event => {
+            const { link, title, message, label } = event.detail;
+            const url = new URL(link.href, window.location.origin);
+            if (url.origin !== window.location.origin || navigationDialog.open) return;
+            navigationUrl = url.href;
+            $('#navigation-confirmation-modal-title').textContent = title;
+            $('[data-navigation-message]', navigationDialog).textContent = message;
+            $('[data-navigation-confirm]', navigationDialog).textContent = label;
+            openers.set(navigationDialog, link);
+            navigationDialog.showModal();
+            $('[data-navigation-cancel]', navigationDialog).focus();
+        });
+        $('[data-navigation-confirm]', navigationDialog).addEventListener('click', () => {
+            if (navigationUrl) window.location.assign(navigationUrl);
+        });
+        navigationDialog.addEventListener('close', () => { navigationUrl = null; });
+    }
     document.addEventListener('click', event => {
         const button = event.target.closest('button, a');
         if (!button) return;

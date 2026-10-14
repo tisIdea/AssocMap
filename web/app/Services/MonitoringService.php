@@ -7,16 +7,79 @@ use App\Models\MonitoringIncome;
 use App\Models\MonitoringMaterial;
 use App\Models\MonitoringProduction;
 use App\Models\MonitoringRecord;
+use App\Models\MonitoringVisitReport;
 use App\Models\Project;
 use App\Models\ProjectMaterial;
 use App\Models\ProjectProduct;
 use App\Models\Quarter;
 use App\Models\UserProfile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Database\QueryException;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Validation\ValidationException;
+use Illuminate\Support\Facades\Validator;
+use Carbon\CarbonImmutable;
 
 class MonitoringService
 {
+    public function updateOverview(MonitoringRecord $record, array $data, UserProfile $currentUser): void
+    {
+        DB::transaction(function () use ($record, $data, $currentUser) {
+            $record = MonitoringRecord::whereKey($record->id)->lockForUpdate()->firstOrFail();
+            $this->ensureUserCanManageMonitoring($record, $currentUser);
+            $project = $this->resolveProjectForUser($record->project_id, $currentUser);
+            $userId = $data['monitored_by'] ?? null;
+            if ($userId !== $record->monitored_by) {
+                $user = UserProfile::with('role')->whereKey($userId)->sharedLock()->first();
+                $association = $project->association()->sharedLock()->first();
+                $eligible = $user?->is_active && $user->role?->is_active
+                    && ($user->role->code === 'system_admin'
+                        || ($user->role->code === 'field_officer' && $association?->primary_field_officer_id === $userId));
+                if (! $eligible) {
+                    throw ValidationException::withMessages(['monitored_by' => 'Select an active administrator or this association\'s assigned active Field Officer.']);
+                }
+            }
+            $record->update(['monitored_by' => $userId, 'site_validated' => (bool) $data['site_validated']]);
+        }, 3);
+    }
+
+    public function updateSection(MonitoringRecord $record, string $section, array $data, UserProfile $currentUser): void
+    {
+        DB::transaction(function () use ($record, $section, $data, $currentUser) {
+            $record = MonitoringRecord::whereKey($record->id)->lockForUpdate()->firstOrFail();
+            $this->ensureUserCanManageMonitoring($record, $currentUser);
+            $project = $this->resolveProjectForUser($record->project_id, $currentUser);
+            if ($section === 'production') {
+                $rows = $data['production'] ?? [];
+                foreach ($rows as &$row) {
+                    unset($row['income']);
+                }
+                unset($row);
+                $this->syncProduction($record, $project, $rows);
+            } elseif ($section === 'materials') {
+                $this->syncMaterials($record, $project, $data['materials'] ?? []);
+            } elseif ($section === 'income') {
+                $submitted = [];
+                foreach ($data['production'] ?? [] as $index => $row) {
+                    $id = $row['id'] ?? null;
+                    if (! $id || in_array($id, $submitted, true)) {
+                        throw ValidationException::withMessages(["production.{$index}.id" => 'Income requires a unique saved Production record. Save Production first.']);
+                    }
+                    $production = $record->production()->whereKey($id)->lockForUpdate()->first();
+                    if (! $production || $production->project_product_id !== $row['project_product_id']) {
+                        throw ValidationException::withMessages(["production.{$index}.id" => 'This Production record is unavailable.']);
+                    }
+                    $submitted[] = $id;
+                    $this->syncIncome($production, $row['income'] ?? []);
+                }
+            } else {
+                abort(404);
+            }
+            $record->update(['updated_by' => $currentUser->id]
+                + ($section === 'production' ? ['project_status' => $data['project_status']] : []));
+        }, 3);
+    }
+
     public function create(
         array $data,
         UserProfile $currentUser
@@ -36,11 +99,20 @@ class MonitoringService
             (int) $data['quarter_id']
         );
 
-        return DB::transaction(function () use (
+        try {
+            return DB::transaction(function () use (
             $data,
             $currentUser,
             $project
         ) {
+            $project = Project::query()->where('id', $project->id)->lockForUpdate()->first();
+            if (! $project) {
+                throw ValidationException::withMessages(['project_id' => 'The selected project is unavailable.']);
+            }
+            $project = $this->resolveProjectForUser($project->id, $currentUser);
+            $this->ensureMonitoringPeriodIsUnique($project, (int) $data['year'], (int) $data['quarter_id']);
+            $data = $this->resolveCreationResources($project, $data, $currentUser);
+
             $record = MonitoringRecord::create([
                 'project_id' =>
                     $project->id,
@@ -82,6 +154,8 @@ class MonitoringService
                     $currentUser->id,
             ]);
 
+            $this->createVisitReport($record, $data, $currentUser);
+
             $this->createProduction(
                 $record,
                 $project,
@@ -97,7 +171,233 @@ class MonitoringService
             return $this->loadMonitoringRecord(
                 $record
             );
-        });
+            }, 3);
+        } catch (QueryException $exception) {
+            if (($exception->errorInfo[0] ?? null) === '23505' && str_contains($exception->getMessage(), 'uq_project_product_name_ci')) {
+                throw ValidationException::withMessages(['production' => 'A proposed product name now exists under this project. Select the existing product instead.']);
+            }
+            throw $exception;
+        }
+    }
+
+    public function createVisitReport(
+        MonitoringRecord $record,
+        array $data,
+        UserProfile $currentUser
+    ): MonitoringVisitReport {
+        return DB::transaction(function () use ($record, $data, $currentUser) {
+            $record = MonitoringRecord::query()->whereKey($record->id)->lockForUpdate()->firstOrFail();
+            $this->ensureUserCanManageMonitoring($record, $currentUser);
+            $this->resolveProjectForUser($record->project_id, $currentUser);
+
+            $this->validateVisitDetails($record, $data);
+            return $record->visitReports()->create($this->visitReportPayload($data) + [
+                'monitored_by' => $currentUser->id,
+                'created_by' => $currentUser->id,
+                'updated_by' => $currentUser->id,
+                'is_legacy_import' => false,
+            ]);
+        }, 3);
+    }
+
+    public function updateVisitReport(
+        MonitoringRecord $record,
+        string $reportId,
+        array $data,
+        UserProfile $currentUser
+    ): MonitoringVisitReport {
+        return DB::transaction(function () use ($record, $reportId, $data, $currentUser) {
+            $record = MonitoringRecord::query()->whereKey($record->id)->lockForUpdate()->firstOrFail();
+            $this->ensureUserCanManageMonitoring($record, $currentUser);
+            $this->resolveProjectForUser($record->project_id, $currentUser);
+
+            $report = $record->visitReports()->whereKey($reportId)->lockForUpdate()->firstOrFail();
+            $this->validateVisitDetails($record, $data, $report);
+            $report->update($this->visitReportPayload($data, true) + [
+                'updated_by' => $currentUser->id,
+            ]);
+
+            return $report->refresh();
+        }, 3);
+    }
+
+    public function getVisitReports(MonitoringRecord $record, UserProfile $currentUser): Collection
+    {
+        $this->ensureUserCanManageMonitoring($record, $currentUser);
+        if ($currentUser->role?->code === 'field_officer') {
+            $this->resolveProjectForUser($record->project_id, $currentUser);
+        }
+
+        return $record->visitReports()->with('conductedByUser:id,display_name')->get();
+    }
+
+    private function visitReportPayload(array $data, bool $partial = false): array
+    {
+        $payload = [
+            'monitoring_date' => $data['monitoring_date'],
+            'site_validated' => (bool) $data['site_validated'],
+        ];
+
+        foreach (['issues_encountered', 'actions_taken', 'overall_remarks', 'conducted_by_user_id', 'conducted_by'] as $field) {
+            if (! $partial || array_key_exists($field, $data)) {
+                $value = $data[$field] ?? null;
+                $payload[$field] = is_string($value) ? (trim($value) === '' ? null : trim($value)) : $value;
+            }
+        }
+
+        return $payload;
+    }
+
+    private function validateVisitDetails(MonitoringRecord $record, array $data, ?MonitoringVisitReport $report = null): void
+    {
+        Validator::make($data, [
+            'monitoring_date' => ['required', 'date'],
+            'site_validated' => ['required', 'boolean'],
+            'conducted_by_user_id' => ['nullable', 'uuid'],
+            'conducted_by' => ['nullable', 'string', 'max:255'],
+        ])->validate();
+
+        $date = CarbonImmutable::parse($data['monitoring_date'])->format('Y-m-d');
+        if (! $report || $date !== $report->monitoring_date->format('Y-m-d')) {
+            $quarter = $this->resolveQuarter((int) $record->quarter_id);
+            $start = CarbonImmutable::create((int) $record->year, (($quarter->quarter_number - 1) * 3) + 1, 1)->startOfDay();
+            if ($date < $start->format('Y-m-d') || $date > $start->addMonths(3)->subDay()->format('Y-m-d')) {
+                throw ValidationException::withMessages(['monitoring_date' => 'Select a visit date within the Monitoring year and quarter.']);
+            }
+        }
+
+        $userId = array_key_exists('conducted_by_user_id', $data) ? ($data['conducted_by_user_id'] ?: null) : $report?->conducted_by_user_id;
+        $name = array_key_exists('conducted_by', $data) ? trim($data['conducted_by'] ?? '') : $report?->conducted_by;
+        if ($name === '') $name = null;
+        if ($report && $userId === $report->conducted_by_user_id && $name === $report->conducted_by) {
+            return;
+        }
+        if (($userId === null) === ($name === null)) {
+            throw ValidationException::withMessages(['conducted_by' => 'Select the assigned Field Officer or enter another person’s name, using exactly one option.']);
+        }
+        if ($userId !== null) {
+            $association = $record->project->association()->sharedLock()->first();
+            $officer = UserProfile::with('role')->whereKey($userId)->sharedLock()->first();
+            if (! $association || $association->primary_field_officer_id !== $userId || ! $officer?->is_active || ! $officer->role?->is_active || $officer->role?->code !== 'field_officer') {
+                throw ValidationException::withMessages(['conducted_by_user_id' => 'Select the association’s assigned active Field Officer.']);
+            }
+        }
+    }
+
+    private function syncMonthlyDetails(MonitoringProduction $production, array $data, string $prefix): void
+    {
+        if (! array_key_exists('monthly_details', $data) && ! array_key_exists('deleted_monthly_ids', $data)) {
+            return;
+        }
+        $validator = Validator::make($data, [
+            'monthly_details' => ['nullable', 'array', 'max:3'],
+            'monthly_details.*' => ['array:id,month,activity_count,total_quantity,remarks'],
+            'monthly_details.*.id' => ['nullable', 'uuid', 'distinct'],
+            'monthly_details.*.month' => ['required', 'integer', 'between:1,12', 'distinct'],
+            'monthly_details.*.activity_count' => ['required', 'integer', 'min:1', 'max:2147483647'],
+            'monthly_details.*.total_quantity' => ['required', 'numeric', 'decimal:0,2', 'min:0', 'max:999999999999.99'],
+            'monthly_details.*.remarks' => ['nullable', 'string'],
+            'deleted_monthly_ids' => ['array', 'max:3'],
+            'deleted_monthly_ids.*' => ['required', 'uuid', 'distinct'],
+        ]);
+        if ($validator->fails()) {
+            $errors = [];
+            foreach ($validator->errors()->messages() as $field => $messages) $errors[$prefix.'.'.$field] = $messages;
+            throw ValidationException::withMessages($errors);
+        }
+        $saved = $production->monthlyDetails()->lockForUpdate()->get()->keyBy('id');
+        $deleted = $data['deleted_monthly_ids'] ?? [];
+        foreach ($deleted as $id) {
+            if (! $saved->has($id)) {
+                throw ValidationException::withMessages([$prefix.'.deleted_monthly_ids' => 'A monthly record selected for removal does not belong to this Production record.']);
+            }
+        }
+        $quarter = $production->monitoringRecord->quarter()->sharedLock()->firstOrFail();
+        $firstMonth = (($quarter->quarter_number - 1) * 3) + 1;
+        $months = $saved->except($deleted)->mapWithKeys(fn ($row) => [$row->id => $row->month])->all();
+        foreach ($data['monthly_details'] ?? [] as $index => $detail) {
+            $id = $detail['id'] ?? null;
+            if ($id && (! $saved->has($id) || in_array($id, $deleted, true))) {
+                throw ValidationException::withMessages([$prefix.".monthly_details.{$index}.id" => 'This monthly record is unavailable or belongs to another Production record.']);
+            }
+            $month = (int) $detail['month'];
+            if ($month < $firstMonth || $month > $firstMonth + 2) {
+                throw ValidationException::withMessages([$prefix.".monthly_details.{$index}.month" => 'Select a Production month within the Monitoring quarter.']);
+            }
+            if (in_array($month, array_diff_key($months, $id ? [$id => true] : []), true)) {
+                throw ValidationException::withMessages([$prefix.".monthly_details.{$index}.month" => 'Only one monthly entry is allowed per Production month.']);
+            }
+            $months[$id ?? 'new-'.$index] = $month;
+        }
+        foreach ($deleted as $id) {
+            $saved[$id]->delete();
+        }
+        foreach ($data['monthly_details'] ?? [] as $detail) {
+            $payload = array_intersect_key($detail, array_flip(['month', 'activity_count', 'total_quantity', 'remarks']));
+            if (array_key_exists('remarks', $payload)) {
+                $payload['remarks'] = trim($payload['remarks'] ?? '');
+                if ($payload['remarks'] === '') $payload['remarks'] = null;
+            }
+            if (! empty($detail['id'])) $saved[$detail['id']]->update($payload);
+            else $production->monthlyDetails()->create($payload);
+        }
+    }
+
+    private function resolveCreationResources(Project $project, array $data, UserProfile $currentUser): array
+    {
+        $projectService = app(ProjectService::class);
+        $names = [];
+        $productIds = [];
+        foreach ($data['production'] ?? [] as $index => $production) {
+            if (! empty($production['id'])) {
+                throw ValidationException::withMessages(["production.{$index}.id" => 'Saved production IDs cannot be used when adding Monitoring.']);
+            }
+            $new = isset($production['new_product']);
+            $existing = ! empty($production['project_product_id']);
+            if ($new === $existing) {
+                throw ValidationException::withMessages(["production.{$index}.project_product_id" => 'Select an existing product or register a new product, using exactly one option.']);
+            }
+            if ($new) {
+                $name = $production['new_product']['product_name'] ?? '';
+                $key = mb_strtolower(trim($name));
+                if (isset($names[$key])) {
+                    throw ValidationException::withMessages(["production.{$index}.new_product.product_name" => 'The same new product cannot be registered twice in this submission.']);
+                }
+                $names[$key] = true;
+                $product = $projectService->registerProduct($project, $production['new_product'], $currentUser, "production.{$index}.new_product");
+            } else {
+                $product = $this->resolveProjectProduct($project, $production['project_product_id']);
+            }
+            if (isset($productIds[$product->id])) {
+                throw ValidationException::withMessages(["production.{$index}.project_product_id" => 'Select each project product only once.']);
+            }
+            $productIds[$product->id] = true;
+            $data['production'][$index]['project_product_id'] = $product->id;
+            unset($data['production'][$index]['new_product']);
+        }
+
+        $materialIds = [];
+        foreach ($data['materials'] ?? [] as $index => $material) {
+            if (! empty($material['id'])) {
+                throw ValidationException::withMessages(["materials.{$index}.id" => 'Saved observation IDs cannot be used when adding Monitoring.']);
+            }
+            $new = isset($material['new_material']);
+            $existing = ! empty($material['project_material_id']);
+            if ($new === $existing) {
+                throw ValidationException::withMessages(["materials.{$index}.project_material_id" => 'Select an existing material or register a new material, using exactly one option.']);
+            }
+            $resource = $new
+                ? $projectService->registerMaterial($project, $material['new_material'], $currentUser, "materials.{$index}.new_material")
+                : $this->resolveProjectMaterial($project, $material['project_material_id']);
+            if (isset($materialIds[$resource->id])) {
+                throw ValidationException::withMessages(["materials.{$index}.project_material_id" => 'Select each project material only once.']);
+            }
+            $materialIds[$resource->id] = true;
+            $data['materials'][$index]['project_material_id'] = $resource->id;
+            unset($data['materials'][$index]['new_material']);
+        }
+
+        return $data;
     }
 
     public function update(
@@ -105,13 +405,32 @@ class MonitoringService
         array $data,
         UserProfile $currentUser
     ): MonitoringRecord {
+        foreach (['production' => 'new_product', 'materials' => 'new_material'] as $collection => $payload) {
+            foreach ($data[$collection] ?? [] as $row) {
+                if (isset($row[$payload])) {
+                    throw ValidationException::withMessages([$collection => 'Inline registration is available only when adding Monitoring.']);
+                }
+            }
+        }
+
         $this->ensureUserCanManageMonitoring(
             $record,
             $currentUser
         );
 
+        $identityErrors = [];
+        foreach (['project_id' => 'Project', 'year' => 'Year', 'quarter_id' => 'Quarter'] as $field => $label) {
+            if (! array_key_exists($field, $data) || ! is_scalar($data[$field])
+                || (string) $data[$field] !== (string) $record->getAttribute($field)) {
+                $identityErrors[$field] = "{$label} cannot be changed after the Monitoring record has been created.";
+            }
+        }
+        if ($identityErrors) {
+            throw ValidationException::withMessages($identityErrors);
+        }
+
         $project = $this->resolveProjectForUser(
-            $data['project_id'],
+            $record->project_id,
             $currentUser
         );
 
@@ -132,39 +451,12 @@ class MonitoringService
             $currentUser,
             $project
         ) {
+            $record = MonitoringRecord::whereKey($record->id)->lockForUpdate()->firstOrFail();
+            $this->ensureUserCanManageMonitoring($record, $currentUser);
+            $this->resolveProjectForUser($record->project_id, $currentUser);
             $record->update([
-                'project_id' =>
-                    $project->id,
-
-                'year' =>
-                    $data['year'],
-
-                'quarter_id' =>
-                    $data['quarter_id'],
-
-                'monitoring_date' =>
-                    $data['monitoring_date'],
-
-                'monitored_by' =>
-                    $currentUser->id,
-
-                'site_validated' =>
-                    (bool) $data['site_validated'],
-
                 'project_status' =>
                     $data['project_status'],
-
-                'issues_encountered' =>
-                    $data['issues_encountered']
-                        ?? null,
-
-                'actions_taken' =>
-                    $data['actions_taken']
-                        ?? null,
-
-                'overall_remarks' =>
-                    $data['overall_remarks']
-                        ?? null,
 
                 'updated_by' =>
                     $currentUser->id,
@@ -199,7 +491,7 @@ class MonitoringService
             return $this->loadMonitoringRecord(
                 $record
             );
-        });
+        }, 3);
     }
 
     /*
@@ -393,7 +685,7 @@ class MonitoringService
         array $productionRows
     ): void {
         foreach (
-            $productionRows as $production
+            $productionRows as $index => $production
         ) {
             $product =
                 $this->resolveProjectProduct(
@@ -429,6 +721,7 @@ class MonitoringService
                         ] ?? null,
                 ]);
 
+            $this->syncMonthlyDetails($productionRecord, $production, "production.{$index}");
             $this->createIncome(
                 $productionRecord,
                 $production[
@@ -446,7 +739,7 @@ class MonitoringService
         $submittedIds = [];
 
         foreach (
-            $productionRows as $production
+            $productionRows as $index => $production
         ) {
             $product =
                 $this->resolveProjectProduct(
@@ -484,6 +777,7 @@ class MonitoringService
                             'monitoring_record_id',
                             $record->id
                         )
+                        ->lockForUpdate()
                         ->first();
 
                 if (! $existing) {
@@ -493,10 +787,24 @@ class MonitoringService
                     ]);
                 }
 
-                $existing->update([
-                    'project_product_id' =>
-                        $product->id,
+                $unit = trim($production['unit']);
+                $identityChanges = [];
+                if ((string) $existing->project_product_id !== (string) $product->id) {
+                    $identityChanges['project_product_id'] = $product->id;
+                }
+                if ((string) $existing->unit !== $unit) {
+                    $identityChanges['unit'] = $unit;
+                }
+                if ($identityChanges && $existing->monthlyDetails()->exists()) {
+                    $errors = [];
+                    foreach (array_keys($identityChanges) as $field) {
+                        $errors["production.{$index}.{$field}"] = 'Product and unit cannot change while saved monthly Production details exist. Save explicit monthly removals first.';
+                    }
+                    throw ValidationException::withMessages($errors);
+                }
 
+                // Save permitted identity changes before monthly details protect the parent.
+                $existing->update($identityChanges + [
                     'target_output' =>
                         $production[
                             'target_output'
@@ -507,16 +815,12 @@ class MonitoringService
                             'actual_output'
                         ],
 
-                    'unit' =>
-                        trim(
-                            $production['unit']
-                        ),
-
                     'remarks' =>
                         $production[
                             'remarks'
                         ] ?? null,
                 ]);
+                $this->syncMonthlyDetails($existing, $production, "production.{$index}");
 
                 if (
                     array_key_exists(
@@ -564,6 +868,7 @@ class MonitoringService
                         ] ?? null,
                 ]);
 
+            $this->syncMonthlyDetails($created, $production, "production.{$index}");
             $this->createIncome(
                 $created,
                 $production[
@@ -592,6 +897,9 @@ class MonitoringService
                 ->get();
 
         foreach ($removed as $production) {
+            if ($production->monthlyDetails()->exists()) {
+                throw ValidationException::withMessages(['production' => 'Remove this product’s saved monthly details explicitly and save before removing its quarterly Production entry.']);
+            }
             /*
              * monitoring_income uses ON DELETE CASCADE,
              * so its income rows are removed together.
@@ -988,7 +1296,9 @@ class MonitoringService
             'updatedBy',
             'production.projectProduct',
             'production.income',
+            'production.monthlyDetails',
             'materials.projectMaterial',
+            'visitReports.conductedByUser:id,display_name',
         ]);
     }
 }

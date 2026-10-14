@@ -1,3 +1,6 @@
+@php
+    $catalog = $catalog ?? require resource_path('ui/admin.php');
+@endphp
 <!DOCTYPE html>
 <html lang="en">
 <head>

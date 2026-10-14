@@ -33,8 +33,8 @@ export function initAdminNavigation() {
                 if (active) link.setAttribute('aria-current', 'page');
                 else link.removeAttribute('aria-current');
             });
-            $('.program-toggle').classList.add('active');
-            setDisclosure($('.program-toggle'), true);
+            $('.program-toggle').classList.toggle('active', module !== 'gis' && module !== 'audit-logs');
+            setDisclosure($('.program-toggle'), module !== 'gis' && module !== 'audit-logs');
             $('#current-context').textContent = title;
             document.title = `${title} · AssocMap`;
             setDrawer(false, false);

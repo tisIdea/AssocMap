@@ -51,25 +51,25 @@ class StoreMemberRequest extends FormRequest
             'first_name' => [
                 'required',
                 'string',
-                'max:150',
+                'max:120',
             ],
 
             'middle_name' => [
                 'nullable',
                 'string',
-                'max:150',
+                'max:120',
             ],
 
             'last_name' => [
                 'required',
                 'string',
-                'max:150',
+                'max:120',
             ],
 
             'suffix' => [
                 'nullable',
                 'string',
-                'max:50',
+                'max:20',
             ],
 
             'birth_date' => [
@@ -87,7 +87,7 @@ class StoreMemberRequest extends FormRequest
             'contact_number' => [
                 'nullable',
                 'string',
-                'max:50',
+                'max:30',
             ],
 
             'fishr_registration_number' => [
@@ -109,7 +109,7 @@ class StoreMemberRequest extends FormRequest
             'position_other_text' => [
                 'nullable',
                 'string',
-                'max:150',
+                'max:100',
             ],
 
             'date_registered' => [

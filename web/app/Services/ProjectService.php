@@ -11,6 +11,7 @@ use App\Models\ProjectProduct;
 use App\Models\SaadActivity;
 use App\Models\UserProfile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
 
 class ProjectService
@@ -231,6 +232,74 @@ class ProjectService
                 'products',
             ]);
         });
+    }
+
+    public function authorizeResourceRegistration(Project $project, UserProfile $currentUser): void
+    {
+        if (DB::transactionLevel() === 0) {
+            throw new \LogicException('Resource registration requires the caller transaction.');
+        }
+        $lockedProject = Project::query()->where('id', $project->id)->lockForUpdate()->first();
+        if (! $lockedProject || $lockedProject->association_id !== $project->association_id) {
+            throw ValidationException::withMessages(['project_id' => 'The project has changed. Reload its available resources before saving.']);
+        }
+        $project = $lockedProject;
+        if ($project->archived_at !== null) {
+            throw ValidationException::withMessages(['project_id' => 'Resources cannot be registered under an archived project.']);
+        }
+        $this->ensureUserCanManageProject($project, $currentUser);
+        Association::query()->where('id', $project->association_id)->lockForUpdate()->first();
+        $this->resolveAssociationForUser($project->association_id, $currentUser);
+    }
+
+    public function registerProduct(Project $project, array $data, UserProfile $currentUser, string $errorPrefix): ProjectProduct
+    {
+        $this->authorizeResourceRegistration($project, $currentUser);
+        $data['product_name'] = is_string($data['product_name'] ?? null) ? trim($data['product_name']) : ($data['product_name'] ?? null);
+        $rules = [
+            'product_name' => ['required', 'string', 'max:255'],
+            'product_type' => ['required', 'in:raw,processed,other'],
+            'default_unit' => ['nullable', 'string', 'max:50'],
+            'description' => ['nullable', 'string'],
+            'is_active' => ['nullable', 'boolean'],
+        ];
+        $this->validateResourcePayload($data, $rules, $errorPrefix);
+        if ($project->products()->whereRaw('LOWER(product_name) = LOWER(?)', [$data['product_name']])->exists()) {
+            throw ValidationException::withMessages([$errorPrefix.'.product_name' => 'This product already exists under the project. Select the existing product instead.']);
+        }
+
+        return $project->products()->create($this->productPayload($data));
+    }
+
+    public function registerMaterial(Project $project, array $data, UserProfile $currentUser, string $errorPrefix): ProjectMaterial
+    {
+        $this->authorizeResourceRegistration($project, $currentUser);
+        $data['item_name'] = is_string($data['item_name'] ?? null) ? trim($data['item_name']) : ($data['item_name'] ?? null);
+        $data['unit'] = is_string($data['unit'] ?? null) ? trim($data['unit']) : ($data['unit'] ?? null);
+        $this->validateResourcePayload($data, [
+            'item_name' => ['required', 'string', 'max:255'],
+            'quantity_planned' => ['required', 'numeric', 'min:0', 'max:999999999999.99'],
+            'quantity_delivered' => ['nullable', 'numeric', 'min:0', 'max:999999999999.99'],
+            'unit' => ['required', 'string', 'max:50'],
+            'unit_cost' => ['nullable', 'numeric', 'min:0', 'max:999999999999.99'],
+            'delivery_status' => ['required', 'in:planned,not_delivered,partially_delivered,delivered'],
+            'delivery_date' => ['nullable', 'date'],
+            'remarks' => ['nullable', 'string'],
+        ], $errorPrefix);
+
+        return $project->materials()->create($this->materialPayload($data));
+    }
+
+    private function validateResourcePayload(array $data, array $rules, string $errorPrefix): void
+    {
+        $validator = Validator::make($data, $rules);
+        if ($validator->fails()) {
+            $errors = [];
+            foreach ($validator->errors()->messages() as $field => $messages) {
+                $errors[$errorPrefix.'.'.$field] = $messages;
+            }
+            throw ValidationException::withMessages($errors);
+        }
     }
 
     public function archive(

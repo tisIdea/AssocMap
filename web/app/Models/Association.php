@@ -3,11 +3,15 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Association extends Model
 {
+    use HasUuids;
+
     protected $table = 'associations';
 
     protected $keyType = 'string';
@@ -59,5 +63,10 @@ class Association extends Model
     public function associationAccount(): HasOne
     {
         return $this->hasOne(AssociationAccount::class, 'association_id');
+    }
+
+    public function registrations(): HasMany
+    {
+        return $this->hasMany(AssociationRegistration::class, 'association_id');
     }
 }

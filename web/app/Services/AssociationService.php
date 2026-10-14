@@ -3,8 +3,12 @@
 namespace App\Services;
 
 use App\Models\Association;
+use App\Models\AssociationRegistration;
+use App\Models\RegistrationAgency;
 use App\Models\UserProfile;
 use Illuminate\Support\Carbon;
+use Illuminate\Database\QueryException;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class AssociationService
@@ -20,21 +24,22 @@ class AssociationService
             $data['primary_field_officer_id']
         );
 
-        $association = new Association([
-            'name' => $name,
-            'acronym' => $data['acronym'] ?? null,
-            'area_id' => $data['area_id'],
-            'saad_phase2_join_date' => $data['saad_phase2_join_date'],
-            'primary_field_officer_id' => $data['primary_field_officer_id'],
-            'status' => $data['status'],
-        ]);
+        return DB::transaction(function () use ($data, $currentUser, $name) {
+            $association = new Association([
+                'name' => $name,
+                'acronym' => $data['acronym'] ?? null,
+                'area_id' => $data['area_id'],
+                'saad_phase2_join_date' => $data['saad_phase2_join_date'],
+                'primary_field_officer_id' => $data['primary_field_officer_id'],
+                'status' => $data['status'],
+            ]);
+            $association->created_by = $currentUser->id;
+            $association->updated_by = $currentUser->id;
+            $association->save();
+            if (! empty($data['registration'])) $this->recordRegistration($association, $data['registration']);
 
-        $association->created_by = $currentUser->id;
-        $association->updated_by = $currentUser->id;
-
-        $association->save();
-
-        return $association;
+            return $association;
+        });
     }
 
     public function update(
@@ -54,6 +59,11 @@ class AssociationService
         $this->ensureValidFieldOfficer(
             $data['primary_field_officer_id']
         );
+
+        $primary = $association->registrations()->where('is_primary', true)->first();
+        if ($primary) $this->ensurePrimaryRegistrationDate([
+            'is_primary' => true, 'registration_date' => $primary->registration_date->format('Y-m-d'),
+        ], $data['saad_phase2_join_date']);
 
         $association->fill([
             'name' => $name,
@@ -123,6 +133,38 @@ class AssociationService
             throw ValidationException::withMessages([
                 'name' => 'An association with this name already exists.',
             ]);
+        }
+    }
+
+    private function ensurePrimaryRegistrationDate(array $registration, string $joinDate): void
+    {
+        if (! empty($registration['is_primary']) && Carbon::parse($registration['registration_date'])->startOfDay()->gt(Carbon::parse($joinDate)->startOfDay())) {
+            throw ValidationException::withMessages(['saad_phase2_join_date' => 'SAAD Phase II join date cannot precede the primary registration date.']);
+        }
+    }
+
+    private function recordRegistration(Association $association, array $registration): void
+    {
+        $agency = RegistrationAgency::whereKey($registration['agency_id'])->sharedLock()->first();
+        if (! $agency?->is_active) {
+            throw ValidationException::withMessages(['registration.agency_id' => 'Select an active registration agency.']);
+        }
+        $this->ensurePrimaryRegistrationDate($registration, $association->saad_phase2_join_date->format('Y-m-d'));
+        $record = new AssociationRegistration;
+        $record->forceFill([
+            'association_id' => $association->id, 'agency_id' => $agency->id,
+            'registration_number' => trim($registration['registration_number']),
+            'registration_date' => $registration['registration_date'],
+            'expiration_date' => $registration['expiration_date'] ?? null,
+            'is_primary' => $registration['is_primary'] ?? false, 'remarks' => $registration['remarks'] ?? null,
+        ]);
+        try {
+            $record->save();
+        } catch (QueryException $exception) {
+            if (($exception->errorInfo[0] ?? null) === '23505') {
+                throw ValidationException::withMessages(['registration.registration_number' => 'This registration is already recorded. No association was created.']);
+            }
+            throw $exception;
         }
     }
 

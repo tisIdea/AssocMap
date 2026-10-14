@@ -35,9 +35,23 @@ return [
         ],
     ],
 
+    'supabase_storage' => [
+        // Keep local transport until existing photo references are reconciled before cutover.
+        'photo_transport' => env('MEMBER_APPLICATION_PHOTO_STORAGE', 'local'),
+        'url' => env('SUPABASE_STORAGE_URL'),
+        'secret_key' => env('SUPABASE_STORAGE_SECRET_KEY'),
+        'key_type' => env('SUPABASE_STORAGE_KEY_TYPE', 'secret'),
+        'bucket' => 'member-application-photos',
+        'connect_timeout' => env('SUPABASE_STORAGE_CONNECT_TIMEOUT', 5),
+        'timeout' => env('SUPABASE_STORAGE_TIMEOUT', 20),
+    ],
+
     'supabase' => [
     'url' => env('SUPABASE_URL'),
     'publishable_key' => env('SUPABASE_PUBLISHABLE_KEY'),
+    'service_role_key' => env('SUPABASE_SERVICE_ROLE_KEY'),
+    'invitation_redirect_url' => env('SUPABASE_INVITATION_REDIRECT_URL'),
+    'activation_cache_store' => env('SUPABASE_ACTIVATION_CACHE_STORE', 'database'),
 ],
 
 ];

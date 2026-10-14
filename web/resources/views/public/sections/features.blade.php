@@ -8,7 +8,7 @@
         <div class="public-feature-grid">
             <x-public-feature-card title="Association Monitoring" icon="building">Organize association and member information to support program monitoring.</x-public-feature-card>
             <x-public-feature-card title="Program Operations" icon="briefcase">Bring projects, trainings, monitoring records, and other program activities together.</x-public-feature-card>
-            <x-public-feature-card title="GIS Mapping" icon="map">Provide geographic context for association locations and livelihood projects.</x-public-feature-card>
+            <x-public-feature-card title="GIS Mapping" icon="map">Provide geographic context for livelihood project locations and boundaries.</x-public-feature-card>
             <x-public-feature-card title="Reports & Analytics" icon="chart">Support reviewing program information through summaries and reports.</x-public-feature-card>
         </div>
     </div>

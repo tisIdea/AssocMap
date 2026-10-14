@@ -21,6 +21,7 @@ class MeController extends Controller
                     'name' => $profile->role->name,
                 ],
                 'is_active' => $profile->is_active,
+                'mobile' => $request->attributes->get('mobile_context'),
             ],
         ]);
     }

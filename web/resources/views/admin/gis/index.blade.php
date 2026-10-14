@@ -1,19 +1,2 @@
-@include('partials.page-header', ['title' => 'GIS Mapping', 'description' => 'Explore association locations and livelihood project coverage.', 'eyebrow' => 'Spatial overview'])
-<section class="card gis-card">
-    <div class="table-toolbar"><div class="toolbar-title"><x-icon name="map" /><strong>Program locations</strong><span class="badge badge-neutral">Static preview</span></div><button type="button" class="button" data-disclosure="gis-filters" aria-expanded="false" aria-controls="gis-filters"><x-icon name="filter" />Filters</button><button type="button" class="button" disabled><x-icon name="layers" />Layers</button></div>
-    <x-filter-panel id="gis-filters" :fields="[
-        ['name' => 'municipality', 'label' => 'Municipality', 'type' => 'select', 'choices' => $catalog['options']['municipality']],
-        ['name' => 'association', 'label' => 'Association', 'type' => 'select', 'choices' => $catalog['options']['association']],
-        ['name' => 'project', 'label' => 'Project', 'type' => 'select', 'choices' => $catalog['options']['project']],
-        ['name' => 'fisheries_category', 'label' => 'Fisheries Category', 'type' => 'select', 'choices' => $catalog['options']['fisheries_category']],
-        ['name' => 'program_year', 'label' => 'Program Year', 'type' => 'select', 'choices' => $catalog['options']['program_year']],
-        ['name' => 'published_status', 'label' => 'Published Status', 'type' => 'select', 'choices' => ['Published', 'Unpublished']],
-    ]" />
-    <div class="map-layout"><div class="map-canvas" role="region" aria-label="Illustrative map placeholder, not actual geographic data">
-        <svg class="map-illustration" viewBox="0 0 900 650" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><defs><pattern id="map-grid" width="55" height="55" patternUnits="userSpaceOnUse"><path d="M55 0H0V55" fill="none" stroke="#cbdce0" stroke-width="1" /></pattern></defs><rect width="900" height="650" fill="#dfedf1" /><rect width="900" height="650" fill="url(#map-grid)" /><path d="M0 0H555L585 85 520 150 547 210 485 270 520 335 448 410 410 520 330 580 295 650H0Z" fill="#f0f2e8" stroke="#bbd2cd" stroke-width="3" /><path d="M0 135 215 160 333 104 550 110 M0 350 220 320 370 375 488 320 M135 0 175 220 245 430 170 650 M350 0 320 220 360 470 310 650" stroke="#fff" stroke-width="15" fill="none" /><path d="M0 135 215 160 333 104 550 110 M0 350 220 320 370 375 488 320 M135 0 175 220 245 430 170 650 M350 0 320 220 360 470 310 650" stroke="#d8dacc" stroke-width="2" fill="none" /><path d="m665 435 55-38 52 26 20 71-48 49-77-25z" fill="#f0f2e8" stroke="#bbd2cd" stroke-width="3" /></svg>
-        <span class="map-water-label">Illustrative coastal area</span>
-        <div class="map-preview-label"><x-icon name="info" />Illustration only · not a geographic map</div>
-        <div class="map-zoom"><button type="button" aria-label="Zoom in preview" disabled><x-icon name="plus" /></button><button type="button" aria-label="Zoom out preview" disabled><x-icon name="minus" /></button></div>
-        <div class="map-legend"><strong>Map legend</strong><span><i class="legend-dot blue"></i>Association Location</span><span><i class="legend-dot green"></i>Project Location</span><span><i class="boundary-key"></i>Project Boundary</span></div>
-    </div><aside class="location-panel"><div class="eyebrow">LOCATION INFORMATION</div><span class="location-icon"><x-icon name="pin" /></span><h2>No location selected</h2><p>Location details will appear once connected.</p><x-status-badge value="—" /><dl><div><dt>Municipality</dt><dd>—</dd></div><div><dt>Barangay</dt><dd>—</dd></div><div><dt>Related project</dt><dd>—</dd></div><div><dt>Fisheries category</dt><dd>—</dd></div><div><dt>Program year</dt><dd>—</dd></div></dl><button type="button" disabled class="button button-outline">View association <x-icon name="arrow" /></button><button type="button" class="button" disabled>Publish location</button><p class="field-help">Location data is not connected yet.</p></aside></div>
-</section>
+@include('partials.page-header', ['title' => 'GIS Mapping', 'description' => 'Manage project locations and boundaries.', 'eyebrow' => 'Spatial management'])
+<a class="button button-primary" href="{{ route('admin.gis.index') }}">Open GIS Management</a>
