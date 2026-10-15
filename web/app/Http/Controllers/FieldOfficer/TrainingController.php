@@ -185,6 +185,7 @@ class TrainingController extends Controller
 
         $members =
             Member::query()
+                ->where('member_status', 'active')
                 ->whereIn(
                     'association_id',
                     $associationIds
@@ -360,6 +361,8 @@ class TrainingController extends Controller
             'id' =>
                 $training->id,
 
+            'expected_updated_at' => $training->updated_at?->format('Y-m-d\TH:i:s.uP'),
+
             'association_id' =>
                 $training->association_id,
 
@@ -452,6 +455,8 @@ class TrainingController extends Controller
                         fn (
                             $participant
                         ) => [
+                            'member_name' => collect([$participant->member?->first_name, $participant->member?->middle_name,
+                                $participant->member?->last_name, $participant->member?->suffix])->filter(fn ($part) => filled($part))->implode(' '),
                             'id' =>
                                 $participant
                                     ->id,

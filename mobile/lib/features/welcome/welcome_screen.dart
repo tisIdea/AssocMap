@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../../app/configuration/app_config.dart';
 import '../../app/routing/app_routes.dart';
 import '../../app/theme/app_theme.dart';
-import '../../core/widgets/data_mode_banner.dart';
+import '../../core/widgets/public_gis_mode_banner.dart';
 
 class WelcomeScreen extends StatelessWidget {
   const WelcomeScreen({super.key, required this.config});
@@ -15,7 +15,7 @@ class WelcomeScreen extends StatelessWidget {
     body: SafeArea(
       child: Column(
         children: [
-          DataModeBanner(mode: config.mode),
+          PublicGisModeBanner(mode: config.gisMode),
           Expanded(
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(24),
@@ -49,7 +49,7 @@ class WelcomeScreen extends StatelessWidget {
                       ),
                       const SizedBox(height: 16),
                       const Text(
-                        'Explore public project locations and discover association summaries. '
+                        'Explore approved public project locations and summaries. '
                         'The public map is available without an account.',
                         style: TextStyle(fontSize: 16, height: 1.6),
                       ),
@@ -58,7 +58,7 @@ class WelcomeScreen extends StatelessWidget {
                         icon: Icons.map_outlined,
                         title: 'Public GIS map',
                         subtitle:
-                            'Explore locations, sample boundaries, and public summaries.',
+                            'Explore locations, boundaries, and public summaries.',
                         action: 'Explore map',
                         onPressed: () => Navigator.of(
                           context,
@@ -81,10 +81,20 @@ class WelcomeScreen extends StatelessWidget {
                         style: TextStyle(fontWeight: FontWeight.w700),
                       ),
                       const SizedBox(height: 6),
-                      const Text(
-                        'The offline GIS demonstration uses fictional associations and geometries. '
-                        'It does not represent actual organizational records. Association sign-in uses synthetic demo identities; real sign-in is pending.',
-                        style: TextStyle(height: 1.5),
+                      Text(
+                        (switch (config.gisMode) {
+                          GisDataMode.mock =>
+                            'The offline GIS demonstration uses fictional associations and geometries. '
+                            'It does not represent actual organizational records.',
+                          GisDataMode.live =>
+                            'The public map uses the configured Laravel public GIS endpoint. '
+                            'Availability depends on backend connectivity.',
+                          GisDataMode.invalid =>
+                            'The public GIS data source configuration needs correction.',
+                        }) + (config.mode == DataMode.mock
+                          ? ' Association sign-in uses synthetic demo identities; real sign-in is pending.'
+                          : ' Real association sign-in remains pending.'),
+                        style: const TextStyle(height: 1.5),
                       ),
                       const SizedBox(height: 16),
                     ],

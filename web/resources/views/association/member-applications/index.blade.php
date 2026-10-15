@@ -1,6 +1,7 @@
 @extends('layouts.association')
 
 @php
+    /** @var \Illuminate\Database\Eloquent\Collection<int, \App\Models\AssociationPosition> $positions */
     $association = $associationAccount->association;
     $area = $association?->area;
     $barangay = $area?->barangay;
@@ -115,7 +116,17 @@
                     <label for="application-position">Position <span class="field-hint">*</span></label>
                     <select id="application-position" name="position_id" required aria-describedby="application-position-error" @if($errors->has('position_id')) aria-invalid="true" @endif>
                         <option value="">Select…</option>
-                        @foreach($positions as $position)<option value="{{ $position->id }}" data-code="{{ $position->code }}" @selected((string) old('position_id') === (string) $position->id)>{{ $position->name }}</option>@endforeach
+                        @foreach($positions as $position)
+                            @php
+                                $isOccupied = in_array((string) $position->id, $occupiedExecutivePositionIds, true);
+                            @endphp
+                            <option value="{{ $position->id }}" data-code="{{ $position->code }}" @disabled($isOccupied) @selected(!$isOccupied && (string) old('position_id') === (string) $position->id)>
+                                {{ $position->name }}
+                                @if($isOccupied)
+                                    &mdash; Already occupied
+                                @endif
+                            </option>
+                        @endforeach
                     </select>
                     <span class="field-error" id="application-position-error">@error('position_id'){{ $message }}@enderror</span>
                 </div>
@@ -131,9 +142,9 @@
                     <span class="field-error" id="application-endorsement-error">@error('endorsement_letter'){{ $message }}@enderror</span>
                 </div>
                 <div class="field field-wide">
-                    <label for="application-photo">Applicant Photo <span class="field-hint">*</span></label>
-                    <input id="application-photo" name="applicant_photo" type="file" accept=".jpg,.jpeg,.png,image/jpeg,image/png" required aria-describedby="application-photo-help application-photo-error" @if($errors->has('applicant_photo')) aria-invalid="true" @endif>
-                    <small class="field-help" id="application-photo-help">Private JPEG or PNG photo with a matching filename extension. Maximum 2 MiB and 2048 by 2048 pixels. Reselect the file after any validation error.</small>
+                    <label for="application-photo">Applicant Photo <span class="field-hint">Optional</span></label>
+                    <input id="application-photo" name="applicant_photo" type="file" accept=".jpg,.jpeg,.png,image/jpeg,image/png" aria-describedby="application-photo-help application-photo-error" @if($errors->has('applicant_photo')) aria-invalid="true" @endif>
+                    <small class="field-help" id="application-photo-help">You may submit without a photo. If selected, use a private JPEG or PNG photo with a matching filename extension. Maximum 2 MiB and 2048 by 2048 pixels. Reselect the file after any validation error.</small>
                     <span class="field-error" id="application-photo-error">@error('applicant_photo'){{ $message }}@enderror</span>
                 </div>
                 <div class="field field-wide">

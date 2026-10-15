@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Exceptions\InvitationActivationUnavailableException;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Response;
@@ -14,19 +15,37 @@ class SupabaseAuthService
 {
     public function invitationConfigurationAvailable(): bool
     {
+        return $this->invitationConfigurationProblems() === [];
+    }
+
+    public function invitationConfigurationProblems(): array
+    {
+        $problems = [];
+        $names = ['url' => 'SUPABASE_URL', 'invitation_redirect_url' => 'SUPABASE_INVITATION_REDIRECT_URL'];
         foreach (['url', 'invitation_redirect_url'] as $setting) {
             $value = config('services.supabase.'.$setting);
-            if (! is_string($value) || ! filter_var($value, FILTER_VALIDATE_URL)) return false;
+            if (! is_string($value) || ! filter_var($value, FILTER_VALIDATE_URL)) {
+                $problems[] = $names[$setting].' is missing or is not a valid URL.';
+                continue;
+            }
             $parts = parse_url($value);
             if (($parts['scheme'] ?? '') !== 'https' || isset($parts['user'])
-                || isset($parts['pass']) || isset($parts['fragment'])) return false;
-            if ($setting === 'url' && (isset($parts['query']) || ! in_array($parts['path'] ?? '', ['', '/'], true))) return false;
+                || isset($parts['pass']) || isset($parts['fragment'])) {
+                $problems[] = $names[$setting].' must use HTTPS without embedded credentials or a fragment.';
+            }
+            if ($setting === 'url' && (isset($parts['query']) || ! in_array($parts['path'] ?? '', ['', '/'], true))) {
+                $problems[] = 'SUPABASE_URL must be the project origin, without an API path or query.';
+            }
         }
 
         $key = config('services.supabase.service_role_key');
 
         // This server-side integration uses the legacy service-role JWT.
-        return is_string($key) && preg_match('/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/D', $key) === 1;
+        if (! is_string($key) || preg_match('/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/D', $key) !== 1) {
+            $problems[] = 'SUPABASE_SERVICE_ROLE_KEY is missing or is not in the supported legacy three-part JWT format. This invitation client does not support sb_secret_ keys.';
+        }
+
+        return $problems;
     }
 
     private function adminRequest(): PendingRequest
@@ -293,8 +312,8 @@ class SupabaseAuthService
         if (! $this->activationConfigurationAvailable()) {
             return ['success' => false, 'code' => 'activation_configuration_missing'];
         }
-        // Supabase email OTP token hashes are hexadecimal SHA-256 hashes.
-        if (! preg_match('/\A[a-fA-F0-9]{64}\z/D', $tokenHash)) {
+        // Supabase invitation OTP hashes use hexadecimal SHA-224.
+        if (! preg_match('/\A[a-fA-F0-9]{56}\z/D', $tokenHash)) {
             return [
                 'success' => false,
                 'code' => 'invalid_invitation_token',
@@ -438,19 +457,28 @@ class SupabaseAuthService
 
     public function getInvitationIdentity(string $accessToken): ?array
     {
-        if ($accessToken === '' || ! $this->activationConfigurationAvailable()) return null;
+        if ($accessToken === '') return null;
+        if (! $this->activationConfigurationAvailable()) {
+            throw new InvitationActivationUnavailableException('activation_configuration_unavailable');
+        }
         try {
             $response = $this->activationRequest($accessToken)
                 ->get(rtrim(config('services.supabase.url'), '/').'/auth/v1/user');
         } catch (ConnectionException $exception) {
-            return null;
+            throw new InvitationActivationUnavailableException('activation_identity_unavailable');
+        }
+        if (in_array($response->status(), [401, 403], true)) return null;
+        if (! $response->successful()) {
+            throw new InvitationActivationUnavailableException('activation_identity_unavailable');
         }
         $user = $response->json();
-        if (! $response->successful() || ! is_array($user) || array_is_list($user)
+        if (! is_array($user) || array_is_list($user)
             || array_key_exists('error', $user) || array_key_exists('error_code', $user)
             || ! is_string($user['id'] ?? null) || ! Str::isUuid($user['id'])
-            || ! is_string($user['email'] ?? null) || ! filter_var($user['email'], FILTER_VALIDATE_EMAIL)
-            || ! is_string($user['email_confirmed_at'] ?? null) || $user['email_confirmed_at'] === '') return null;
+            || ! is_string($user['email'] ?? null) || ! filter_var($user['email'], FILTER_VALIDATE_EMAIL)) {
+            throw new InvitationActivationUnavailableException('activation_identity_response_invalid');
+        }
+        if (! is_string($user['email_confirmed_at'] ?? null) || $user['email_confirmed_at'] === '') return null;
 
         return ['auth_user_id' => strtolower($user['id']), 'email' => mb_strtolower(trim($user['email']))];
     }

@@ -147,8 +147,10 @@ class MonitoringWorkspaceController extends MonitoringController
         }
         $monitoringRows = $record ? collect([$this->mapMonitoringRecord($record)]) : collect();
         $projectRows = $projects->map(fn ($project) => $this->mapProject($project));
+        $occupiedPeriods = $record ? collect() : MonitoringRecord::query()
+            ->whereIn('project_id', $projects->modelKeys())->get(['project_id', 'year', 'quarter_id']);
         $quarters = Quarter::orderBy('quarter_number')->get();
-        return view('monitoring.editor', $this->context($request) + compact('projects', 'projectRows', 'quarters', 'monitoringRows', 'section', 'record'));
+        return view('monitoring.editor', $this->context($request) + compact('projects', 'projectRows', 'quarters', 'monitoringRows', 'occupiedPeriods', 'section', 'record'));
     }
 
     public function saveSection(UpdateMonitoringSectionRequest $request, MonitoringRecord $monitoringRecord, string $section, MonitoringService $service): RedirectResponse

@@ -16,6 +16,8 @@ class AuditLogService
     private const MAX_SNAPSHOT_BYTES = 131072;
 
     private const DISPLAY_FIELDS = [
+        'member' => ['association_id', 'member_status', 'archived_at', 'archived_by', 'changed_fields'],
+        'member_officer_position' => ['association_id', 'position_id', 'member_status', 'archived_at'],
         'gis_location' => ['association_id', 'project_id', 'location_type', 'location_name', 'address',
             'public_title', 'public_description', 'public_address', 'is_published', 'published_by',
             'published_at', 'archived_at', 'archived_by', 'geometry'],

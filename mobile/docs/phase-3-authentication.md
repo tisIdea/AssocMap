@@ -1,5 +1,11 @@
 # Phase 3 — Association Account mobile authentication
 
+**Historical Phase 3 snapshot.** The subsequent read-only readiness audit found that
+`/api/v1/me` now includes mobile eligibility and association context. Its former
+missing-context blocker is resolved in backend source, with deployment still unverified.
+See [current readiness findings](friday-prototype-readiness.md) for the updated contract
+and remaining Flutter/token-lifecycle work. The findings below record the earlier inspection.
+
 Inspection date: 2026-10-14 (Asia/Manila). Desktop 1 backend files were read-only
 references for this task. They may be copied or stale relative to Desktop 1 or deployment.
 No environment files, credentials, live Supabase project, organizational records,

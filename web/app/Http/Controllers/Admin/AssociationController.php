@@ -25,6 +25,7 @@ class AssociationController extends Controller
             ->with([
                 'area.barangay.municipality',
                 'primaryFieldOfficer',
+                'currentPresident',
                 'registrations.agency',
             ])
             ->when($statusFilter === 'archived',
@@ -87,6 +88,10 @@ class AssociationController extends Controller
                     'id' => $association->id,
 
                     'name' => $association->name,
+                    'president' => $association->currentPresident
+                        ? collect([$association->currentPresident->first_name, $association->currentPresident->middle_name,
+                            $association->currentPresident->last_name, $association->currentPresident->suffix])->filter(fn ($part) => filled($part))->implode(' ')
+                        : 'No active President assigned',
                     'registrations' => $association->registrations->sortByDesc('is_primary')->map(fn ($registration) => [
                         'agency' => $registration->agency?->name,
                         'kind' => $registration->agency?->registration_kind,

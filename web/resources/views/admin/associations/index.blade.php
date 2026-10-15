@@ -1,6 +1,7 @@
 @if(request()->routeIs('admin.associations.index') && !isset($requestedModule))
     @include('dashboard.index')
 @else
+    <p><a class="button" href="{{ route('admin.association-officers.index') }}">Manage Association Officers</a></p>
     @include('admin.shared.index')
     @if($errors->has('association'))
         <div class="notice notice-error" role="alert"><x-icon name="info" /><span>{{ $errors->first('association') }}</span></div>
@@ -88,6 +89,7 @@
                 @if($key !== 'area')<div><dt>{{ $label }}</dt><dd data-association-detail="{{ $key }}">—</dd></div>@endif
             @endforeach
             <div><dt>Archived</dt><dd data-association-detail="archived">—</dd></div>
+            <div><dt>President</dt><dd data-association-detail="president">No active President assigned</dd></div>
             <div data-association-archived-date hidden><dt>Archived At</dt><dd data-association-detail="archived_at">—</dd></div>
         </dl>
         <h3>Registration and accreditation records</h3>

@@ -2,18 +2,20 @@
 
 Phase 3 inspected Laravel authentication, route/controller/model source and relevant
 repository SQL as read-only references. No live service, real record, or credential
-was accessed. [Phase 3 findings](phase-3-authentication.md) records source-verified
-contracts and the exact authentication blockers; deployed availability remains unknown.
+was accessed. [Current readiness findings](friday-prototype-readiness.md) records the
+updated source contracts and remaining integration work; deployed availability remains unknown.
 This document requests missing contracts and does not invent endpoints. Desktop 1 must validate scope
 against the approved manuscript and Appendix N before protected modules are implemented.
 
-## Phase 2 blocker: public GIS
+## Public GIS — source adapter implemented, runtime confirmation pending
 
 Read-only route inspection confirms declared public `GET /map/data` and
-`GET /map/associations` routes in `web/routes/web.php`. Their full mobile response
-contracts/runtime behavior were not verified in this authentication phase, and they
-are not connected in Flutter. Supply base URL/environment selection, complete query
-and response schemas, and sanitized examples before GIS integration.
+`GET /map/associations` routes in `web/routes/web.php`. The readiness audit also inspected
+`/map/data` request rules, FeatureCollection/public serializer, and map/list limits;
+see [the implemented Flutter adapter](public-gis-integration.md). It uses only /map/data
+in overview/map modes and preserves actual Point/Polygon/MultiPolygon geometry and holes.
+/map/associations is not consumed. Source is wired, but all new tests and live integration
+are unverified. Confirm deployment/base URL and supply sanitized isolated test examples.
 
 Confirm:
 
@@ -24,9 +26,8 @@ Confirm:
   internal actor IDs, management metadata, and private association addresses.
 - Stable public identifiers and whether records represent projects, associations, or
   multiple locations per project. The current DTO is a replaceable presentation model.
-- Point encoding, latitude/longitude order, CRS, nullability, geometry placement, and
-  support for Polygon/MultiPolygon with holes. WGS84 GeoJSON is preferred if compatible
-  with the existing backend, but is not an assumed response contract.
+- Deployment matches inspected WGS84 two-dimensional GeoJSON: project_point → Point;
+  project_boundary → Polygon/MultiPolygon with holes; positions use longitude/latitude.
 - Pagination, total counts, limits, viewport queries, search/category filters, maximum
   geometry payload, refresh behavior, caching headers, and withdrawn-publication handling.
 - Empty response, malformed geometry policy, partial failures, status codes, validation
@@ -35,29 +36,30 @@ Confirm:
   separately approved basemap provider. Public business data and basemap tiles are
   separate services.
 
-Mobile display needs: a public ID, title, association display name if approved, category
-if available, broad area label, approved summary, renderable point, and optional boundary.
-These are proposed display needs, not exact backend JSON keys or database fields.
-If the server does not supply a field, adapt the UI rather than inventing a real value.
+Current live fields are Feature.id, geometry and properties.location_type/title/address/
+description. Association names and livelihood categories are absent and omitted from the
+live UI. Null descriptions show an honest missing-description message. A published
+boundary renders its real geometry without a fabricated centroid/point.
 
 ## Authentication contract — before Phase 3 integration
 
 Association Accounts are association-linked users, not a login per association member.
 Source confirms `GET /api/v1/me` with Supabase bearer middleware, returning profile
-identity, role, and `is_active`. It does not return association/link/mobile eligibility.
+identity, role, `is_active`, and now `mobile.eligible`, `mobile.reason`, and the
+authorized `mobile.association` ID/name. Active links and association lifecycle are
+resolved server-side. HTTP 200 with eligibility false is a valid mobile denial.
 Browser login obtains Supabase tokens and stores them in a Laravel session; browser
 logout invalidates that session without provider revocation. No mobile refresh/logout
-contract was found. The detailed response/errors and evidence are in the Phase 3 reference.
+contract was found. Current detailed response/errors and evidence are in the readiness report.
 
-Desktop 1 must approve mobile token acquisition, add an authoritative association
-eligibility context to `/api/v1/me` or a separately agreed endpoint, and specify
+Desktop 1 must confirm the reference contract/deployment, approve mobile token acquisition, and specify
 expiry/refresh/revocation/401/403/outage behavior. A new Laravel login endpoint is not
 automatically necessary if an approved Supabase public-client flow is selected.
 Do not assume web cookies/CSRF work on mobile. Enforce association scope in every
 protected business endpoint; a Flutter guard is additional presentation protection.
 
-Only after this contract is verified should Desktop 2 choose an HTTP client and secure
-token storage package. Phase 3 implements a demo form/session/guard and a parser for
+The public-only HTTP client does not enable protected workflows. Choose provider and
+secure token storage only after authentication/session architecture approval. Phase 3 implements a demo form/session/guard and a parser for
 the existing profile response, with real sign-in disabled. No real token exchange,
 refresh implementation, token persistence, or local user database exists. Supply synthetic test identities and
 an isolated approved test environment for later integration; never send privileged keys.

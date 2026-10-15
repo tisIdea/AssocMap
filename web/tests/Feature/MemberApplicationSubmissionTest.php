@@ -1,0 +1,242 @@
+<?php
+
+namespace Tests\Feature;
+
+use App\Models\MemberApplication;
+use App\Models\UserProfile;
+use App\Services\MemberApplicationService;
+use App\Services\SupabaseAuthService;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Foundation\Bootstrap\HandleExceptions;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Storage;
+use Mockery;
+use PHPUnit\Framework\Attributes\DataProvider;
+use RuntimeException;
+use Tests\Support\IsolatedDatabaseManager;
+use Tests\TestCase;
+
+class MemberApplicationSubmissionTest extends TestCase
+{
+    private const ACCOUNT = '11111111-1111-4111-8111-111111111111';
+    private const ASSOCIATION = '22222222-2222-4222-8222-222222222222';
+    private const LINK = '33333333-3333-4333-8333-333333333333';
+    private const URL = '/association/member-applications';
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->assertInstanceOf(IsolatedDatabaseManager::class, DB::getFacadeRoot());
+        $this->assertSame('sqlite', DB::connection()->getDriverName());
+        $this->assertSame(':memory:', DB::connection()->getConfig('database'));
+        Http::fake([]);
+        Http::preventStrayRequests();
+        config(['services.supabase_storage.photo_transport' => 'local']);
+        Storage::fake('member_application_photos');
+        $this->withoutVite();
+        $this->schema();
+        $this->fixtures();
+        $auth = Mockery::mock(SupabaseAuthService::class);
+        $auth->shouldReceive('getUser')->with('synthetic-session')->andReturn(['id' => self::ACCOUNT]);
+        $this->app->instance(SupabaseAuthService::class, $auth);
+        $this->withSession(['supabase_access_token' => 'synthetic-session']);
+    }
+
+    protected function tearDown(): void
+    {
+        MemberApplication::flushEventListeners();
+        try {
+            Http::assertNothingSent();
+        } finally {
+            try {
+                parent::tearDown();
+            } finally {
+                HandleExceptions::flushState($this);
+            }
+        }
+    }
+
+    private function schema(): void
+    {
+        Schema::create('roles', function (Blueprint $table) {
+            $table->id(); $table->string('code'); $table->boolean('is_active'); $table->timestamps();
+        });
+        Schema::create('user_profiles', function (Blueprint $table) {
+            $table->uuid('id')->primary(); $table->unsignedBigInteger('role_id');
+            $table->string('display_name'); $table->boolean('is_active'); $table->timestamps();
+        });
+        Schema::create('user_invitations', function (Blueprint $table) {
+            $table->uuid('id')->primary(); $table->uuid('auth_user_id')->nullable();
+            $table->string('status'); $table->string('last_error_code')->nullable();
+            $table->timestamp('accepted_at')->nullable(); $table->timestamp('last_attempt_at')->nullable(); $table->timestamps();
+        });
+        Schema::create('associations', function (Blueprint $table) {
+            $table->uuid('id')->primary(); $table->string('name'); $table->string('status'); $table->timestamps();
+        });
+        Schema::create('association_accounts', function (Blueprint $table) {
+            $table->uuid('id')->primary(); $table->uuid('association_id');
+            $table->uuid('user_id'); $table->boolean('is_active'); $table->timestamps();
+            $table->foreign('association_id')->references('id')->on('associations');
+            $table->foreign('user_id')->references('id')->on('user_profiles');
+        });
+        Schema::create('association_positions', function (Blueprint $table) {
+            $table->id(); $table->string('code'); $table->string('name');
+            $table->boolean('is_officer'); $table->boolean('is_active'); $table->timestamps();
+        });
+        Schema::create('sex_categories', function (Blueprint $table) {
+            $table->id(); $table->string('name'); $table->boolean('is_active'); $table->timestamps();
+        });
+        Schema::create('member_classifications', function (Blueprint $table) {
+            $table->id(); $table->string('code'); $table->string('name'); $table->boolean('is_active'); $table->timestamps();
+        });
+        Schema::create('member_applications', function (Blueprint $table) {
+            $table->uuid('id')->primary(); $table->uuid('association_id'); $table->uuid('submitted_by_user_id');
+            $table->string('first_name', 120); $table->string('middle_name', 120)->nullable();
+            $table->string('last_name', 120); $table->string('suffix', 20)->nullable();
+            $table->date('birth_date'); $table->unsignedBigInteger('sex_id');
+            $table->string('contact_number', 30)->nullable(); $table->string('fishr_registration_number', 100)->nullable();
+            $table->unsignedBigInteger('position_id'); $table->string('position_other_text', 100)->nullable();
+            $table->text('endorsement_letter')->nullable(); $table->string('applicant_photo_path', 255)->nullable();
+            $table->string('status'); $table->uuid('reviewed_by')->nullable(); $table->timestamp('reviewed_at')->nullable();
+            $table->text('rejection_reason')->nullable(); $table->timestamps();
+            $table->foreign('association_id')->references('id')->on('associations');
+            $table->foreign('submitted_by_user_id')->references('id')->on('user_profiles');
+            $table->foreign('position_id')->references('id')->on('association_positions');
+            $table->foreign('sex_id')->references('id')->on('sex_categories');
+        });
+        Schema::create('member_application_classifications', function (Blueprint $table) {
+            $table->uuid('member_application_id'); $table->unsignedBigInteger('classification_id');
+            $table->primary(['member_application_id', 'classification_id']);
+            $table->foreign('member_application_id')->references('id')->on('member_applications');
+            $table->foreign('classification_id')->references('id')->on('member_classifications');
+        });
+    }
+
+    private function fixtures(): void
+    {
+        DB::table('roles')->insert(['id' => 1, 'code' => 'association_account', 'is_active' => true]);
+        DB::table('user_profiles')->insert(['id' => self::ACCOUNT, 'role_id' => 1,
+            'display_name' => 'Synthetic Account', 'is_active' => true]);
+        DB::table('associations')->insert(['id' => self::ASSOCIATION, 'name' => 'Synthetic Association', 'status' => 'active']);
+        DB::table('association_accounts')->insert(['id' => self::LINK, 'association_id' => self::ASSOCIATION,
+            'user_id' => self::ACCOUNT, 'is_active' => true]);
+        DB::table('association_positions')->insert(['id' => 2, 'code' => 'PRESIDENT', 'name' => 'President',
+            'is_officer' => true, 'is_active' => true]);
+        DB::table('sex_categories')->insert(['id' => 1, 'name' => 'Synthetic category', 'is_active' => true]);
+        DB::table('member_classifications')->insert(['id' => 1, 'code' => 'FISHERFOLK', 'name' => 'Fisherfolk', 'is_active' => true]);
+    }
+
+    private function applicationData(): array
+    {
+        return ['first_name' => 'Synthetic', 'last_name' => 'Applicant', 'birth_date' => '2000-01-01',
+            'sex_id' => 1, 'position_id' => 2, 'classification_ids' => [1], 'endorsement_letter' => 'Private synthetic letter'];
+    }
+
+    public static function omittedPhotos(): array
+    {
+        return ['omitted' => [[]], 'explicit null' => [['applicant_photo' => null]]];
+    }
+
+    #[DataProvider('omittedPhotos')]
+    public function test_submission_without_photo_stores_null_and_preserves_application_data(array $photo): void
+    {
+        $this->from(self::URL)->post(self::URL, array_merge($this->applicationData(), $photo))
+            ->assertRedirect(self::URL)->assertSessionHasNoErrors()
+            ->assertSessionHas('success', 'Member application submitted successfully.');
+        $application = MemberApplication::sole();
+        $this->assertNull($application->applicant_photo_path);
+        $this->assertSame(self::ASSOCIATION, $application->association_id);
+        $this->assertSame(self::ACCOUNT, $application->submitted_by_user_id);
+        $this->assertSame('pending', $application->status);
+        $this->assertSame(2, $application->position_id);
+        $this->assertSame('Private synthetic letter', $application->endorsement_letter);
+        $this->assertSame([1], $application->classifications()->pluck('member_classifications.id')->all());
+        $this->assertSame([], Storage::disk('member_application_photos')->allFiles());
+    }
+
+    public static function validPhotoExtensions(): array
+    {
+        return ['JPEG' => ['jpg'], 'PNG' => ['png']];
+    }
+
+    #[DataProvider('validPhotoExtensions')]
+    public function test_submission_with_valid_photo_preserves_private_upload(string $extension): void
+    {
+        $photo = UploadedFile::fake()->image('portrait.'.$extension, 32, 48);
+        $this->from(self::URL)->post(self::URL, array_merge($this->applicationData(), ['applicant_photo' => $photo]))
+            ->assertRedirect(self::URL)->assertSessionHasNoErrors()->assertSessionHas('success');
+        $application = MemberApplication::sole();
+        $this->assertMatchesRegularExpression('~\Aphotos/'.$application->id.'/[0-9a-f-]{36}\.'.$extension.'\z~',
+            $application->applicant_photo_path);
+        Storage::disk('member_application_photos')->assertExists($application->applicant_photo_path);
+        $image = getimagesizefromstring(Storage::disk('member_application_photos')->get($application->applicant_photo_path));
+        $this->assertSame([32, 48], array_slice($image, 0, 2));
+        $this->assertArrayNotHasKey('applicant_photo_path', $application->toArray());
+    }
+
+    public static function invalidPhotos(): array
+    {
+        return ['corrupt image' => ['corrupt'], 'oversized image' => ['size'],
+            'excessive dimensions' => ['dimensions'], 'unsupported type' => ['type'], 'nonfile value' => ['nonfile']];
+    }
+
+    #[DataProvider('invalidPhotos')]
+    public function test_optional_photos_are_still_validated_when_supplied(string $kind): void
+    {
+        $photo = match ($kind) {
+            'size' => UploadedFile::fake()->image('portrait.png', 32, 32)->size(2049),
+            'dimensions' => UploadedFile::fake()->image('portrait.png', 2049, 1),
+            'type' => UploadedFile::fake()->create('portrait.svg', 1, 'image/svg+xml'),
+            'nonfile' => 'not a file',
+            default => UploadedFile::fake()->createWithContent('portrait.png', 'not image content'),
+        };
+        $this->postJson(self::URL, array_merge($this->applicationData(), ['applicant_photo' => $photo]))
+            ->assertUnprocessable()->assertJsonValidationErrors('applicant_photo');
+        $this->assertDatabaseCount('member_applications', 0);
+        $this->assertSame([], Storage::disk('member_application_photos')->allFiles());
+    }
+
+    public static function mandatoryFields(): array
+    {
+        return array_combine($fields = ['first_name', 'last_name', 'birth_date', 'sex_id', 'position_id', 'endorsement_letter'],
+            array_map(fn ($field) => [$field], $fields));
+    }
+
+    #[DataProvider('mandatoryFields')]
+    public function test_other_mandatory_fields_remain_required(string $field): void
+    {
+        $data = $this->applicationData();
+        unset($data[$field]);
+        $this->postJson(self::URL, $data)->assertUnprocessable()->assertJsonValidationErrors($field);
+        $this->assertDatabaseCount('member_applications', 0);
+    }
+
+    public function test_other_position_still_requires_its_details_without_a_photo(): void
+    {
+        DB::table('association_positions')->insert(['id' => 7, 'code' => 'OTHER', 'name' => 'Other',
+            'is_officer' => true, 'is_active' => true]);
+        $this->postJson(self::URL, array_replace($this->applicationData(), ['position_id' => 7]))
+            ->assertUnprocessable()->assertJsonValidationErrors('position_other_text');
+        $this->assertDatabaseCount('member_applications', 0);
+    }
+
+    public function test_missing_photo_does_not_mask_database_rollback_with_a_cleanup_type_error(): void
+    {
+        MemberApplication::created(static function (): void {
+            throw new RuntimeException('Synthetic transaction failure');
+        });
+        try {
+            $this->app->make(MemberApplicationService::class)->submit($this->applicationData(),
+                UserProfile::with('role')->findOrFail(self::ACCOUNT));
+            $this->fail('The synthetic database failure was not propagated.');
+        } catch (RuntimeException $exception) {
+            $this->assertSame('Synthetic transaction failure', $exception->getMessage());
+        }
+        $this->assertDatabaseCount('member_applications', 0);
+        $this->assertDatabaseCount('member_application_classifications', 0);
+        $this->assertSame([], Storage::disk('member_application_photos')->allFiles());
+    }
+}

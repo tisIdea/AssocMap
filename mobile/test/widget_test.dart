@@ -206,7 +206,7 @@ void main() {
     },
   );
 
-  testWidgets('API mode stays blocked and never shows mock records', (
+  testWidgets('Live GIS without a URL fails closed and never shows mock records', (
     tester,
   ) async {
     const config = AppConfig(mode: DataMode.api);
@@ -216,7 +216,7 @@ void main() {
       repository: RepositoryFactory.publicProjects(config),
     );
     expect(
-      find.textContaining('Live GIS integration is not configured'),
+      find.textContaining('Live GIS is not configured'),
       findsOneWidget,
     );
     expect(find.byType(FlutterMap), findsNothing);
@@ -233,7 +233,7 @@ void main() {
       mode: DataMode.invalid,
       repository: RepositoryFactory.publicProjects(config),
     );
-    expect(find.textContaining('Invalid data mode'), findsOneWidget);
+    expect(find.textContaining('Invalid GIS mode'), findsOneWidget);
     expect(find.byType(FlutterMap), findsNothing);
   });
 

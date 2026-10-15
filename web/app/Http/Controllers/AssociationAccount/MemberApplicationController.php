@@ -11,6 +11,7 @@ use App\Models\MemberApplication;
 use App\Models\MemberClassification;
 use App\Models\SexCategory;
 use App\Services\MemberApplicationService;
+use App\Services\MemberExecutivePositionService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
@@ -20,7 +21,7 @@ use Symfony\Component\HttpFoundation\Response;
 
 class MemberApplicationController extends Controller
 {
-    public function index(Request $request): View
+    public function index(Request $request, MemberExecutivePositionService $executivePositions): View
     {
         $currentUser = $request->attributes->get('current_user');
 
@@ -85,6 +86,8 @@ class MemberApplicationController extends Controller
             ->orderBy('sort_order')
             ->get();
 
+        $occupiedExecutivePositionIds = $executivePositions->occupiedPositionIds($associationAccount->association_id);
+
         $classifications = MemberClassification::query()
             ->where('is_active', true)
             ->orderBy('id')
@@ -104,6 +107,9 @@ class MemberApplicationController extends Controller
 
                 'positions' =>
                     $positions,
+
+                'occupiedExecutivePositionIds' =>
+                    $occupiedExecutivePositionIds,
 
                 'classifications' =>
                     $classifications,

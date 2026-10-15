@@ -178,7 +178,7 @@ class UserInvitationService
                 $locked->last_error_code = null;
                 $locked->save();
 
-                return $this->result($locked, 'provider_accepted', 'Supabase accepted the invitation request. Delivery is unverified; the profile remains inactive pending Stage 2 activation.', 201);
+                return $this->result($locked, 'provider_accepted', 'Supabase accepted the invitation request. Email delivery is unverified; the account remains inactive until the recipient completes activation.', 201);
             }, 3);
         } catch (QueryException $exception) {
             return $this->recordFailure($invitation, 'profile_sync_failed', 'Auth accepted the request, but application synchronization failed. Reconcile this operation; do not resend.', 503,

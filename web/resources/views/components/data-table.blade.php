@@ -26,11 +26,6 @@
                     @endif
                 @elseif($module['key'] === 'members')
                     <button class="text-button" type="button" data-member-view data-member-record="{{ json_encode($row) }}" data-dialog="member-modal">View</button>
-                    @if(!empty($row['archived_at']))
-                        <button class="text-button" type="button" data-member-unarchive data-unarchive-url="{{ $row['unarchive_url'] }}" data-confirm="Unarchive {{ $row['full_name'] }}? The existing Active/Inactive status will be preserved." data-confirm-title="Unarchive Member" data-confirm-label="Unarchive">Unarchive</button>
-                    @else
-                        <button class="text-button text-danger" type="button" data-member-archive data-archive-url="{{ $row['archive_url'] }}" data-confirm="Archive {{ $row['full_name'] }}? The record will be preserved for historical purposes." data-confirm-title="Archive Member" data-confirm-label="Archive">Archive</button>
-                    @endif
                 @else<a class="text-button" href="#{{ $module['key'] }}/show">View</a>@endif
                 @if(isset($module['action']) && !in_array($module['key'], ['users', 'associations', 'members']))<a class="text-button" href="#{{ $module['key'] }}/edit">Edit</a>@endif
                 @if($module['key'] === 'users')

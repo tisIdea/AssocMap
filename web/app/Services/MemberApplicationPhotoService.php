@@ -110,7 +110,7 @@ class MemberApplicationPhotoService
 
         try {
             $disk = Storage::disk(self::DISK);
-            if (! $disk->fileExists($path)) return null;
+            if (! $disk->exists($path)) return null;
             $stream = $disk->readStream($path);
         } catch (FilesystemException $exception) {
             throw new MemberApplicationPhotoUnavailableException;

@@ -1,4 +1,5 @@
 @php
+    $hasAreaErrors = $errors->any() && old('monitoring_form') !== 'editor';
     $areaType = old('area_type', old('barangay_id') ? 'Specific Area' : (old('municipality_id') ? 'Barangay' : 'Municipality'));
     $areaType = in_array($areaType, ['Municipality', 'Barangay', 'Specific Area']) ? $areaType : 'Municipality';
     $editingArea = collect($catalog['modules']['areas']['rows'] ?? [])->first(fn ($row) =>
@@ -23,7 +24,7 @@
         data-area-form
         data-mode="{{ $editingArea ? 'edit' : 'create' }}"
         data-update-action="{{ $editingArea['update_url'] ?? '' }}"
-        data-has-errors="{{ $errors->any() ? 'true' : 'false' }}"
+        data-has-errors="{{ $hasAreaErrors ? 'true' : 'false' }}"
     >
         @csrf
         <input type="hidden" name="_method" value="PATCH" data-area-method @disabled(!$editingArea)>
@@ -35,7 +36,7 @@
             Fields marked * are required.
         </p>
 
-        @if ($errors->any())
+        @if ($hasAreaErrors)
             <div class="notice notice-error" role="alert" data-area-validation>
                 <x-icon name="info" />
 

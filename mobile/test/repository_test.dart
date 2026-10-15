@@ -112,7 +112,7 @@ void main() {
           isA<AppFailure>().having(
             (error) => error.kind,
             'kind',
-            FailureKind.integrationUnavailable,
+            FailureKind.invalidConfiguration,
           ),
         ),
       );

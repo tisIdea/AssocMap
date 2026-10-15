@@ -1,14 +1,34 @@
 # Development status — 2026-10-14, Asia/Manila
 
+## Latest approved public GIS task
+
+Public GIS HTTP/DTO/repository/UI source is implemented for optional live Laravel
+GET /map/data overview and viewport map modes. Explicit GIS mock/live selection is
+independent of unchanged authentication mode. Actual public fields, points, multipart
+boundaries and holes are preserved; empty/error/timeout/truncation states and no
+automatic fallback are implemented. The existing demo remains available offline.
+
+**No formatting, analysis, tests, dependency resolution, builds, devices, backend
+requests or database operations were executed for this task.** New fake-HTTP,
+geometry/configuration and widget tests are authored, unexecuted. All old test passes
+below are historical. Exact modified/added files, contract and manual checks are in
+[public GIS integration](public-gis-integration.md). Backend integration, deployed
+publication behavior, browser/device verification and UAT remain pending.
+
 ## Scope and state
 
 Phases 1–2 and authorized Phase 3A/3B are implemented. Phase 3C stops at the verified
-authentication integration blocker; later functional modules need approved scope.
+Flutter provider/HTTP/session integration blocker; later functional modules need approved scope.
 No approved manuscript/Appendix N was found. Phase 3 read-only inspection confirmed
 Laravel's bearer `/api/v1/me` source contract and relevant SQL linkage definitions.
 Laravel/Supabase files were not modified. No live services were accessed or migrations executed.
 
-| Feature | Source status | Data mode / integration | Verification status |
+The later [Friday readiness audit](friday-prototype-readiness.md) found current backend
+mobile eligibility, prepared its Flutter DTO and a non-secret HTTPS base URL, and corrected
+an obsolete blocker message. No tools that execute Flutter/Dart/PHP/tests/builds were run
+in that audit. Earlier passes below are historical and do not verify the latest edits.
+
+| Feature | Source status | Data mode / integration | Verification evidence (previous run unless stated) |
 | --- | --- | --- | --- |
 | Theme, configuration, routes, shared feedback | Implemented in source | Local Flutter | Local automated checks passed; device unverified |
 | Public welcome / no-login GIS entry | Implemented in source | Mock functionality | Widget checks passed; device unverified |
@@ -17,13 +37,14 @@ Laravel/Supabase files were not modified. No live services were accessed or migr
 | Draft/archive exclusion | Implemented in source | Mock scenarios only | Local fixture checks passed; backend publication rules unverified |
 | Loading/empty/error/retry/no-match states | Implemented in source | Fake/local repositories | Local widget checks passed |
 | Repository interface and central selection | Implemented in source | Replacement seam ready | Does not mean API integration ready |
-| API repository | Remote blocker implemented | Blocked by backend contract; no HTTP | No integration verified |
+| Public GIS API repository | Live source implemented | Overview/map public contract; no real calls executed | New fake-HTTP tests authored, unexecuted; backend/device unverified |
 | Association sign-in | Implemented in source | Synthetic demo credentials; real sign-in blocked | Local controller/widget tests passed; provider integration unverified |
 | Association navigation / role-link guard | Implemented in source | Minimal Workspace/Account shell only | Local guard/denial/logout/expiry tests passed; server scoping unverified |
 | Demo expiry and logout | Implemented in source | In-memory 15-minute session; no persistence/tokens | Timer/resume and stale-result/logout tests passed |
-| Existing `/api/v1/me` profile parser | Implemented in source | Source contract verified; parser is not an eligibility adapter | Synthetic parser tests passed; deployed response unverified |
+| Current `/api/v1/me` profile/eligibility parser | Prepared in source | Current contract inspected; no session/HTTP integration | Prior identity parser tested; new eligibility cases unexecuted |
+| HTTPS backend URL / identity URI | Implemented in source | Base consumed by public GIS only; identity URI not connected | New tests authored, unexecuted |
 | Dashboard/profile/roster/applications/photos/endorsement | Not implemented | Scope provisional; later phases | Not verified |
-| HTTP, token storage, provider refresh/expiry/logout, uploads | Not implemented | Blocked by contracts | Not verified |
+| Protected HTTP, token storage, provider refresh/expiry/logout, uploads | Not implemented | Authentication/session scope remains separate | Not verified |
 | Online street basemap | Not implemented | Provider selection deferred | Not verified |
 
 ## Phases 1–2 execution record
@@ -96,7 +117,7 @@ was authorized or run, so this inventory is not a Git diff against another deskt
 ## Remaining review decisions
 
 1. Review demo Association Account login/navigation; real authentication remains blocked.
-2. Supply approved manuscript/Appendix N and the missing eligibility/token contracts.
+2. Supply approved manuscript/Appendix N; confirm current eligibility deployment and token-lifecycle policy.
 3. Approve the scope of association modules and application/photo requirements.
 4. Select a street basemap/provider before production GIS integration.
 5. Separately authorize device builds/launches and isolated backend integration tests.
@@ -155,3 +176,29 @@ Added files:
 
 No authored changes under `web/` or `supabase/`. Flutter check-generated caches are
 not source changes. No Git diff was run because Git operations were not authorized.
+
+## Friday readiness audit changes — unverified source preparation
+
+No formatting, analysis, tests, build, device launch, or live request executed in this audit.
+Eight new focused tests are authored using synthetic JSON/configuration; none executed.
+The previous 63-test result applies to the earlier Phase 3 source only.
+
+Modified:
+
+- `lib/app/configuration/app_config.dart`
+- `lib/data/models/laravel_me_profile.dart`
+- `lib/core/authentication/auth_failure.dart`
+- `test/laravel_me_profile_test.dart`
+- `README.md`
+- `docs/phase-3-authentication.md`
+- `docs/backend-contract-requirements.md`
+- `docs/integration-checklist.md`
+- `docs/development-status.md`
+
+Added:
+
+- `test/app_config_test.dart`
+- `docs/friday-prototype-readiness.md`
+
+No dependencies, backend files, platform configuration, routing, or demo-auth logic changed.
+See the readiness report for manual verification and concrete next-task approval plans.

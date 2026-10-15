@@ -4,22 +4,38 @@ class PublicProject {
   const PublicProject({
     required this.id,
     required this.title,
-    required this.associationName,
-    required this.category,
-    required this.areaLabel,
+    this.associationName,
+    this.category,
+    this.areaLabel,
     required this.summary,
-    required this.location,
+    this.location,
     this.boundary,
+    this.locationType,
   });
 
   final String id;
   final String title;
-  final String associationName;
-  final String category;
-  final String areaLabel;
+  final String? associationName;
+  final String? category;
+  final String? areaLabel;
   final String summary;
-  final GeoPoint location;
+  final GeoPoint? location;
   final GeoBoundary? boundary;
+  final String? locationType;
+
+  String get filterLabel =>
+      category ??
+      switch (locationType) {
+        'project_point' => 'Project locations',
+        'project_boundary' => 'Project boundaries',
+        _ => 'Public locations',
+      };
+
+  List<GeoPoint> get geometryPoints => [
+    ?location,
+    for (final polygon in boundary?.polygons ?? <GeoPolygon>[])
+      ...polygon.exterior,
+  ];
 
   // This format belongs to local fixtures, not the Laravel API.
   factory PublicProject.fromFixture(Map<String, dynamic> json) {
@@ -56,6 +72,7 @@ class PublicProject {
       associationName,
       category,
       areaLabel,
-    ].any((field) => field.toLowerCase().contains(normalized));
+      summary,
+    ].any((field) => field?.toLowerCase().contains(normalized) ?? false);
   }
 }

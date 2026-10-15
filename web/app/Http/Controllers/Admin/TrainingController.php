@@ -99,6 +99,7 @@ class TrainingController extends Controller
             ->get();
 
         $members = Member::query()
+            ->where('member_status', 'active')
             ->whereNull('archived_at')
             ->orderBy('last_name')
             ->orderBy('first_name')
@@ -260,6 +261,8 @@ class TrainingController extends Controller
             'id' =>
                 $training->id,
 
+            'expected_updated_at' => $training->updated_at?->format('Y-m-d\TH:i:s.uP'),
+
             'association_id' =>
                 $training->association_id,
 
@@ -333,6 +336,8 @@ class TrainingController extends Controller
                 $training->participants
                     ->map(
                         fn ($participant) => [
+                            'member_name' => collect([$participant->member?->first_name, $participant->member?->middle_name,
+                                $participant->member?->last_name, $participant->member?->suffix])->filter(fn ($part) => filled($part))->implode(' '),
                             'id' =>
                                 $participant->id,
 

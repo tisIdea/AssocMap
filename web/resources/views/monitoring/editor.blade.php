@@ -41,7 +41,7 @@
         ],
     ];
     $repeatFields = [
-        'production' => [['project_product_id', 'Project Product', 'select', true], ['target_output', 'Target Production', 'number', true], ['actual_output', 'Actual Production', 'number', true], ['unit', 'Unit of Measurement', 'text', true], ['remarks', 'Remarks', 'textarea', false]],
+        'production' => [['project_product_id', 'Project Product', 'select', true], ['target_output', 'Target Production', 'number', true], ['actual_output', 'Initial Production', 'number', true], ['unit', 'Unit of Measurement', 'text', true], ['remarks', 'Remarks', 'textarea', false]],
         'income' => [['period_type', 'Period Type', 'select', true], ['month', 'Month', 'select', false], ['gross_income', 'Gross Income', 'number', true], ['remarks', 'Remarks', 'textarea', false]],
         'materials' => [['project_material_id', 'Project Material', 'select', true], ['condition', 'Condition', 'text', true], ['scheduled_maintenance', 'Scheduled Maintenance', 'date', false], ['actual_maintenance', 'Actual Maintenance', 'date', false], ['remarks', 'Remarks', 'textarea', false]],
     ];
@@ -142,11 +142,12 @@
                 @foreach(array_slice($fields, 1, 3) as $field)
                     @php([$name, $label, $type] = $field)
                     <div class="field"><label for="monitoring-{{ $name }}">{{ $label }} <span class="field-hint">*</span></label>
-                        @if($type === 'select')<select name="{{ $name }}" id="monitoring-{{ $name }}" required><option value="">Select a quarter…</option>@foreach($field[3] as $choice)<option value="{{ $choice['value'] }}">{{ $choice['label'] }}</option>@endforeach</select>
+                        @if($type === 'select')<select name="{{ $name }}" id="monitoring-{{ $name }}" required aria-describedby="monitoring-quarter-availability"><option value="">Select a quarter…</option>@foreach($field[3] as $choice)<option value="{{ $choice['value'] }}">{{ $choice['label'] }}</option>@endforeach</select>
                         @else<input type="{{ $type }}" name="{{ $name }}" id="monitoring-{{ $name }}" required @if($name === 'year') min="2000" max="2100" step="1" @endif>@endif
                     </div>
                 @endforeach
             </div>
+            <p class="field-hint" id="monitoring-quarter-availability" role="status" tabindex="-1"></p>
             <p class="field-hint">Production, income and materials share this reporting period. Monthly income uses the monitoring year and selected quarter.</p>
         </section>
         <section class="monitoring-editor-section" aria-labelledby="monitoring-details-heading">

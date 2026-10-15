@@ -2,6 +2,10 @@
     @include('dashboard.index')
 @else
     @include('admin.shared.index')
+    @php($memberLifecycleErrors = $errors->getBag('memberLifecycle'))
+    @if(request()->routeIs('admin.members.index') && $memberLifecycleErrors->any())
+        <div class="notice notice-error" role="alert" data-member-validation><x-icon name="info" /><div>@foreach($memberLifecycleErrors->all() as $error)<p>{{ $error }}</p>@endforeach</div></div>
+    @endif
     @if(request()->routeIs('admin.members.index') && $errors->any())
         <div class="notice notice-error" role="alert" data-member-validation><x-icon name="info" /><div>@foreach($errors->all() as $error)<p>{{ $error }}</p>@endforeach</div></div>
     @endif

@@ -16,7 +16,12 @@ class VerifyInvitationRequest extends FormRequest
 
     public function rules(): array
     {
-        return ['token_hash' => ['required', 'string', 'regex:/\A[a-fA-F0-9]{64}\z/D']];
+        $rules = ['token_hash' => ['required', 'string', 'regex:/\A[a-fA-F0-9]{56}\z/D']];
+        if ($this->hasSession() && $this->session()->has('supabase_access_token')) {
+            $rules['sign_out_current_account'] = ['required', 'accepted'];
+        }
+
+        return $rules;
     }
 
     protected function failedValidation(Validator $validator): never

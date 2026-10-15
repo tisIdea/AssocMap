@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Association;
 use App\Models\AssociationAccount;
 use App\Models\AssociationPosition;
 use App\Models\Member;
@@ -18,7 +19,8 @@ class MemberApplicationService
 {
     public function __construct(
         private MemberExecutivePositionService $executivePositions,
-        private MemberApplicationPhotoService $photos
+        private MemberApplicationPhotoService $photos,
+        private MemberPositionIntegrityService $positions,
     ) {}
 
     public function submit(array $data, UserProfile $currentUser): MemberApplication
@@ -35,16 +37,19 @@ class MemberApplicationService
             ]);
         }
 
-        $this->validatePositionOtherText($data);
+        $position = $this->validatePositionOtherText($data);
+        $this->executivePositions->ensureApplicationPositionAvailable($associationAccount->association_id, $position);
         $this->ensureFishRAvailable($data['fishr_registration_number'] ?? null);
 
         $applicationId = (string) Str::uuid();
-        $photoPath = $this->photos->store($data['applicant_photo'], $applicationId);
+        $photoPath = isset($data['applicant_photo'])
+            ? $this->photos->store($data['applicant_photo'], $applicationId)
+            : null;
         $callbackCompleted = false;
 
         try {
             return DB::transaction(function () use ($data, $currentUser, $associationAccount,
-                $applicationId, $photoPath, &$callbackCompleted) {
+                $position, $applicationId, $photoPath, &$callbackCompleted) {
                 $actor = UserProfile::query()->with('role')->whereKey($currentUser->id)->lockForUpdate()->first();
                 $this->ensureAssociationAccountCanSubmit($actor);
                 $link = AssociationAccount::query()
@@ -60,6 +65,8 @@ class MemberApplicationService
                         'account' => 'Your active association link changed. Refresh the page before submitting again.',
                     ]);
                 }
+
+                $this->executivePositions->ensureApplicationPositionAvailable($link->association_id, $position);
 
                 $application = new MemberApplication([
                     'association_id' => $link->association_id,
@@ -91,7 +98,9 @@ class MemberApplicationService
         } catch (Throwable $exception) {
             // Commit failures may have an unknown outcome; retain evidence for reconciliation.
             if (! $callbackCompleted && DB::transactionLevel() === 0) {
-                $this->photos->discard($photoPath, $applicationId);
+                if ($photoPath !== null) {
+                    $this->photos->discard($photoPath, $applicationId);
+                }
             } else {
                 Log::warning('Member application submission requires reconciliation.', [
                     'application_id' => $applicationId,
@@ -118,15 +127,7 @@ class MemberApplicationService
             $application,
             $fieldOfficer
         ) {
-            $application = MemberApplication::query()
-                ->whereKey($application->getKey())
-                ->lockForUpdate()
-                ->firstOrFail();
-
-            $this->ensureFieldOfficerCanReview(
-                $application,
-                $fieldOfficer
-            );
+            [$application, $fieldOfficer] = $this->lockForReview($application, $fieldOfficer);
 
             if ($application->status !== 'pending') {
                 throw ValidationException::withMessages([
@@ -135,6 +136,7 @@ class MemberApplicationService
                 ])->status(409);
             }
 
+            $position = $this->positions->activePosition($application->position_id, $application->position_other_text);
             $member = new Member([
                 'association_id' =>
                     $application->association_id,
@@ -170,7 +172,7 @@ class MemberApplicationService
                     $application->position_id,
 
                 'position_other_text' =>
-                    $application->position_other_text,
+                    $position->code === 'OTHER' ? $application->position_other_text : null,
 
                 'date_registered' => now()->toDateString(),
 
@@ -189,6 +191,7 @@ class MemberApplicationService
             $application->reviewed_at = Carbon::now();
             $application->rejection_reason = null;
             $application->save();
+            $this->positions->recordOfficerChange($fieldOfficer, $member, null, 'APPOINT ASSOCIATION OFFICER');
 
             return $member;
         });
@@ -204,15 +207,7 @@ class MemberApplicationService
             $fieldOfficer,
             $reason
         ) {
-            $application = MemberApplication::query()
-                ->whereKey($application->getKey())
-                ->lockForUpdate()
-                ->firstOrFail();
-
-            $this->ensureFieldOfficerCanReview(
-                $application,
-                $fieldOfficer
-            );
+            [$application, $fieldOfficer] = $this->lockForReview($application, $fieldOfficer);
 
             if ($application->status !== 'pending') {
                 throw ValidationException::withMessages([
@@ -241,38 +236,32 @@ class MemberApplicationService
         });
     }
 
-    private function ensureFieldOfficerCanReview(
+    private function lockForReview(
         MemberApplication $application,
         UserProfile $fieldOfficer
-    ): void {
-        $fieldOfficer->loadMissing('role');
-
-        if (
-            ! $fieldOfficer->is_active ||
-            $fieldOfficer->role?->code !== 'field_officer'
-        ) {
+    ): array {
+        // Use the same actor/role -> association -> child order as officer management.
+        $fieldOfficer = $this->positions->lockActor($fieldOfficer, 'field_officer');
+        $association = Association::whereKey($application->association_id)->lockForUpdate()->firstOrFail();
+        $application = MemberApplication::whereKey($application->id)->lockForUpdate()->firstOrFail();
+        if ($application->association_id !== $association->id) {
             throw ValidationException::withMessages([
-                'reviewer' =>
-                    'Only an active Field Officer can review applications.',
-            ]);
+                'application' => 'The application association changed. Refresh before making a decision.',
+            ])->status(409);
         }
-
-        $assigned = $fieldOfficer
-            ->assignedAssociations()
-            ->whereKey($application->association_id)
-            ->exists();
-
-        if (! $assigned) {
+        if ($association->primary_field_officer_id !== $fieldOfficer->id) {
             throw ValidationException::withMessages([
                 'reviewer' =>
                     'This application does not belong to an association assigned to this Field Officer.',
             ]);
         }
+
+        return [$application, $fieldOfficer];
     }
 
     private function validatePositionOtherText(
         array $data
-    ): void {
+    ): AssociationPosition {
         $position = AssociationPosition::query()
             ->whereKey($data['position_id'])
             ->where('is_active', true)
@@ -294,6 +283,8 @@ class MemberApplicationService
                     'Please specify the member position.',
             ]);
         }
+
+        return $position;
     }
 
     private function resolvePositionOtherText(

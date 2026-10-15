@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../app/configuration/app_config.dart';
-import '../../core/widgets/data_mode_banner.dart';
+import '../../core/widgets/public_gis_mode_banner.dart';
 import '../../data/models/public_project.dart';
 
 class PublicProjectDetails extends StatelessWidget {
@@ -11,7 +11,7 @@ class PublicProjectDetails extends StatelessWidget {
     required this.mode,
   });
   final PublicProject project;
-  final DataMode mode;
+  final GisDataMode mode;
 
   @override
   Widget build(BuildContext context) => SafeArea(
@@ -19,7 +19,7 @@ class PublicProjectDetails extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          DataModeBanner(mode: mode),
+          PublicGisModeBanner(mode: mode),
           Padding(
             padding: const EdgeInsets.all(24),
             child: Column(
@@ -46,8 +46,8 @@ class PublicProjectDetails extends StatelessWidget {
                   style: Theme.of(context).textTheme.headlineSmall,
                 ),
                 const SizedBox(height: 12),
-                Text(
-                  project.associationName,
+                if (project.associationName != null) Text(
+                  project.associationName!,
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
                 const SizedBox(height: 12),
@@ -55,12 +55,13 @@ class PublicProjectDetails extends StatelessWidget {
                   spacing: 8,
                   runSpacing: 4,
                   children: [
-                    Chip(label: Text(project.category)),
-                    Chip(label: Text(project.areaLabel)),
+                    Chip(label: Text(project.filterLabel)),
+                    if (project.areaLabel != null) Chip(label: Text(project.areaLabel!)),
                   ],
                 ),
                 const SizedBox(height: 12),
-                Text(project.summary, style: const TextStyle(height: 1.6)),
+                Text(project.summary.isEmpty ? 'No public description provided.' : project.summary,
+                  style: const TextStyle(height: 1.6)),
                 const SizedBox(height: 16),
                 Text(
                   project.boundary == null

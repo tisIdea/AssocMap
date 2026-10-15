@@ -3,12 +3,15 @@
 use App\Http\Controllers\Auth\StaffAuthController;
 use App\Http\Controllers\Auth\InvitationActivationController;
 use App\Http\Controllers\Admin\UserInvitationController;
+use App\Http\Controllers\Admin\UserManagementController;
+use App\Http\Controllers\Admin\FieldOfficerAssignmentController;
 
 use App\Http\Controllers\Admin\MunicipalityController;
 use App\Http\Controllers\Admin\BarangayController;
 use App\Http\Controllers\Admin\AreaController;
 use App\Http\Controllers\Admin\AssociationController;
 use App\Http\Controllers\Admin\MemberController;
+use App\Http\Controllers\AssociationOfficerController;
 use App\Http\Controllers\Admin\ProjectController as AdminProjectController;
 use App\Http\Controllers\Admin\TrainingController as AdminTrainingController;
 use App\Http\Controllers\Admin\ProgramActivityController as AdminProgramActivityController;
@@ -97,6 +100,15 @@ Route::middleware([
     'role:system_admin',
 ])->group(function () {
 
+    Route::get('/admin/users', [UserManagementController::class, 'index'])->name('admin.users.index');
+    Route::get('/admin/users/{userProfile}/associations', [FieldOfficerAssignmentController::class, 'edit'])
+        ->whereUuid('userProfile')->name('admin.users.assignments.edit');
+    Route::patch('/admin/users/{userProfile}/associations', [FieldOfficerAssignmentController::class, 'update'])
+        ->whereUuid('userProfile')->name('admin.users.assignments.update');
+
+    Route::get('/admin/user-invitations/create', [UserInvitationController::class, 'create'])
+        ->name('admin.user-invitations.create');
+
     Route::post('/admin/user-invitations', [UserInvitationController::class, 'store'])
         ->middleware('throttle:user-invitations')->name('admin.user-invitations.store');
 
@@ -174,6 +186,13 @@ Route::middleware([
         [AssociationController::class, 'index']
     )->name('admin.associations.index');
 
+    Route::get('/admin/association-officers', [AssociationOfficerController::class, 'index'])
+        ->name('admin.association-officers.index');
+    Route::get('/admin/associations/{association}/officers', [AssociationOfficerController::class, 'show'])
+        ->whereUuid('association')->name('admin.association-officers.show');
+    Route::patch('/admin/associations/{association}/officers', [AssociationOfficerController::class, 'update'])
+        ->whereUuid('association')->name('admin.association-officers.update');
+
     Route::post(
         '/admin/associations',
         [AssociationController::class, 'store']
@@ -210,20 +229,6 @@ Route::middleware([
         '/admin/members',
         [MemberController::class, 'index']
     )->name('admin.members.index');
-
-    Route::patch(
-        '/admin/members/{member}/archive',
-        [MemberController::class, 'archive']
-    )
-        ->whereUuid('member')
-        ->name('admin.members.archive');
-
-    Route::patch(
-        '/admin/members/{member}/unarchive',
-        [MemberController::class, 'unarchive']
-    )
-        ->whereUuid('member')
-        ->name('admin.members.unarchive');
 
     /*
     |--------------------------------------------------------------------------
@@ -392,6 +397,22 @@ Route::middleware([
     | MEMBER APPLICATIONS
     |--------------------------------------------------------------------------
     */
+
+    Route::get('/field-officer/members', [\App\Http\Controllers\FieldOfficer\MemberController::class, 'index'])
+        ->name('field-officer.members.index');
+    Route::patch('/field-officer/members/{member}', [\App\Http\Controllers\FieldOfficer\MemberController::class, 'update'])
+        ->whereUuid('member')->name('field-officer.members.update');
+    Route::patch('/field-officer/members/{member}/archive', [\App\Http\Controllers\FieldOfficer\MemberController::class, 'archive'])
+        ->whereUuid('member')->name('field-officer.members.archive');
+    Route::patch('/field-officer/members/{member}/reactivate', [\App\Http\Controllers\FieldOfficer\MemberController::class, 'reactivate'])
+        ->whereUuid('member')->name('field-officer.members.reactivate');
+
+    Route::get('/field-officer/association-officers', [AssociationOfficerController::class, 'index'])
+        ->name('field-officer.association-officers.index');
+    Route::get('/field-officer/associations/{association}/officers', [AssociationOfficerController::class, 'show'])
+        ->whereUuid('association')->name('field-officer.association-officers.show');
+    Route::patch('/field-officer/associations/{association}/officers', [AssociationOfficerController::class, 'update'])
+        ->whereUuid('association')->name('field-officer.association-officers.update');
 
     Route::get(
         '/field-officer/member-applications',

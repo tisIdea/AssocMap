@@ -173,6 +173,15 @@ class MonitoringService
             );
             }, 3);
         } catch (QueryException $exception) {
+            $diagnostic = $exception->errorInfo[2] ?? null;
+            $constraint = is_string($diagnostic) && preg_match(
+                '/\A(?:ERROR:\s*)?duplicate key value violates unique constraint "([^"]+)"(?:\r?\n|\z)/',
+                $diagnostic, $matches
+            ) === 1 ? $matches[1] : null;
+            if (($exception->errorInfo[0] ?? null) === '23505'
+                && $constraint === 'monitoring_records_project_id_year_quarter_id_key') {
+                throw ValidationException::withMessages(['quarter_id' => 'A monitoring record already exists for this project, year, and quarter.']);
+            }
             if (($exception->errorInfo[0] ?? null) === '23505' && str_contains($exception->getMessage(), 'uq_project_product_name_ci')) {
                 throw ValidationException::withMessages(['production' => 'A proposed product name now exists under this project. Select the existing product instead.']);
             }

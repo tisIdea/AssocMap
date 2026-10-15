@@ -5,6 +5,7 @@ import { initPublicNavigation } from './layouts/public-navigation.js';
 import { initForms } from './pages/admin/forms.js';
 import { initReports } from './pages/admin/reports.js';
 import { initStaffLogin } from './pages/staff-login.js';
+import { initUserInvitations } from './pages/user-invitations.js';
 
 initDisclosures();
 initDialogs();
@@ -13,6 +14,7 @@ initPublicNavigation();
 initForms();
 initReports();
 initStaffLogin();
+initUserInvitations();
 
 const gisRoot = document.querySelector('[data-gis-workspace], [data-gis-editor]');
 if (gisRoot) {

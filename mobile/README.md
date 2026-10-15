@@ -1,50 +1,65 @@
 # AssocMap mobile
 
-Phase 1–3B Flutter development prototype: public welcome, offline GIS demonstration,
-synthetic project summaries, demo Association Account sign-in, protected navigation,
-and centrally selected repositories. No login is needed for the public map. Real
-authentication and association management modules remain pending.
+Flutter development prototype with public welcome/GIS, synthetic demo Association
+Account sign-in and protected navigation. Public GIS now has an optional Laravel
+adapter implemented in source. No login is needed for the public map. **Current
+formatting, analysis, tests, live backend integration and device behavior are unverified.**
+Real authentication and association management modules remain pending.
 
-The fixtures contain fictional associations, locations, and boundaries. They are not
-BFAR/SAAD records. The coordinate grid is not a street basemap or authoritative geography.
+Mock fixtures contain fictional associations, locations and boundaries, not BFAR/SAAD
+records. The offline coordinate grid is not a street basemap or authoritative geography.
+Live mode renders only supplied public fields and actual Point/Polygon/MultiPolygon
+geometry; polygon parts and holes are preserved without invented markers.
 
 ## Environment and dependencies
 
-Development SDK inspected: Flutter 3.44.6 / Dart 3.12.2. The project requires Dart
-`^3.12.2`. Mapping uses pinned `flutter_map` 8.3.2 and `latlong2` 0.10.1.
-Keep `pubspec.lock` when transferring the mobile workspace to another computer.
+Previously inspected development SDK: Flutter 3.44.6 / Dart 3.12.2. Project SDK
+requirement: ^3.12.2. Mapping packages: flutter_map 8.3.2 and latlong2 0.10.1.
+This task declares the already resolved http 1.6.0 directly. No dependency resolution
+was executed by Codex. The current lockfile already marks it direct; run flutter pub
+get when authorized to verify dependency consistency.
+Keep pubspec.lock when transferring the workspace.
 
-## Data modes
+## GIS and authentication modes
 
-`ASSOCMAP_DATA_MODE` is selected at compile time and defaults explicitly to `mock`.
-For a future authorized device launch:
+- ASSOCMAP_GIS_MODE=mock: existing local fixtures; works without Desktop 1/network.
+- ASSOCMAP_GIS_MODE=live: HTTPS GET /map/data overview and viewport map queries.
+- ASSOCMAP_DATA_MODE=mock|api: existing authentication selection, unchanged.
+- Without a GIS define, mock data mode selects mock GIS and api selects live GIS.
+- Unknown modes fail closed. A failed live request never substitutes synthetic data.
+- Changing defines requires restarting the app.
 
-```powershell
-flutter run --dart-define=ASSOCMAP_DATA_MODE=mock
-flutter run --dart-define=ASSOCMAP_DATA_MODE=api
-```
+ASSOCMAP_BACKEND_BASE_URL is the approved HTTPS Laravel application base URL, optionally
+with its application prefix. Do not append /map/data or /api/v1; do not include
+credentials, queries or fragments. No hostname is hardcoded. Missing/invalid live
+configuration produces a safe error without a request.
 
-These launch commands are instructions, not a claim that a device was launched.
-API mode currently shows a missing-contract error and makes no HTTP requests. Unknown
-mode values fail closed. A failed API operation never switches to synthetic data.
-Changing the compile-time mode requires restarting with the chosen define.
+When device launch and any test-service access are separately authorized:
 
-In development mock mode, open Association access, choose a synthetic scenario,
-use **Fill demo credentials**, and sign in. Do not enter genuine credentials. Demo
-sessions last 15 minutes and are not persisted. Demo authentication is disabled in
-release builds. Full scenario details are in the Phase 3 reference.
+    flutter run --dart-define=ASSOCMAP_DATA_MODE=mock --dart-define=ASSOCMAP_GIS_MODE=mock
+    flutter run --dart-define=ASSOCMAP_DATA_MODE=mock --dart-define=ASSOCMAP_GIS_MODE=live "--dart-define=ASSOCMAP_BACKEND_BASE_URL=<approved-https-base-url>"
 
-## Technical references
+Replace the URL placeholder locally with the approved isolated backend. These commands
+were not executed. Live GIS with mock authentication does not enable real login.
 
-- [Architecture, data flow, security, and defense notes](docs/mobile-architecture.md)
-- [Desktop 1 backend requirements](docs/backend-contract-requirements.md)
-- [Phase 3 authentication findings, demo guide, and Desktop 1 handoff](docs/phase-3-authentication.md)
-- [Integration checklist](docs/integration-checklist.md)
+In debug/profile mock authentication, open Association access, choose a synthetic
+scenario and use Fill demo credentials. Do not enter genuine credentials. Demo
+sessions last 15 minutes, are not persisted, and are disabled in release builds.
+
+## Documentation
+
+- [Current public GIS implementation, exact files/contracts and verification procedure](docs/public-gis-integration.md)
+- [Architecture, flow, security and defense notes](docs/mobile-architecture.md)
+- [Desktop 1 backend handoff](docs/backend-contract-requirements.md)
+- [Historical Phase 3 authentication findings and demo guide](docs/phase-3-authentication.md)
+- [Original Friday readiness audit and approved plan](docs/friday-prototype-readiness.md)
+- [Current integration checklist](docs/integration-checklist.md)
 - [Safe manual verification](docs/manual-verification.md)
-- [Phase status, verification record, and exact authored file inventory](docs/development-status.md)
+- [Development status and historical execution records](docs/development-status.md)
 
-The supplied mobile requests are the current scope references. No approved manuscript
-or Appendix N was found. Phase 3 read-only backend inspection confirmed the source
-contract of `GET /api/v1/me`; it does not provide association eligibility, and its
-deployment has not been contacted or verified.
-Do not treat provisional modules or this prototype as approved production integration.
+Current Laravel reference source includes eligibility and association context in
+GET /api/v1/me. Its parser is prepared, but real authentication remains blocked.
+No approved manuscript/Appendix N was available in the previous audit.
+The historical 63-test pass applies to earlier source. Newly authored fake-HTTP,
+geometry and widget tests have not been executed. No backend/Supabase modifications,
+live requests, builds, migrations or device launches were performed in this task.

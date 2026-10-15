@@ -8,24 +8,45 @@
     <title>@yield('title', 'Account Activation') · AssocMap</title>
     <script nonce="{{ request()->attributes->get('activation_nonce') }}">
         (() => {
-            let tokenHash = new URLSearchParams(window.location.hash.slice(1)).get('token_hash');
+            const hashes = new URLSearchParams(window.location.hash.slice(1)).getAll('token_hash');
+            let tokenHash = hashes.length === 1 && hashes[0].length === 56 && /^[a-fA-F0-9]{56}$/.test(hashes[0]) ? hashes[0] : null;
+            hashes.length = 0;
             window.history.replaceState(null, '', window.location.pathname);
-            window.addEventListener('DOMContentLoaded', () => {
+            const initialize = () => {
                 const verification = document.getElementById('invitation-verification');
                 if (verification) {
                     const button = verification.querySelector('button[type="submit"]');
-                    const valid = typeof tokenHash === 'string' && /^[a-fA-F0-9]{64}$/.test(tokenHash);
+                    const note = document.getElementById('invitation-link-note');
+                    const valid = tokenHash !== null;
                     button.disabled = !valid;
-                    document.getElementById('invitation-link-note').hidden = valid;
+                    note.hidden = valid;
+                    if (!valid) {
+                        note.textContent = 'This page has no usable invitation token. Reopen the original activation link from your invitation email. If the link is unavailable, expired, or already used, contact the administrator for recovery.';
+                        note.setAttribute('role', 'alert');
+                    }
                     verification.addEventListener('submit', (event) => {
                         if (!tokenHash) { event.preventDefault(); return; }
                         verification.elements.token_hash.value = tokenHash;
                         tokenHash = null;
+                        verification.setAttribute('aria-busy', 'true');
                         button.disabled = true;
                         button.textContent = 'Verifying…';
                     });
                 } else {
                     tokenHash = null;
+                    document.querySelectorAll('[data-invitation-password-toggle]').forEach((toggle) => {
+                        const password = document.getElementById(toggle.getAttribute('aria-controls'));
+                        if (!password || password.type !== 'password') return;
+                        const label = toggle.getAttribute('data-password-label');
+                        toggle.hidden = false;
+                        toggle.addEventListener('click', () => {
+                            const show = password.type === 'password';
+                            password.type = show ? 'text' : 'password';
+                            toggle.querySelector('[data-password-toggle-text]').textContent = show ? 'Hide' : 'Show';
+                            toggle.querySelector('[data-password-eye-off]').toggleAttribute('hidden', !show);
+                            toggle.setAttribute('aria-label', `${show ? 'Hide' : 'Show'} ${label}`);
+                        });
+                    });
                     document.querySelectorAll('form').forEach((form) => {
                         form.addEventListener('submit', () => {
                             const button = form.querySelector('button[type="submit"]');
@@ -33,7 +54,12 @@
                         });
                     });
                 }
-            });
+            };
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', initialize, { once: true });
+            } else {
+                initialize();
+            }
         })();
     </script>
     <style nonce="{{ request()->attributes->get('activation_nonce') }}">
@@ -50,9 +76,16 @@
         .staff-login-field { margin-bottom: 20px; }
         label { display: block; margin-bottom: 8px; font-size: 14px; font-weight: 600; }
         input { width: 100%; min-height: 46px; padding: 10px; border: 1px solid #bacdc1; border-radius: 6px; font: inherit; }
+        input.activation-confirmation { width: auto; min-height: auto; padding: 0; }
         input[aria-invalid="true"] { border-color: #9d2b2b; }
         button { width: 100%; padding: 13px 16px; border: 0; border-radius: 7px; background: #19734c; color: white; font: inherit; font-weight: 600; cursor: pointer; }
-        button:disabled { opacity: .6; cursor: wait; }
+        .activation-password-control { display: flex; align-items: stretch; gap: 8px; }
+        .activation-password-control input { min-width: 0; flex: 1; }
+        .activation-password-toggle { display: inline-flex; align-items: center; justify-content: center; gap: 6px; width: auto; min-width: 78px; min-height: 44px; padding: 8px 10px; border: 1px solid #bacdc1; border-radius: 6px; background: white; color: #19734c; font-size: 13px; white-space: nowrap; }
+        .activation-password-toggle:hover { background: #f5f7f6; }
+        .activation-password-toggle svg { width: 17px; height: 17px; flex: none; }
+        button:disabled { opacity: .6; cursor: not-allowed; }
+        form[aria-busy="true"] button:disabled { cursor: wait; }
         a { color: #19734c; }
         a:focus-visible, button:focus-visible, input:focus-visible { outline: 3px solid #d2ad27; outline-offset: 3px; }
         .staff-login-errors { margin: 0 0 20px; padding: 12px; border-radius: 6px; background: #fff1f1; color: #862424; font-size: 14px; }

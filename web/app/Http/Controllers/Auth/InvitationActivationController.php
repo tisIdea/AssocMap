@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Exceptions\InvitationActivationException;
+use App\Exceptions\InvitationActivationUnavailableException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\SetInvitationPasswordRequest;
 use App\Http\Requests\VerifyInvitationRequest;
@@ -27,19 +28,26 @@ class InvitationActivationController extends Controller
 
     public function showVerification(Request $request): View|RedirectResponse
     {
-        if ($request->session()->has('supabase_access_token')) return $this->signedInFailure($request);
+        if ($request->session()->has('supabase_access_token')) {
+            return view('auth.invitation-verify', ['signedIn' => true]);
+        }
         $context = $this->contexts->read($request);
         if ($context !== null) {
             return redirect()->route($context['phase'] === 'password_confirmed' ? 'invitation.recovery' : 'invitation.password');
         }
 
-        return view('auth.invitation-verify');
+        return view('auth.invitation-verify', ['signedIn' => false]);
     }
 
     public function verify(VerifyInvitationRequest $request): RedirectResponse
     {
-        if ($request->session()->has('supabase_access_token')) return $this->signedInFailure($request);
+        $signedIn = $request->session()->has('supabase_access_token');
+        if ($signedIn && ! $request->boolean('sign_out_current_account')) return $this->signedInFailure($request);
         $this->contexts->forget($request);
+        if ($signedIn) {
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+        }
         try {
             // Check storage before consuming the provider's single-use token.
             $this->contexts->checkStorage();
@@ -124,7 +132,7 @@ class InvitationActivationController extends Controller
         } catch (InvitationActivationException $exception) {
             return $this->failure($request);
         } catch (Throwable $exception) {
-            // Temporary storage failure can be retried without another password write.
+            // Temporary provider or storage failures must not replay the password write.
         }
 
         return view('auth.invitation-recovery');
@@ -147,6 +155,8 @@ class InvitationActivationController extends Controller
                 });
         } catch (LockTimeoutException $exception) {
             return redirect()->route('invitation.recovery')->withErrors(['activation' => 'An activation request is already running. Wait before continuing.']);
+        } catch (InvitationActivationUnavailableException $exception) {
+            return redirect()->route('invitation.recovery')->withErrors(['activation' => 'Identity verification is temporarily unavailable. Retry in this browser before the activation session expires.']);
         } catch (Throwable $exception) {
             return $this->failure($request);
         }

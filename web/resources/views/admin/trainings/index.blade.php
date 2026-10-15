@@ -100,8 +100,8 @@
             </div></section>
         @endforeach
         <p class="notice" id="training-choice-notice" role="status" hidden></p>
-        <section class="form-section"><div class="section-heading"><h3>Participants and Attendance</h3></div><p class="section-help">Select an association first. Each member can be included once. Removing a row removes that participant when saved.</p>
-            <input type="hidden" name="participants" value=""><div id="training-participants"></div><p id="training-participants-empty" class="participant-empty muted">No participants selected.</p>
+        <section class="form-section"><div class="section-heading"><h3>Participants and Attendance</h3></div><p class="section-help">Select an association first. Each member can be included once. Recorded participants remain available even if their membership is now inactive or archived. Attendance and remarks can be corrected. Remove Participant explicitly removes that participation when saved; to replace a recorded member, remove their row and add the correct member.</p>
+            <input type="hidden" name="expected_updated_at" value=""><input type="hidden" name="participants" value=""><div id="training-removed-participants"></div><div id="training-participants"></div><p id="training-participants-empty" class="participant-empty muted">No participants selected.</p>
             <button type="button" class="button" id="training-add-participant"><x-icon name="plus" />Add Participant</button>
         </section>
         <div class="modal-actions"><button type="button" class="button" data-close-dialog>Cancel</button><button type="submit" class="button button-primary">Save Training</button></div>
@@ -123,6 +123,7 @@
     const association = form.elements.association_id;
     const relatedProject = form.elements.related_project_id;
     const container = document.getElementById('training-participants');
+    const removals = document.getElementById('training-removed-participants');
     const addButton = document.getElementById('training-add-participant');
     const notice = document.getElementById('training-choice-notice');
     let nextParticipant = 0;
@@ -133,7 +134,7 @@
         selects.forEach(select => {
             Array.from(select.options).forEach(option => { option.disabled = Boolean(option.value && option.value !== select.value && selected.includes(option.value)); });
         });
-        addButton.disabled = !association.value || matchingMembers().length <= new Set(selected).size;
+        addButton.disabled = !association.value || matchingMembers().every(member => selected.includes(String(member.value)));
         document.getElementById('training-participants-empty').hidden = selects.length > 0;
     }
     function memberChoices(select, selected = '') {
@@ -153,6 +154,13 @@
     function addParticipant(values = {}, index = nextParticipant++) {
         nextParticipant = Math.max(nextParticipant, Number(index) + 1);
         const fragment = document.getElementById('training-participant-template').content.cloneNode(true);
+        const row = fragment.querySelector('fieldset');
+        if (values.id) {
+            row.dataset.participantId = values.id;
+            const identity = document.createElement('input');
+            identity.type = 'hidden'; identity.name = `participants[${index}][id]`; identity.value = values.id;
+            row.append(identity);
+        }
         fragment.querySelector('[data-participant-heading]').textContent = `Participant ${Number(index) + 1}`;
         let unavailable = false;
         fragment.querySelectorAll('[data-participant-input]').forEach(input => {
@@ -160,7 +168,18 @@
             input.id = `training-participant-${index}-${key}`;
             input.name = `participants[${index}][${key}]`;
             fragment.querySelector(`[data-participant-label="${key}"]`).htmlFor = input.id;
-            if (key === 'member_id') unavailable = memberChoices(input, values[key] ?? '');
+            if (key === 'member_id') {
+                unavailable = memberChoices(input, values[key] ?? '');
+                if (values.id && values.member_id) {
+                    if (unavailable) input.add(new Option(values.member_name || 'Recorded participant', values.member_id));
+                    input.value = values.member_id;
+                    input.disabled = true;
+                    const retained = document.createElement('input');
+                    retained.type = 'hidden'; retained.name = input.name; retained.value = values.member_id;
+                    row.append(retained);
+                    unavailable = false;
+                }
+            }
             else input.value = values[key] ?? (key === 'attendance_status' ? 'present' : '');
         });
         container.append(fragment);
@@ -172,6 +191,8 @@
         form.action = record?.update_url ?? createUrl;
         form.elements._method.disabled = !record;
         form.elements.training_record_id.value = record?.id ?? '';
+        form.elements.expected_updated_at.value = values.expected_updated_at ?? '';
+        form.elements.expected_updated_at.disabled = !record;
         const unavailableEdit = Boolean(values.training_record_id && !record);
         form.querySelector('button[type="submit"]').disabled = unavailableEdit;
         document.getElementById('training-editor-title').textContent = record ? 'Edit Training' : 'Add Training';
@@ -180,8 +201,14 @@
         }
         let unavailable = projectChoices(values.related_project_id ?? '') || Boolean(values.association_id && !association.value) || Boolean(values.saad_activity_id && !form.elements.saad_activity_id.value);
         container.replaceChildren();
+        removals.replaceChildren();
+        (Array.isArray(values.removed_participant_ids) ? values.removed_participant_ids : []).forEach(addRemoval);
         nextParticipant = 0;
-        Object.entries(values.participants ?? {}).forEach(([index, participant]) => { unavailable = addParticipant(participant, index) || unavailable; });
+        Object.entries(values.participants ?? {}).forEach(([index, participant]) => {
+            if (!participant || typeof participant !== 'object' || Array.isArray(participant)) return;
+            const recorded = record?.participants.find(existing => existing.id === participant.id || existing.member_id === participant.member_id);
+            unavailable = addParticipant({...recorded, ...participant}, index) || unavailable;
+        });
         notice.hidden = !unavailable;
         notice.textContent = 'Some previous selections are no longer available. Review the association, activity, project, and participants before saving.';
         if (unavailableEdit) {
@@ -192,8 +219,8 @@
     }
     association.addEventListener('change', () => {
         projectChoices();
-        container.querySelectorAll('[data-participant-input="member_id"]').forEach(select => memberChoices(select));
-        notice.textContent = 'Association changed. Select a matching project and reselect participant members before saving.';
+        container.querySelectorAll('[data-participant-input="member_id"]:not(:disabled)').forEach(select => memberChoices(select));
+        notice.textContent = 'Association changed. Retained participation prevents moving a training to another association. Review the association, project, and participants before saving.';
         notice.hidden = false;
         refreshParticipants();
     });
@@ -202,10 +229,16 @@
         container.lastElementChild.querySelector('select').focus();
     });
     container.addEventListener('change', refreshParticipants);
+    function addRemoval(id) {
+        const input = document.createElement('input');
+        input.type = 'hidden'; input.name = 'removed_participant_ids[]'; input.value = id;
+        removals.append(input);
+    }
     container.addEventListener('click', event => {
         const button = event.target.closest('[data-remove-participant]');
         if (!button) return;
         const row = button.closest('fieldset');
+        if (row.dataset.participantId) addRemoval(row.dataset.participantId);
         const next = row.nextElementSibling?.querySelector('select') ?? row.previousElementSibling?.querySelector('select');
         row.remove();
         refreshParticipants();

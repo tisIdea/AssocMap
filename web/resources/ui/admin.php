@@ -58,7 +58,7 @@ $modules = [
     ],
     'members' => [
         'title' => 'Member Management', 'singular' => 'Member', 'icon' => 'user', 'readonly' => true,
-        'description' => 'Monitor official member records and manage archiving and restoration.',
+        'description' => 'View official member records and their membership history.',
         'columns' => ['full_name' => 'Member Name', 'association' => 'Association', 'municipality' => 'Municipality', 'barangay' => 'Barangay', 'area' => 'Specific Area', 'sex' => 'Sex', 'position' => 'Position', 'fishr_registration_number' => 'FishR Registration Number', 'date_registered' => 'Date Registered', 'status' => 'Status'],
         'filters' => [$filter('association', 'Association'), $filter('municipality', 'Municipality'), $filter('barangay', 'Barangay'), $filter('sex', 'Sex'), $filter('position', 'Position'), $filter('status', 'Status')],
         'details' => ['full_name' => 'Full Name', 'association' => 'Association', 'municipality' => 'Municipality', 'barangay' => 'Barangay', 'area' => 'Specific Area', 'birth_date' => 'Birth Date', 'sex' => 'Sex', 'contact_number' => 'Contact Number', 'fishr_registration_number' => 'FishR Registration Number', 'position' => 'Position', 'position_other_text' => 'Other Position Text', 'date_registered' => 'Date Registered', 'status' => 'Member Status', 'archived' => 'Archived', 'archived_at' => 'Archived At'],

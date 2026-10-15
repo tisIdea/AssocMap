@@ -1,10 +1,13 @@
-# Safe verification — public foundation
+# Safe verification — demo foundation and optional live public GIS
 
 Use synthetic fixtures and explicit mock mode. No test requires Laravel or Supabase.
 Terminal/device commands require user authorization. Dependency resolution was authorized
 in Phases 1–2. Phase 3 separately authorized read-only backend/source inspection,
 formatting, analysis, and Flutter tests; device launches/builds were not authorized.
-See development-status.md for execution results; this checklist alone does not prove a pass.
+The approved public GIS task prohibits execution; all its new tests remain unexecuted.
+See development-status.md for historical execution results and
+[public GIS integration](public-gis-integration.md) for exact current configuration,
+contract, source inventory and the full live browser/device procedure.
 
 ## Automated commands
 
@@ -17,9 +20,10 @@ flutter analyze
 flutter test
 ```
 
-The tests exercise local fixtures, synthetic AssetBundles, and injected fake repositories.
-They do not contact production Supabase or a backend. Source-level API-mode tests verify
-an explicit integration blocker, not a real Laravel connection.
+The tests exercise local fixtures, synthetic AssetBundles, injected fake repositories
+and mocked HTTP clients. They do not contact Supabase or a real backend. Public GIS
+API tests exercise client behavior through fake transports; protected auth stays blocked.
+Run pub get before checks to verify direct http dependency consistency.
 
 ## Device/UI checklist (not executed)
 
@@ -35,8 +39,8 @@ an explicit integration blocker, not a real Laravel connection.
 - [ ] Move between welcome, map, and association sign-in; real API sign-in remains blocked.
 - [ ] Test empty data and invalid fixtures through an isolated fixture copy or fake repository.
 - [ ] Test repository loading/failure/retry without real services.
-- [ ] Start with `ASSOCMAP_DATA_MODE=api` only after launch authorization: confirm missing-contract
-  error, retry remains blocked, and no mock projects appear.
+- [ ] Start with ASSOCMAP_GIS_MODE=live and no backend URL after launch authorization:
+  confirm safe configuration error, retry stays live and no mock projects appear.
 - [ ] Test invalid mode values: configuration error, no silent default/fallback.
 - [ ] Test small phones, landscape, tablets, enlarged text, keyboard, screen reader labels,
   touch targets, summary scrolling, back button, and orientation changes.
@@ -45,11 +49,29 @@ an explicit integration blocker, not a real Laravel connection.
 No online basemap is expected. The graticule and synthetic geometries are not real
 streets, official boundaries, location tracking, or an offline OSM tile cache.
 
+## Current live public GIS checklist — all pending
+
+Separate approval is required for test-service access/device launch. Use an approved
+isolated reachable HTTPS backend, synthetic published records and explicit live GIS.
+Keep authentication mock for this task. The complete commands/procedure are in the
+[public GIS report](public-gis-integration.md).
+
+- [ ] Run dependency resolution, formatting, analysis and all local fake-HTTP tests.
+- [ ] Open without login; verify overview then bbox map GETs and exact public fields.
+- [ ] Compare real test geometry, polygon holes/parts and list/marker/boundary selection.
+- [ ] Submit server search/type filters; verify pan/zoom alone issues no requests.
+- [ ] Search this view, recover from empty views, inspect partial/truncated results.
+- [ ] Simulate offline/timeout/HTML/errors/throttle; no mock records appear on failure.
+- [ ] Verify browser CORS/TLS/proxy behavior and actual Android debug networking.
+- [ ] Rehearse small/landscape/tablet/keyboard/text-scale/back navigation.
+- [ ] Restart explicitly in mock mode and verify fully offline demonstration.
+- [ ] Record actual platform, backend revision, scenarios and results.
+
 ## Later integration checks
 
 Deferred real-service checks: protected API routes, provider expiry/logout/refresh,
 server association scoping, member submissions, typed endorsement, camera/gallery/photo
-errors, secure tokens, real HTTP/provider parsing, network timeout/offline behavior,
+errors, secure tokens, protected HTTP/provider parsing and lifecycle behavior,
 storage authorization, backend concurrency, and stakeholder UAT.
 Prepare these only after module approval and the verified backend contracts are supplied.
 

@@ -54,7 +54,7 @@ class StoreMemberApplicationRequest extends FormRequest
 
             'applicant_photo' => [
                 'bail',
-                'required',
+                'nullable',
                 'file',
                 'image',
                 'mimes:jpg,jpeg,png',
@@ -143,7 +143,6 @@ class StoreMemberApplicationRequest extends FormRequest
             'endorsement_letter.required' => 'Enter a nonblank endorsement letter.',
             'endorsement_letter.string' => 'The endorsement letter must be plain text.',
             'endorsement_letter.max' => 'The endorsement letter must not exceed 10,000 characters.',
-            'applicant_photo.required' => 'Select an applicant photo. Reselect it after any validation error.',
             'applicant_photo.uploaded' => 'The photo upload failed. Select the file again and retry.',
             'applicant_photo.image' => 'The applicant photo must be a valid JPEG or PNG image.',
             'applicant_photo.mimes' => 'Only JPEG and PNG photos are accepted.',

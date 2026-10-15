@@ -3,13 +3,10 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
-use App\Http\Requests\StoreMemberRequest;
 use App\Models\Association;
 use App\Models\AssociationPosition;
 use App\Models\Member;
 use App\Models\SexCategory;
-use App\Services\MemberService;
-use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 
@@ -223,17 +220,6 @@ class MemberController extends Controller
                             )->toIso8601String()
                             : null,
 
-                    'archive_url' =>
-                        route(
-                            'admin.members.archive',
-                            $member
-                        ),
-
-                    'unarchive_url' =>
-                        route(
-                            'admin.members.unarchive',
-                            $member
-                        ),
                 ];
             })
             ->values()
@@ -246,97 +232,5 @@ class MemberController extends Controller
                 'module' => $module,
             ]
         );
-    }
-
-    public function store(
-        StoreMemberRequest $request,
-        MemberService $memberService
-    ): RedirectResponse {
-        $currentUser =
-            $request->attributes->get(
-                'current_user'
-            );
-
-        $memberService->create(
-            $request->validated(),
-            $currentUser
-        );
-
-        return redirect()
-            ->route('admin.members.index')
-            ->with(
-                'success',
-                'Member added successfully.'
-            );
-    }
-
-    public function update(
-        StoreMemberRequest $request,
-        Member $member,
-        MemberService $memberService
-    ): RedirectResponse {
-        $currentUser =
-            $request->attributes->get(
-                'current_user'
-            );
-
-        $memberService->update(
-            $member,
-            $request->validated(),
-            $currentUser
-        );
-
-        return redirect()
-            ->route('admin.members.index')
-            ->with(
-                'success',
-                'Member updated successfully.'
-            );
-    }
-
-    public function archive(
-        Request $request,
-        Member $member,
-        MemberService $memberService
-    ): RedirectResponse {
-        $currentUser =
-            $request->attributes->get(
-                'current_user'
-            );
-
-        $memberService->archive(
-            $member,
-            $currentUser
-        );
-
-        return redirect()
-            ->route('admin.members.index')
-            ->with(
-                'success',
-                'Member archived successfully.'
-            );
-    }
-
-    public function unarchive(
-        Request $request,
-        Member $member,
-        MemberService $memberService
-    ): RedirectResponse {
-        $currentUser =
-            $request->attributes->get(
-                'current_user'
-            );
-
-        $memberService->unarchive(
-            $member,
-            $currentUser
-        );
-
-        return redirect()
-            ->route('admin.members.index')
-            ->with(
-                'success',
-                'Member restored successfully.'
-            );
     }
 }

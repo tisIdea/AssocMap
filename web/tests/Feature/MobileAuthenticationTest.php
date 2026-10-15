@@ -373,7 +373,7 @@ class MobileAuthenticationTest extends TestCase
 
     public function test_unfaked_http_requests_are_blocked_in_the_feature_fixture(): void
     {
-        $this->expectException(\Illuminate\Http\Client\Exceptions\StrayRequestException::class);
+        $this->expectException(\Illuminate\Http\Client\StrayRequestException::class);
         Http::get('https://not-faked.example.test');
     }
 

@@ -11,6 +11,32 @@ class MemberExecutivePositionService
 {
     public const UNIQUE_INDEX = 'uq_members_active_executive_position';
 
+    public function occupiedPositionIds(string $associationId): array
+    {
+        return Member::query()->useWritePdo()
+            ->where('association_id', $associationId)
+            ->where('member_status', 'active')
+            ->whereNull('archived_at')
+            ->whereHas('position', fn ($query) => $query->whereIn('code', ['PRESIDENT', 'VICE_PRESIDENT']))
+            ->distinct()
+            ->pluck('position_id')
+            ->map(static fn ($positionId): string => (string) $positionId)
+            ->all();
+    }
+
+    public function ensureApplicationPositionAvailable(string $associationId, AssociationPosition $position): void
+    {
+        if (! in_array($position->code, ['PRESIDENT', 'VICE_PRESIDENT'], true)) {
+            return;
+        }
+
+        if (in_array((string) $position->id, $this->occupiedPositionIds($associationId), true)) {
+            throw ValidationException::withMessages([
+                'position_id' => $position->name.' is already occupied. Select another position or refresh the form before trying again.',
+            ]);
+        }
+    }
+
     public function save(Member $member): void
     {
         $this->assertAvailable($member);

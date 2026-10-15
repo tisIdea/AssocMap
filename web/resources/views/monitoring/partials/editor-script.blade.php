@@ -3,6 +3,7 @@
     const quarters = {{ Illuminate\Support\Js::from($quarters->map(fn ($quarter) => ['id' => $quarter->id, 'quarter_number' => $quarter->quarter_number])->values()) }};
     const monthNames = {{ Illuminate\Support\Js::from($months) }};
     const projects = {{ Illuminate\Support\Js::from($projectRows) }};
+    const occupiedPeriods = {{ Illuminate\Support\Js::from($occupiedPeriods ?? collect()) }};
     const initial = {{ Illuminate\Support\Js::from($restore ? old() : ($monitoringRows->first() ?? [])) }};
     const activeSection = {{ Illuminate\Support\Js::from($section) }};
     const errors = {{ Illuminate\Support\Js::from($restore ? $errors->messages() : []) }};
@@ -178,7 +179,40 @@
         row.incomeGroup.querySelector('[data-income-heading]').textContent = 'Income for ' + (product?.product_name ?? row.dataset.originalLabel ?? 'product not selected');
         refreshIncomeProducts();
     }
+    function refreshQuarterAvailability() {
+        const status = document.getElementById('monitoring-quarter-availability');
+        if (editingRecord) { status.hidden = true; return true; }
+        const select = form.elements.quarter_id;
+        const year = Number(form.elements.year.value);
+        const project = selectedProject();
+        const ready = Boolean(project) && /^\d{4}$/.test(form.elements.year.value) && year >= 2000 && year <= 2100;
+        const used = new Set(occupiedPeriods.filter(period => ready && String(period.project_id) === String(project.id)
+            && Number(period.year) === year).map(period => String(period.quarter_id)));
+        const options = Array.from(select.options).filter(option => option.value);
+        options.forEach(option => {
+            option.dataset.availableLabel ??= option.textContent;
+            option.disabled = !ready || used.has(option.value);
+            option.textContent = option.dataset.availableLabel + (ready && used.has(option.value) ? ' — already recorded' : '');
+        });
+        if (select.value && !options.some(option => option.value === select.value && !option.disabled)) {
+            select.value = '';
+            periodValues.quarter_id = '';
+        }
+        const available = options.filter(option => !option.disabled);
+        const canCreate = ready && available.length > 0;
+        select.disabled = !canCreate;
+        select.options[0].textContent = !ready ? 'Select project and year first…' : !available.length ? 'No quarters available' : 'Select a quarter…';
+        select.setCustomValidity(canCreate ? '' : 'Select a project and year with an available monitoring quarter.');
+        form.querySelector('button[type="submit"]').disabled = !canCreate;
+        status.hidden = false;
+        status.textContent = !ready ? 'Select a project and monitoring year to see available quarters.'
+            : !available.length ? 'No quarters remain available for this project and year. View or edit its existing records from the Monitoring dashboard.'
+            : used.size ? 'Already recorded quarters cannot be selected. Choose an available quarter, or view existing records from the Monitoring dashboard.'
+            : 'All quarters are available for this project and year.';
+        return canCreate;
+    }
     function updateContext() {
+        refreshQuarterAvailability();
         const project = selectedProject();
         const set = (key, value) => { form.querySelector(`[data-context-${key}]`).textContent = value; };
         set('association', project?.association_name ?? 'Select a project to see its association');
@@ -619,6 +653,11 @@
         else updateMaterialHeading(row);
     });
     form.addEventListener('submit', event => {
+        if (!refreshQuarterAvailability()) {
+            event.preventDefault();
+            document.getElementById('monitoring-quarter-availability').focus();
+            return;
+        }
         refreshUnique('production'); refreshUnique('materials');
         rootRows('production').forEach(refreshIncome);
         rootRows('production').forEach(refreshMonthly);

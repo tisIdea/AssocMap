@@ -29,7 +29,7 @@ class AuthFailure implements Exception {
     AuthFailureCode.sessionExpired =>
       'Your session has expired. Please sign in again.',
     AuthFailureCode.integrationUnavailable =>
-      'Real mobile sign-in is not configured. The existing profile API does not provide an authorized association context. Desktop 1 must confirm eligibility and the mobile token lifecycle first.',
+      'Real mobile sign-in is not connected yet. Use the AssocMap web application while mobile integration is being completed.',
     AuthFailureCode.invalidConfiguration =>
       'Invalid data mode. Configure ASSOCMAP_DATA_MODE as mock or api.',
     AuthFailureCode.demoDisabled =>

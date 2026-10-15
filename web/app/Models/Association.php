@@ -65,6 +65,14 @@ class Association extends Model
         return $this->hasOne(AssociationAccount::class, 'association_id');
     }
 
+    public function currentPresident(): HasOne
+    {
+        return $this->hasOne(Member::class, 'association_id')
+            ->where('member_status', 'active')->whereNull('archived_at')
+            ->whereHas('position', fn ($query) => $query->where('code', 'PRESIDENT'))
+            ->select(['id', 'association_id', 'first_name', 'middle_name', 'last_name', 'suffix']);
+    }
+
     public function registrations(): HasMany
     {
         return $this->hasMany(AssociationRegistration::class, 'association_id');

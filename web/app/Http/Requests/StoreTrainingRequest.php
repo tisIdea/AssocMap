@@ -40,6 +40,9 @@ class StoreTrainingRequest extends FormRequest
     public function rules(): array
     {
         return [
+            'expected_updated_at' => [Rule::requiredIf($this->route('training') !== null), 'nullable', 'string', 'max:40'],
+            'removed_participant_ids' => ['nullable', 'array'],
+            'removed_participant_ids.*' => ['required', 'uuid', 'distinct'],
             'association_id' => [
                 'required',
                 'uuid',
@@ -130,8 +133,11 @@ class StoreTrainingRequest extends FormRequest
                 'exists:members,id',
             ],
 
+            'participants.*' => ['array:id,member_id,attendance_status,remarks'],
+            'participants.*.id' => ['nullable', 'uuid'],
+
             'participants.*.attendance_status' => [
-                'required_with:participants',
+                'sometimes',
                 Rule::in([
                     'present',
                     'absent',
