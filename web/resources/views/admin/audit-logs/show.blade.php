@@ -16,7 +16,7 @@
                 <div><dt>Entity type</dt><dd>{{ $event->entity_type ?? 'No entity type recorded' }}</dd></div>
                 <div><dt>Entity identifier</dt><dd class="audit-identifier">{{ $event->entity_id ?? 'No entity identifier recorded' }}</dd></div>
             </dl>
-            <p class="field-help">Actor names come from current profiles. Historical actor names and roles were not stored in this audit table. Entity references do not require the current business record to exist.</p>
+            <p class="field-help">Actor names come from current profiles. {{ in_array($event->entity_type, ['project_termination', 'project_closure'], true) ? 'The actor role and identifier for this lifecycle action are retained in the After snapshot.' : 'Historical actor names and roles were not stored for this event type.' }} Entity references do not require the current business record to exist.</p>
         </section>
         @if($event->action_type === 'DELETE GIS' && $event->entity_type === 'gis_location')
             <div class="notice">This event records permanent GIS deletion. The minimal deletion audit does not retain geometry or record snapshots.</div>

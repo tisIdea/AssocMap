@@ -10,18 +10,25 @@ use App\Models\MonitoringRecord;
 use App\Models\Project;
 use App\Models\Quarter;
 use App\Models\UserProfile;
+use App\Services\AssociationLifecycleService;
 use App\Services\MonitoringService;
+use App\Services\ProjectLifecycleService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\View\View;
+use Illuminate\Validation\ValidationException;
 
 class MonitoringWorkspaceController extends MonitoringController
 {
-    private function context(Request $request): array
+    private function context(Request $request, ?MonitoringRecord $record = null): array
     {
         $role = $request->attributes->get('current_user')?->role?->code;
         abort_unless(in_array($role, ['system_admin', 'field_officer', 'association_account'], true), 403);
+        $association = $record?->project?->association;
+        $operational = $record === null || ($record->project?->archived_at === null
+            && !($record->project?->isFinalized() ?? true) && $association
+            && app(AssociationLifecycleService::class)->isOperational($association));
         return [
             'monitoringPrefix' => match ($role) {
                 'system_admin' => 'admin.monitoring',
@@ -33,7 +40,7 @@ class MonitoringWorkspaceController extends MonitoringController
                 'field_officer' => 'layouts.field-officer',
                 default => 'layouts.association',
             },
-            'canManage' => $role !== 'association_account',
+            'canManage' => $role !== 'association_account' && $operational,
         ];
     }
 
@@ -60,7 +67,16 @@ class MonitoringWorkspaceController extends MonitoringController
         $context = $this->context($request);
         abort_if($write && ! $context['canManage'], 403);
         abort_unless($this->projectsFor($request)->whereKey($record->project_id)->exists(), 404);
-        return $record->load(['project.association', 'quarter', 'monitoredBy']);
+        $record->load(['project.association', 'quarter', 'monitoredBy']);
+        if ($write) {
+            abort_unless($record->project?->association, 404);
+            app(AssociationLifecycleService::class)->assertOperational($record->project->association);
+            app(ProjectLifecycleService::class)->assertNotFinalized($record->project);
+            if ($record->project->archived_at !== null) {
+                throw ValidationException::withMessages(['project_id' => 'Archived projects are read-only.']);
+            }
+        }
+        return $record;
     }
 
     public function index(Request $request): View
@@ -89,7 +105,7 @@ class MonitoringWorkspaceController extends MonitoringController
         if ($section === 'production') $record->load(['production.projectProduct', 'production.monthlyDetails']);
         if ($section === 'income') $record->load(['production.projectProduct', 'production.income']);
         if ($section === 'materials') $record->load('materials.projectMaterial');
-        return view('monitoring.workspace', $this->context($request) + compact('record', 'section'));
+        return view('monitoring.workspace', $this->context($request, $record) + compact('record', 'section'));
     }
 
     public function editOverview(Request $request, MonitoringRecord $monitoringRecord): View
@@ -101,7 +117,7 @@ class MonitoringWorkspaceController extends MonitoringController
             ->where('is_active', true)->whereHas('role', fn ($role) => $role->where('is_active', true)
                 ->where('code', 'field_officer'))->first(['id', 'display_name']);
         if ($officer) $users->push($officer);
-        return view('monitoring.edit-overview', $this->context($request) + compact('record', 'users'));
+        return view('monitoring.edit-overview', $this->context($request, $record) + compact('record', 'users'));
     }
 
     public function saveOverview(Request $request, MonitoringRecord $monitoringRecord, MonitoringService $service): RedirectResponse
@@ -129,8 +145,11 @@ class MonitoringWorkspaceController extends MonitoringController
     private function editorPage(Request $request, ?MonitoringRecord $record = null, ?string $section = null): View
     {
         $projects = $this->projectsFor($request)->whereNull('archived_at')
+            ->whereNotIn('status', ['completed', 'terminated'])
             ->when($record, fn ($query) => $query->whereKey($record->project_id))
-            ->with(['association.primaryFieldOfficer.role', 'products', 'materials'])->orderBy('title')->get();
+            ->with(['association.primaryFieldOfficer.role', 'products', 'materials'])->orderBy('title')->get()
+            ->filter(fn ($project) => $project->closed_at === null && $project->association
+                && app(AssociationLifecycleService::class)->isOperational($project->association))->values();
         if ($record) {
             abort_unless($projects->contains('id', $record->project_id), 404);
             $record->setRelation('visitReports', collect());
@@ -150,7 +169,7 @@ class MonitoringWorkspaceController extends MonitoringController
         $occupiedPeriods = $record ? collect() : MonitoringRecord::query()
             ->whereIn('project_id', $projects->modelKeys())->get(['project_id', 'year', 'quarter_id']);
         $quarters = Quarter::orderBy('quarter_number')->get();
-        return view('monitoring.editor', $this->context($request) + compact('projects', 'projectRows', 'quarters', 'monitoringRows', 'occupiedPeriods', 'section', 'record'));
+        return view('monitoring.editor', $this->context($request, $record) + compact('projects', 'projectRows', 'quarters', 'monitoringRows', 'occupiedPeriods', 'section', 'record'));
     }
 
     public function saveSection(UpdateMonitoringSectionRequest $request, MonitoringRecord $monitoringRecord, string $section, MonitoringService $service): RedirectResponse
@@ -165,7 +184,7 @@ class MonitoringWorkspaceController extends MonitoringController
     {
         $record = $this->accessibleRecord($request, $monitoringRecord);
         $reports = $record->visitReports()->with('conductedByUser:id,display_name')->get();
-        return view('monitoring.visits', $this->context($request) + compact('record', 'reports'));
+        return view('monitoring.visits', $this->context($request, $record) + compact('record', 'reports'));
     }
 
     public function visitPage(Request $request, MonitoringRecord $monitoringRecord, ?string $reportId = null): View|RedirectResponse
@@ -185,7 +204,7 @@ class MonitoringWorkspaceController extends MonitoringController
         if ($historicalDate && $historicalDate >= $minVisitDate && $historicalDate <= $maxVisitDate) $historicalDate = null;
         $officer = $record->project->association?->primaryFieldOfficer;
         if (! $officer?->is_active || ! $officer->role?->is_active || $officer->role?->code !== 'field_officer') $officer = null;
-        return view('monitoring.visit', $this->context($request) + compact('record', 'report', 'mode', 'officer', 'minVisitDate', 'maxVisitDate', 'historicalDate'));
+        return view('monitoring.visit', $this->context($request, $record) + compact('record', 'report', 'mode', 'officer', 'minVisitDate', 'maxVisitDate', 'historicalDate'));
     }
 
     public function saveVisit(StoreMonitoringVisitReportRequest $request, MonitoringRecord $monitoringRecord, MonitoringService $service, ?string $reportId = null): RedirectResponse

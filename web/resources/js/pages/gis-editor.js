@@ -54,6 +54,8 @@ export async function initGis(root) {
     const longitude = root.querySelector('[data-gis-longitude]');
     const latitude = root.querySelector('[data-gis-latitude]');
     const seed = JSON.parse(root.querySelector('[data-gis-seed]').textContent);
+    const identityLocked = Boolean(seed?.properties.project_finalized);
+    parentSearch.disabled = identityLocked;
     const map = createGisMap(root.querySelector('[data-gis-editor-map]'), root.querySelector('[data-gis-tile-notice]'));
     const editable = L.featureGroup().addTo(map);
     let forceMulti = false, syncing = false, dirty = false, saving = false;
@@ -116,7 +118,7 @@ export async function initGis(root) {
         root.querySelector('[data-gis-coordinate-fields]').hidden = boundary();
         longitude.disabled = boundary(); latitude.disabled = boundary();
         project.required = true;
-        project.disabled = projectState !== 'ready';
+        project.disabled = identityLocked || projectState !== 'ready';
         form.elements.parent_association_id.value = association.value;
         if (boundary() && !map.pm.controlsVisible()) {
             map.pm.addControls({ position: 'topleft', drawMarker: false, drawCircleMarker: false, drawPolyline: false,
@@ -171,7 +173,7 @@ export async function initGis(root) {
         associationState = 'loading';
         updateRegisteredArea();
         association.setAttribute('aria-busy', 'true');
-        association.disabled = !associationReady;
+        association.disabled = identityLocked || !associationReady;
         associationRetry.hidden = true;
         parentNote.textContent = 'Loading associations...';
         try {
@@ -179,11 +181,15 @@ export async function initGis(root) {
             if (controller !== associationController || controller.signal.aborted
                 || requestedAssociation !== selectedAssociation || q !== parentSearch.value) return;
             if (!Array.isArray(associations.options)) throw new Error('Invalid association lookup response.');
+            if (identityLocked && !associations.options.some(option => option.value === selectedAssociation)) {
+                associationReady = false;
+                throw new Error('The existing association is unavailable.');
+            }
             associationAddresses = new Map(associations.options.map(option => [option.value, option.address_info]));
             fillOptions(association, associations, requestedAssociation);
             associationState = 'ready';
             associationReady = true;
-            association.disabled = false;
+            association.disabled = identityLocked;
             form.elements.parent_association_id.value = association.value;
             parentNote.textContent = associations.truncated ? 'More associations are available. Refine the search.' : 'Only eligible associations within your current scope are available.';
             if (association.value !== selectedAssociation) {
@@ -232,6 +238,9 @@ export async function initGis(root) {
             }), { signal: controller.signal });
             if (!isCurrent()) return;
             if (!Array.isArray(projects.options)) throw new Error('Invalid project lookup response.');
+            if (identityLocked && !projects.options.some(option => option.value === selectedProject)) {
+                throw new Error('The existing project is unavailable.');
+            }
             if (!projects.options.length) {
                 selectedProject = '';
                 setProjectState('empty', 'No eligible projects', q ? 'No eligible projects match this search.' : 'No eligible projects for this association.');
@@ -240,7 +249,7 @@ export async function initGis(root) {
             setProjectState('ready', 'Select a project');
             fillOptions(project, projects, requestedProject);
             selectedProject = project.value;
-            project.disabled = false;
+            project.disabled = identityLocked;
             updateSaveState();
             showStatus(projectStatus, projects.truncated ? 'More eligible projects are available. Refine the search.' : 'Eligible projects for the selected association are loaded.');
         } catch (error) {

@@ -100,12 +100,12 @@ class StaffAuthController extends Controller
 
         if ($profile->role->code === 'field_officer') {
             return redirect()
-                ->route('field-officer.member-applications.index');
+                ->route('field-officer.dashboard');
         }
 
         if ($profile->role->code === 'association_account') {
             return redirect()
-                ->route('association.member-applications.index');
+                ->route('association.dashboard');
         }
 
         return redirect()->route('home');

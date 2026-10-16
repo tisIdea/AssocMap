@@ -12,6 +12,7 @@ use App\Http\Controllers\Admin\AreaController;
 use App\Http\Controllers\Admin\AssociationController;
 use App\Http\Controllers\Admin\MemberController;
 use App\Http\Controllers\AssociationOfficerController;
+use App\Http\Controllers\ProjectClosureController;
 use App\Http\Controllers\Admin\ProjectController as AdminProjectController;
 use App\Http\Controllers\Admin\TrainingController as AdminTrainingController;
 use App\Http\Controllers\Admin\ProgramActivityController as AdminProgramActivityController;
@@ -39,6 +40,17 @@ use App\Http\Controllers\FieldOfficer\MonitoringController
     as FieldOfficerMonitoringController;
 
 use Illuminate\Support\Facades\Route;
+
+foreach (['system_admin' => 'admin', 'field_officer' => 'field-officer', 'association_account' => 'association'] as $reportRole => $reportArea) {
+    Route::middleware([\App\Http\Middleware\ReportingRequestGuard::class, 'supabase.auth', 'role:'.$reportRole, 'throttle:30,1,reporting-read:'])
+        ->prefix($reportArea.'/reports')->name($reportArea.'.reports.')->group(function () {
+            Route::get('/', [\App\Http\Controllers\ReportController::class, 'index'])->name('index');
+            Route::get('/data', [\App\Http\Controllers\ReportController::class, 'data'])->name('data');
+            Route::get('/options', [\App\Http\Controllers\ReportController::class, 'options'])->name('options');
+            Route::post('/export/{format}', [\App\Http\Controllers\ReportController::class, 'export'])
+                ->whereIn('format', ['pdf', 'xlsx'])->middleware('throttle:6,1,reporting-export:')->name('export');
+        });
+}
 
 /*
 |--------------------------------------------------------------------------
@@ -112,14 +124,7 @@ Route::middleware([
     Route::post('/admin/user-invitations', [UserInvitationController::class, 'store'])
         ->middleware('throttle:user-invitations')->name('admin.user-invitations.store');
 
-    Route::get('/dashboard', function () {
-        return view('dashboard.index', [
-            'totalAssociations' => 0,
-            'totalMembers' => 0,
-            'totalProjects' => 0,
-            'totalTrainings' => 0,
-        ]);
-    })->name('admin.dashboard');
+    Route::get('/dashboard', [\App\Http\Controllers\DashboardController::class, 'index'])->name('admin.dashboard');
 
     /*
     |--------------------------------------------------------------------------
@@ -240,6 +245,13 @@ Route::middleware([
         '/admin/projects',
         [AdminProjectController::class, 'index']
     )->name('admin.projects.index');
+
+    Route::get('/admin/projects/{project}', [ProjectClosureController::class, 'show'])
+        ->whereUuid('project')->name('admin.projects.show');
+    Route::post('/admin/projects/{project}/close', [ProjectClosureController::class, 'store'])
+        ->whereUuid('project')->name('admin.projects.close');
+    Route::post('/admin/projects/{project}/terminate', [ProjectClosureController::class, 'terminate'])
+        ->whereUuid('project')->name('admin.projects.terminate');
 
     Route::post(
         '/admin/projects',
@@ -392,6 +404,8 @@ Route::middleware([
     'role:field_officer',
 ])->group(function () {
 
+    Route::get('/field-officer/dashboard', [\App\Http\Controllers\DashboardController::class, 'index'])->name('field-officer.dashboard');
+
     /*
     |--------------------------------------------------------------------------
     | MEMBER APPLICATIONS
@@ -463,6 +477,13 @@ Route::middleware([
         '/field-officer/projects',
         [FieldOfficerProjectController::class, 'index']
     )->name('field-officer.projects.index');
+
+    Route::get('/field-officer/projects/{project}', [ProjectClosureController::class, 'show'])
+        ->whereUuid('project')->name('field-officer.projects.show');
+    Route::post('/field-officer/projects/{project}/close', [ProjectClosureController::class, 'store'])
+        ->whereUuid('project')->name('field-officer.projects.close');
+    Route::post('/field-officer/projects/{project}/terminate', [ProjectClosureController::class, 'terminate'])
+        ->whereUuid('project')->name('field-officer.projects.terminate');
 
     Route::post(
         '/field-officer/projects',
@@ -614,6 +635,8 @@ Route::middleware([
     'supabase.auth',
     'role:association_account',
 ])->group(function () {
+
+    Route::get('/association/dashboard', [\App\Http\Controllers\DashboardController::class, 'index'])->name('association.dashboard');
 
     Route::get(
         '/association/member-applications',

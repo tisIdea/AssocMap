@@ -45,6 +45,26 @@ class GisFeatureSerializerTest extends TestCase
         $this->assertNull((new GisFeatureSerializer)->make($location, false)['geometry']);
     }
 
+    public function test_managers_receive_finalization_state_without_expanding_public_data(): void
+    {
+        foreach (['completed', 'terminated', 'ongoing', 'planned', 'suspended', 'cancelled'] as $status) {
+            $location = $this->location()->forceFill(['project_status' => $status]);
+            $manager = (new GisFeatureSerializer)->make($location, false, true);
+            $this->assertSame(in_array($status, ['completed', 'terminated'], true), $manager['properties']['project_finalized']);
+            $this->assertSame($status, $manager['properties']['project_status']);
+            $this->assertArrayNotHasKey('project_finalized', (new GisFeatureSerializer)->make($location, true, true)['properties']);
+            $this->assertArrayNotHasKey('project_finalized', (new GisFeatureSerializer)->make($location, false, false)['properties']);
+            $this->assertArrayNotHasKey('project_status', (new GisFeatureSerializer)->make($location, true, true)['properties']);
+            $this->assertArrayNotHasKey('project_status', (new GisFeatureSerializer)->make($location, false, false)['properties']);
+        }
+    }
+
+    public function test_a_closure_marker_also_protects_gis_identity(): void
+    {
+        $location = $this->location()->forceFill(['project_status' => 'ongoing', 'project_closed_at' => '2026-10-16 08:00:00']);
+        $this->assertTrue((new GisFeatureSerializer)->make($location, false, true)['properties']['project_finalized']);
+    }
+
     private function location(): GisLocation
     {
         return (new GisLocation)->forceFill([

@@ -12,6 +12,8 @@ use Illuminate\Validation\ValidationException;
 
 class ProgramActivityService
 {
+    public function __construct(private AssociationLifecycleService $lifecycle, private ProjectLifecycleService $projects) {}
+
     private const EXCLUDED_ACTIVITY_CODES = [
         // Dedicated Project module
         'FPL_LPD',
@@ -49,6 +51,10 @@ class ProgramActivityService
             $activity,
             $relatedProject
         ) {
+            $this->lifecycle->lockOperational([$association?->id]);
+            $this->projects->lockNotFinalized([$relatedProject?->id]);
+            $association = $this->resolveAssociationForUser($association?->id, $currentUser);
+            $relatedProject = $this->resolveRelatedProject($relatedProject?->id, $association);
             $record = ProgramActivityRecord::create([
                 'saad_activity_id' =>
                     $activity->id,
@@ -141,6 +147,12 @@ class ProgramActivityService
             $activity,
             $relatedProject
         ) {
+            $record = $this->lockForMutation($record, $currentUser, [$association?->id], [$relatedProject?->id]);
+            if ($record->archived_at !== null) {
+                throw ValidationException::withMessages(['program_activity' => 'Archived program activities cannot be edited.']);
+            }
+            $association = $this->resolveAssociationForUser($association?->id, $currentUser);
+            $relatedProject = $this->resolveRelatedProject($relatedProject?->id, $association);
             $record->update([
                 'saad_activity_id' =>
                     $activity->id,
@@ -195,50 +207,44 @@ class ProgramActivityService
         ProgramActivityRecord $record,
         UserProfile $currentUser
     ): void {
-        $this->ensureUserCanManageRecord(
-            $record,
-            $currentUser
-        );
-
-        if ($record->archived_at !== null) {
-            return;
-        }
-
-        $record->update([
-            'archived_at' =>
-                now(),
-
-            'archived_by' =>
-                $currentUser->id,
-
-            'updated_by' =>
-                $currentUser->id,
-        ]);
+        DB::transaction(function () use ($record, $currentUser) {
+            $record = $this->lockForMutation($record, $currentUser);
+            if ($record->archived_at !== null) return;
+            $record->update([
+                'archived_at' => now(),
+                'archived_by' => $currentUser->id,
+                'updated_by' => $currentUser->id,
+            ]);
+        }, 3);
     }
 
     public function unarchive(
         ProgramActivityRecord $record,
         UserProfile $currentUser
     ): void {
-        $this->ensureUserCanManageRecord(
-            $record,
-            $currentUser
-        );
+        DB::transaction(function () use ($record, $currentUser) {
+            $record = $this->lockForMutation($record, $currentUser);
+            if ($record->archived_at === null) return;
+            $record->update([
+                'archived_at' => null,
+                'archived_by' => null,
+                'updated_by' => $currentUser->id,
+            ]);
+        }, 3);
+    }
 
-        if ($record->archived_at === null) {
-            return;
+    private function lockForMutation(ProgramActivityRecord $record, UserProfile $actor,
+        array $destinationIds = [], array $destinationProjects = []): ProgramActivityRecord
+    {
+        $this->lifecycle->lockOperational([$record->association_id, ...$destinationIds]);
+        $locked = ProgramActivityRecord::whereKey($record->id)->lockForUpdate()->firstOrFail();
+        if ($locked->association_id !== $record->association_id) {
+            throw ValidationException::withMessages(['program_activity' => 'The activity association changed. Refresh before saving.'])->status(409);
         }
+        $this->ensureUserCanManageRecord($locked, $actor);
+        $this->projects->lockNotFinalized([$locked->related_project_id, ...$destinationProjects]);
 
-        $record->update([
-            'archived_at' =>
-                null,
-
-            'archived_by' =>
-                null,
-
-            'updated_by' =>
-                $currentUser->id,
-        ]);
+        return $locked;
     }
 
     private function resolveAssociationForUser(
@@ -423,6 +429,8 @@ class ProgramActivityService
                     'The selected project does not belong to the selected association or is archived.',
             ]);
         }
+
+        $this->projects->assertNotFinalized($project, 'related_project_id');
 
         return $project;
     }

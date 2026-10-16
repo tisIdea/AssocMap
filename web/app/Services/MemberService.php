@@ -19,6 +19,7 @@ class MemberService
         private MemberExecutivePositionService $executivePositions,
         private MemberPositionIntegrityService $positions,
         private AuditLogService $audit,
+        private AssociationLifecycleService $lifecycle,
     ) {}
 
     public function update(Member $member, array $data, UserProfile $currentUser): Member
@@ -89,9 +90,7 @@ class MemberService
         $actor = $this->positions->lockActor($currentUser, 'field_officer');
         $association = Association::whereKey($member->association_id)->lockForUpdate()->firstOrFail();
         abort_unless($association->primary_field_officer_id === $actor->id, 403);
-        if ($association->archived_at !== null) {
-            throw ValidationException::withMessages(['member' => 'Members of archived associations are read-only.']);
-        }
+        $this->lifecycle->assertOperational($association, 'member');
         $locked = Member::whereKey($member->id)->lockForUpdate()->firstOrFail();
         if ($locked->association_id !== $association->id
             || ($data['member_record_id'] ?? null) !== $locked->id

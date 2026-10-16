@@ -6,6 +6,7 @@ import { initForms } from './pages/admin/forms.js';
 import { initReports } from './pages/admin/reports.js';
 import { initStaffLogin } from './pages/staff-login.js';
 import { initUserInvitations } from './pages/user-invitations.js';
+import { initProjectClosure } from './pages/project-closure.js';
 
 initDisclosures();
 initDialogs();
@@ -15,6 +16,7 @@ initForms();
 initReports();
 initStaffLogin();
 initUserInvitations();
+initProjectClosure();
 
 const gisRoot = document.querySelector('[data-gis-workspace], [data-gis-editor]');
 if (gisRoot) {

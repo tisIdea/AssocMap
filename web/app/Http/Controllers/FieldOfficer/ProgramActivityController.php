@@ -115,6 +115,7 @@ class ProgramActivityController extends Controller
             ->get();
 
         $projects = Project::query()
+            ->whereNotIn('status', ['completed', 'terminated'])
             ->whereIn(
                 'association_id',
                 $associationIds
@@ -274,6 +275,8 @@ class ProgramActivityController extends Controller
         return [
             'id' =>
                 $record->id,
+
+            'project_finalized' => $record->relatedProject?->isFinalized() ?? false,
 
             'saad_activity_id' =>
                 $record->saad_activity_id,

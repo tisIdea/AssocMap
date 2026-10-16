@@ -93,6 +93,7 @@ class TrainingController extends Controller
             ->get();
 
         $projects = Project::query()
+            ->whereNotIn('status', ['completed', 'terminated'])
             ->whereNull('archived_at')
             ->orderByDesc('program_year')
             ->orderBy('title')
@@ -261,6 +262,7 @@ class TrainingController extends Controller
             'id' =>
                 $training->id,
 
+            'project_finalized' => $training->relatedProject?->isFinalized() ?? false,
             'expected_updated_at' => $training->updated_at?->format('Y-m-d\TH:i:s.uP'),
 
             'association_id' =>

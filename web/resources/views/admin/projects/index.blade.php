@@ -8,18 +8,19 @@
     $fromMonitoring = request()->boolean('from_monitoring') && in_array($resourceSection, ['products', 'materials'], true);
     $requestedProject = request()->query('project_id');
     $navigationProject = $fromMonitoring && is_string($requestedProject)
-        ? $rows->first(fn ($row) => (string) $row['id'] === $requestedProject && !$row['archived_at'] && collect($catalog['options']['association_records'])->contains('value', $row['association_id']))
+        ? $rows->first(fn ($row) => (string) $row['id'] === $requestedProject && !$row['archived_at'] && ($row['can_mutate'] ?? false) && collect($catalog['options']['association_records'])->contains('value', $row['association_id']))
         : null;
     $returnRecord = request()->query('monitoring_record');
     $returnRecord = is_string($returnRecord) && Illuminate\Support\Str::isUuid($returnRecord) ? $returnRecord : null;
     $monitoringReturnUrl = $navigationProject && $returnRecord
         ? route($monitoringPrefix.'.workspace', [$returnRecord, $resourceSection === 'products' ? 'production' : 'materials'])
         : route($monitoringPrefix.'.index');
-    $statuses = ['planned' => 'Planned', 'ongoing' => 'Ongoing', 'completed' => 'Completed', 'suspended' => 'Suspended', 'cancelled' => 'Cancelled'];
+    $statuses = ['planned' => 'Planned', 'ongoing' => 'Ongoing', 'completed' => 'Completed', 'terminated' => 'Terminated', 'suspended' => 'Suspended', 'cancelled' => 'Cancelled'];
     $delivery = ['planned' => 'Planned', 'not_delivered' => 'Not Delivered', 'partially_delivered' => 'Partially Delivered', 'delivered' => 'Delivered'];
     $productTypes = ['raw' => 'Raw', 'processed' => 'Processed', 'other' => 'Other'];
-    $restore = $errors->any() && old('project_form') === 'editor';
-    $editing = $restore ? $rows->first(fn ($row) => (string) $row['id'] === (string) old('project_record_id') && !$row['archived_at']) : null;
+    $editorRecord = $rows->first(fn ($row) => (string) $row['id'] === (string) old('project_record_id') && !$row['archived_at'] && ($row['can_mutate'] ?? false));
+    $restore = $errors->any() && old('project_form') === 'editor' && (!old('project_record_id') || $editorRecord);
+    $editing = $restore ? $editorRecord : null;
     $fields = [
         ['name' => 'association_id', 'label' => 'Association', 'type' => 'select', 'choices' => $catalog['options']['association_records'], 'required' => true],
         ['name' => 'title', 'label' => 'Project Title', 'required' => true],
@@ -28,7 +29,7 @@
         ['name' => 'program_year', 'label' => 'Program Year', 'type' => 'number', 'required' => true],
         ['name' => 'implementation_start_date', 'label' => 'Implementation Start Date', 'type' => 'date', 'required' => true],
         ['name' => 'implementation_end_date', 'label' => 'Implementation End Date', 'type' => 'date'],
-        ['name' => 'status', 'label' => 'Status', 'type' => 'select', 'choices' => collect($statuses)->map(fn ($label, $value) => compact('value', 'label'))->values()->all(), 'required' => true],
+        ['name' => 'status', 'label' => 'Status', 'type' => 'select', 'choices' => collect($statuses)->except(['completed', 'terminated'])->map(fn ($label, $value) => compact('value', 'label'))->values()->all(), 'required' => true],
         ['name' => 'remarks', 'label' => 'Remarks', 'type' => 'textarea'],
     ];
     $materialFields = ['item_name' => ['Item Name', 'text', true], 'quantity_planned' => ['Planned Quantity', 'number', true], 'quantity_delivered' => ['Delivered Quantity', 'number', false], 'unit' => ['Unit', 'text', true], 'unit_cost' => ['Unit Cost', 'number', false], 'delivery_status' => ['Delivery Status', 'select', true], 'delivery_date' => ['Delivery Date', 'date', false], 'remarks' => ['Remarks', 'textarea', false]];
@@ -52,8 +53,8 @@
     <div class="table-scroll" role="region" aria-label="Project list" tabindex="0"><table class="data-table"><caption class="sr-only">Association projects and implementation status</caption><thead><tr>@foreach($columns as $label)<th scope="col">{{ $label }}</th>@endforeach<th scope="col">Status</th><th scope="col">Actions</th></tr></thead><tbody>
     @foreach($rows as $row)
         <tr>@foreach($columns as $key => $label)<td @class(['primary-cell' => $key === 'title'])>{{ filled($row[$key] ?? null) ? $row[$key] : '—' }}</td>@endforeach
-        <td><span class="badge badge-{{ $row['archived_at'] ? 'neutral' : ($row['status_value'] === 'completed' ? 'success' : 'warning') }}">{{ $row['archived_at'] ? 'Archived' : $row['status'] }}</span></td>
-        <td><div class="row-actions"><button type="button" class="text-button" data-dialog="project-view-{{ $row['id'] }}" aria-label="View {{ $row['title'] }}">View</button>@if(!$row['archived_at'])<button type="button" class="text-button" data-project-edit="{{ $row['id'] }}" data-dialog="project-editor" aria-label="Edit {{ $row['title'] }}">Edit</button>@endif<button type="button" class="text-button" data-dialog="project-action-{{ $row['id'] }}">{{ $row['archived_at'] ? 'Unarchive' : 'Archive' }}</button></div></td></tr>
+        <td><span class="badge badge-{{ $row['status_value'] === 'completed' ? 'success' : ($row['status_value'] === 'terminated' ? 'danger' : ($row['archived_at'] ? 'neutral' : 'warning')) }}">{{ in_array($row['status_value'], ['completed', 'terminated'], true) ? strtoupper($row['status_value']) : ($row['archived_at'] ? 'Archived' : $row['status']) }}</span>@if(in_array($row['status_value'], ['completed', 'terminated'], true) && $row['archived_at'])<span class="badge badge-neutral">Archived</span>@endif</td>
+        <td><div class="row-actions"><button type="button" class="text-button" data-dialog="project-view-{{ $row['id'] }}" aria-label="View {{ $row['title'] }}">View</button><a class="text-button" href="{{ $row['detail_url'] }}">History / Details</a>@if($row['can_mutate'] ?? false)@if(!$row['archived_at'])<button type="button" class="text-button" data-project-edit="{{ $row['id'] }}" data-dialog="project-editor" aria-label="Edit {{ $row['title'] }}">Edit</button>@if($row['status_value'] === 'ongoing')<a class="text-button text-danger" href="{{ route($prefix.'.show', ['project' => $row['id'], 'finalize' => 'completed']) }}">Complete Project</a><a class="text-button text-danger" href="{{ route($prefix.'.show', ['project' => $row['id'], 'finalize' => 'terminated']) }}">Terminate Project</a>@endif @endif<button type="button" class="text-button" data-dialog="project-action-{{ $row['id'] }}">{{ $row['archived_at'] ? 'Unarchive' : 'Archive' }}</button>@else<span>Read-only</span>@endif</div></td></tr>
     @endforeach
     </tbody></table></div>
     @if($rows->isEmpty())<x-empty-state title="No projects found." message="Try another status filter or add a project for an available association." />@endif
@@ -64,7 +65,9 @@
 @foreach($rows as $row)
     <x-modal :id="'project-view-'.$row['id']" title="Project Details">
         <dl class="detail-grid">@foreach($columns + ['description' => 'Description', 'implementation_end_date' => 'Implementation End Date', 'status' => 'Status', 'remarks' => 'Remarks', 'archived_at' => 'Archived At'] as $key => $label)<div><dt>{{ $label }}</dt><dd>{{ filled($row[$key] ?? null) ? $row[$key] : '—' }}</dd></div>@endforeach</dl>
-        @if($row['archived_at'])<p class="notice">This project is archived. Unarchive it before editing.</p>@endif
+        @if(in_array($row['status_value'], ['completed', 'terminated'], true))<p class="notice">This project is permanently read-only and cannot be reopened. <a href="{{ $row['detail_url'] }}">View finalization information and history</a></p>
+        @elseif(!($row['can_mutate'] ?? false))<p class="notice">This project's association is read-only. Operational changes are unavailable.</p>
+        @elseif($row['archived_at'])<p class="notice">This project is archived. Unarchive it before editing.</p>@endif
         @include('projects.partials.location', ['row' => $row])
         <h3>Project Materials</h3>
         @forelse($row['materials'] as $material)<div class="repeat-row"><dl class="detail-grid">@foreach($materialFields as $key => $definition)<div><dt>{{ $definition[0] }}</dt><dd>{{ $key === 'delivery_status' ? ($delivery[$material[$key]] ?? $material[$key]) : (filled($material[$key] ?? null) ? $material[$key] : '—') }}</dd></div>@endforeach</dl></div>@empty<p>No materials recorded.</p>@endforelse
@@ -80,10 +83,12 @@
         @empty<p>No products recorded.</p>@endforelse
         <div class="modal-actions"><button type="button" class="button" data-close-dialog>Close</button></div>
     </x-modal>
+    @if($row['can_mutate'] ?? false)
     <x-modal :id="'project-action-'.$row['id']" :title="$row['archived_at'] ? 'Unarchive Project' : 'Archive Project'">
         <p>{{ $row['archived_at'] ? 'Restore' : 'Archive' }} <strong>{{ $row['title'] }}</strong>? {{ $row['archived_at'] ? 'The project will return to the current project list.' : 'Archived projects remain available for viewing and cannot be edited.' }}</p>
         <form method="POST" action="{{ $row['archived_at'] ? $row['unarchive_url'] : $row['archive_url'] }}">@csrf @method('PATCH')<div class="modal-actions"><button type="button" class="button" data-close-dialog>Cancel</button><button type="submit" class="button {{ $row['archived_at'] ? 'button-primary' : 'button-danger' }}">{{ $row['archived_at'] ? 'Unarchive Project' : 'Archive Project' }}</button></div></form>
     </x-modal>
+    @endif
 @endforeach
 <x-modal id="project-editor" :title="$editing ? 'Edit Project' : 'Add Project'">
     <form method="POST" action="{{ $editing['update_url'] ?? route($prefix.'.store') }}" id="project-form">
@@ -246,16 +251,16 @@
     document.addEventListener('click', event => {
         const button = event.target.closest('[data-project-create], [data-project-edit]');
         if (!button) return;
-        const record = button.hasAttribute('data-project-edit') ? records.find(row => String(row.id) === button.dataset.projectEdit && !row.archived_at) : null;
+        const record = button.hasAttribute('data-project-edit') ? records.find(row => String(row.id) === button.dataset.projectEdit && !row.archived_at && row.can_mutate) : null;
         if (button.hasAttribute('data-project-edit') && !record) return;
         populate(record ? {...record, status: record.status_value} : {}, record);
         form.querySelector('[data-project-errors]')?.remove();
         form.elements.association_id.focus();
     });
-    populate(initial, restore ? records.find(row => String(row.id) === String(initial.project_record_id) && !row.archived_at) : null);
+    populate(initial, restore ? records.find(row => String(row.id) === String(initial.project_record_id) && !row.archived_at && row.can_mutate) : null);
     if (restore) document.getElementById('project-editor').showModal();
     else if (navigationProject) {
-        const record = records.find(row => String(row.id) === navigationProject && !row.archived_at);
+        const record = records.find(row => String(row.id) === navigationProject && !row.archived_at && row.can_mutate);
         if (record) {
             populate({...record, status: record.status_value}, record);
             document.getElementById('project-editor').showModal();

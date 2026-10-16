@@ -13,7 +13,8 @@
         'Date Created' => $record->created_at?->format('M d, Y'),
         'Monitored By' => $record->monitoredBy?->display_name,
         'Site Validated' => $record->site_validated ? 'Yes' : 'No',
-        'Project Status' => ucfirst($record->project_status),
+        'Current Project Status' => ucfirst($record->project?->status ?? 'Unavailable'),
+        'Status During Monitoring' => ucfirst($record->project_status),
     ]])
 </section>
 <nav class="monitoring-nav" aria-label="Monitoring navigation">

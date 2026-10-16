@@ -26,7 +26,7 @@ class FieldOfficerAssignmentController extends Controller
             'officer' => $userProfile,
             'assigned' => $userProfile->assignedAssociations()->orderBy('name')
                 ->paginate(25, ['id', 'name', 'status', 'archived_at'], 'assigned_page')->withQueryString(),
-            'choices' => Association::whereNull('archived_at')->with('primaryFieldOfficer:id,display_name')
+            'choices' => Association::whereNull('archived_at')->where('status', 'active')->with('primaryFieldOfficer:id,display_name')
                 ->orderBy('name')->orderBy('id')->paginate(50)->withQueryString(),
         ])->header('Cache-Control', 'no-store, private')->header('Referrer-Policy', 'no-referrer');
     }

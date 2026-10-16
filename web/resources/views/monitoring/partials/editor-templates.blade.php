@@ -1,10 +1,9 @@
-<template id="monitoring-monthly-template"><fieldset class="monitoring-card" data-kind="monthly"><legend>Monthly Production</legend><input type="hidden" data-key="id" disabled>
+<template id="monitoring-monthly-template"><fieldset class="monitoring-card" data-kind="monthly"><legend data-month-name>Monthly Production</legend><input type="hidden" data-key="id" disabled><input type="hidden" data-key="month">
     <div class="form-grid">
-        <div class="field"><label data-label="month">Production Month *</label><select data-key="month" required></select></div>
-        <div class="field"><label data-label="activity_count">Number of Production Activities *</label><input data-key="activity_count" type="number" min="1" max="2147483647" step="1" required></div>
-        <div class="field"><label data-label="total_quantity">Total Production Quantity *</label><input data-key="total_quantity" type="number" min="0" max="999999999999.99" step="0.01" required></div>
+        <div class="field"><label data-label="activity_count">Production Activity Count *</label><input data-key="activity_count" type="number" min="0" max="2147483647" step="1" required></div>
+        <div class="field"><label data-label="total_quantity">Actual Production Quantity *</label><input data-key="total_quantity" type="number" min="0" max="999999999999.99" step="0.01" required><p class="field-hint" data-month-unit></p></div>
         <div class="field"><label data-label="remarks">Production Remarks</label><textarea data-key="remarks" rows="2"></textarea></div>
-    </div><div class="monitoring-card-actions"><button type="button" class="button" data-cancel-monthly>Cancel</button><button type="button" class="text-button text-danger" data-remove-monthly>Remove Month</button></div>
+    </div>
 </fieldset></template>
 @foreach($repeatFields as $kind => $definitions)
 <template id="monitoring-{{ $kind }}-template"><fieldset class="repeat-row monitoring-card" data-kind="{{ $kind }}"><legend>{{ $kind === 'materials' ? 'Material' : ucfirst($kind) }}</legend><div class="repeat-row-heading"><strong data-row-heading></strong><button type="button" class="text-button text-danger" data-monitoring-remove-row>Remove {{ $kind === 'materials' ? 'Material' : ucfirst($kind) }}</button></div><input type="hidden" data-key="id" disabled>
@@ -28,11 +27,11 @@
         @if($key === 'period_type')<input type="hidden" data-key="period_type">
         @elseif($type === 'select')<select data-key="{{ $key }}" @required($required)><option value="">Select…</option>@if($key === 'period_type')<option value="monthly">Monthly</option><option value="quarterly">Quarterly</option>@elseif($key === 'month')@foreach($months as $value => $month)<option value="{{ $value }}">{{ $month }}</option>@endforeach @endif</select>
         @elseif($type === 'textarea')<textarea data-key="{{ $key }}" rows="2"></textarea>
-        @else<input type="{{ $type }}" data-key="{{ $key }}" @required($required) @if($type === 'number') min="0" step="any" @endif @if(in_array($key, ['unit', 'condition'])) maxlength="50" @endif>@endif
+        @else<input type="{{ $type }}" data-key="{{ $key }}" @required($required) @if($type === 'number') min="0" @if($kind === 'production') max="999999999999.99" step="0.01" @else step="any" @endif @endif @if(in_array($key, ['unit', 'condition'])) maxlength="50" @endif>@endif
         </div>
     @endforeach
     </div>
-    @if($kind === 'production')<p data-product-type hidden></p><h4>Monthly Production Details</h4><p>Months without production need no entry. Quantities use this quarterly product’s unit.</p><p data-monthly-subtotal></p><div data-monthly-container></div><button type="button" class="button" data-add-monthly>Add Production Month</button>@endif
+    @if($kind === 'production')<p data-product-type hidden></p><h4>Monthly Production for the Selected Quarter</h4><p data-monthly-notice></p><div data-monthly-container></div><p><label data-quarterly-label>Quarterly Actual Output:</label> <output data-quarterly-output aria-live="polite"></output></p>@endif
     @if($kind === 'production')<input type="hidden" data-income-empty value=""><h4 data-income-title>Income Monitoring</h4><div data-income-container class="monitoring-editor-cards"></div><p data-income-notice>No Income records yet.</p><button type="button" class="button" data-add-income>Add Income</button>@endif
 </fieldset></template>
 @endforeach

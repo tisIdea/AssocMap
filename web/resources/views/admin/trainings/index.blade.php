@@ -4,7 +4,8 @@
     $rows = collect($trainingRows);
     $statuses = ['scheduled' => 'Scheduled', 'completed' => 'Completed', 'cancelled' => 'Cancelled'];
     $restore = $errors->any() && old('training_form') === 'editor';
-    $editing = $restore ? $rows->first(fn ($row) => (string) $row['id'] === (string) old('training_record_id') && !$row['archived']) : null;
+    $editing = $restore ? $rows->first(fn ($row) => (string) $row['id'] === (string) old('training_record_id') && !$row['archived'] && !$row['project_finalized']) : null;
+    $restore = $restore && (!old('training_record_id') || $editing);
     $nameOf = fn ($member) => $member ? collect([$member->first_name, $member->middle_name, $member->last_name, $member->suffix])->filter(fn ($part) => filled($part))->implode(' ') : 'Member unavailable';
     $memberOptions = $members->map(fn ($member) => ['value' => $member->id, 'label' => $nameOf($member), 'association_id' => $member->association_id])->values();
     $projectOptions = $projects->map(fn ($project) => ['value' => $project->id, 'label' => $project->title, 'association_id' => $project->association_id])->values();
@@ -49,7 +50,7 @@
         @foreach($rows as $row)
             <tr>@foreach($columns as $key => $label)<td @class(['primary-cell' => $key === 'title'])>{{ filled($row[$key] ?? null) ? $row[$key] : '—' }}</td>@endforeach
                 <td><span class="badge badge-{{ $row['archived'] ? 'neutral' : ($row['status_value'] === 'completed' ? 'success' : ($row['status_value'] === 'cancelled' ? 'danger' : 'warning')) }}">{{ $row['archived'] ? 'Archived' : $row['status'] }}</span></td><td>{{ $row['participant_count'] }}</td>
-                <td><div class="row-actions"><button type="button" class="text-button" data-dialog="training-view-{{ $row['id'] }}" aria-label="View {{ $row['title'] }}">View</button>@if(!$row['archived'])<button type="button" class="text-button" data-training-edit="{{ $row['id'] }}" data-dialog="training-editor" aria-label="Edit {{ $row['title'] }}">Edit</button>@endif<button type="button" class="text-button {{ !$row['archived'] ? 'text-danger' : '' }}" data-dialog="training-action-{{ $row['id'] }}">{{ $row['archived'] ? 'Unarchive' : 'Archive' }}</button></div></td>
+                <td><div class="row-actions"><button type="button" class="text-button" data-dialog="training-view-{{ $row['id'] }}" aria-label="View {{ $row['title'] }}">View</button>@if(!$row['project_finalized'])@if(!$row['archived'])<button type="button" class="text-button" data-training-edit="{{ $row['id'] }}" data-dialog="training-editor" aria-label="Edit {{ $row['title'] }}">Edit</button>@endif<button type="button" class="text-button {{ !$row['archived'] ? 'text-danger' : '' }}" data-dialog="training-action-{{ $row['id'] }}">{{ $row['archived'] ? 'Unarchive' : 'Archive' }}</button>@else<span>Read-only: project finalized</span>@endif</div></td>
             </tr>
         @endforeach
         </tbody></table></div>
@@ -63,15 +64,18 @@
     @php($training = $trainings->firstWhere('id', $row['id']))
     <x-modal :id="'training-view-'.$row['id']" title="Training Details">
         <dl class="detail-grid">@foreach($columns + ['description' => 'Description', 'conducted_by' => 'Conducted By', 'training_cost' => 'Training Cost', 'status' => 'Status', 'remarks' => 'Remarks'] as $key => $label)<div><dt>{{ $label }}</dt><dd>{{ filled($row[$key] ?? null) ? $row[$key] : '—' }}</dd></div>@endforeach<div><dt>Archived</dt><dd>{{ $row['archived'] ? 'Yes' : 'No' }}</dd></div>@if($training?->archived_at)<div><dt>Archived At</dt><dd>{{ $training->archived_at->format('M j, Y g:i A') }}</dd></div>@endif</dl>
-        @if($row['archived'])<p class="notice">This training is archived and read-only. Unarchive it before editing.</p>@endif
+        @if($row['project_finalized'])<p class="notice">The linked project is completed or terminated. This training and its participants are permanently read-only.</p>@endif
+        @if(!$row['project_finalized'] && $row['archived'])<p class="notice">This training is archived and read-only. Unarchive it before editing.</p>@endif
         <h3>Participants and Attendance</h3>
         @forelse($training?->participants ?? [] as $participant)<div class="repeat-row"><dl class="detail-grid"><div><dt>Member</dt><dd>{{ $nameOf($participant->member) }}</dd></div><div><dt>Attendance Status</dt><dd>{{ ucfirst($participant->attendance_status) }}</dd></div><div><dt>Remarks</dt><dd>{{ $participant->remarks ?: '—' }}</dd></div></dl></div>@empty<p>No participants recorded.</p>@endforelse
         <div class="modal-actions"><button type="button" class="button" data-close-dialog>Close</button></div>
     </x-modal>
+    @if(!$row['project_finalized'])
     <x-modal :id="'training-action-'.$row['id']" :title="$row['archived'] ? 'Unarchive Training' : 'Archive Training'">
         <p>{{ $row['archived'] ? 'Restore' : 'Archive' }} <strong>{{ $row['title'] }}</strong>? {{ $row['archived'] ? 'The training will return to the current list.' : 'Its details and attendance will remain available for viewing.' }}</p>
         <form method="POST" action="{{ $row['archived'] ? $row['unarchive_url'] : $row['archive_url'] }}">@csrf @method('PATCH')<div class="modal-actions"><button type="button" class="button" data-close-dialog>Cancel</button><button type="submit" class="button {{ $row['archived'] ? 'button-primary' : 'button-danger' }}">{{ $row['archived'] ? 'Unarchive Training' : 'Archive Training' }}</button></div></form>
     </x-modal>
+    @endif
 @endforeach
 <x-modal id="training-editor" :title="$editing ? 'Edit Training' : 'Add Training'">
     <form method="POST" action="{{ $editing['update_url'] ?? route($trainingPrefix.'.store') }}" id="training-form">
@@ -247,7 +251,7 @@
     document.addEventListener('click', event => {
         const button = event.target.closest('[data-training-create], [data-training-edit]');
         if (!button) return;
-        const record = button.hasAttribute('data-training-edit') ? records.find(row => String(row.id) === button.dataset.trainingEdit && !row.archived) : null;
+        const record = button.hasAttribute('data-training-edit') ? records.find(row => String(row.id) === button.dataset.trainingEdit && !row.archived && !row.project_finalized) : null;
         if (button.hasAttribute('data-training-edit') && !record) return;
         populate(record ? {...record, status: record.status_value} : {}, record);
         form.querySelector('[data-training-errors]')?.remove();

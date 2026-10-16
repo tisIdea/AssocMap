@@ -199,6 +199,7 @@
         data-title="Reports & Analytics"
         hidden
     >
-        @include('admin.reports.index')
+        @include('partials.page-header', ['title' => 'Reports & Analytics', 'description' => 'Review authorized program records and exports.'])
+        <a class="button button-primary" href="{{ route('admin.reports.index') }}">Open Reports &amp; Analytics</a>
     </section>
 @endsection

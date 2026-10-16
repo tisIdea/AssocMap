@@ -2,6 +2,8 @@
 @php
     $workspaceHeading = request()->routeIs('field-officer.members.*') ? 'Member Management' : (request()->routeIs('field-officer.gis.*') ? 'GIS Mapping' : (request()->routeIs('field-officer.monitoring.*') ? 'Monitoring' : (request()->routeIs('field-officer.program-activities.*') ? 'Program Activities' : (request()->routeIs('field-officer.trainings.*') ? 'Trainings' : (request()->routeIs('field-officer.projects.*') ? 'Projects' : 'Member Applications')))));
 @endphp
+@php if (request()->routeIs('field-officer.reports.*')) $workspaceHeading = 'Reports & Analytics'; @endphp
+@php if (request()->routeIs('field-officer.dashboard')) $workspaceHeading = 'Dashboard'; @endphp
 <html lang="en">
 <head>
     <meta charset="utf-8">
@@ -13,12 +15,14 @@
 <body>
     <a class="skip-link" href="#main-content">Skip to content</a>
     <aside class="sidebar" id="field-officer-sidebar" aria-label="Field Officer navigation">
-        <a class="brand" href="{{ route('field-officer.member-applications.index') }}" aria-label="AssocMap member applications">
+        <a class="brand" href="{{ route('field-officer.dashboard') }}" aria-label="AssocMap dashboard">
             <span class="brand-symbol"><x-icon name="map" /></span>
             <span class="brand-copy"><strong>Assoc<span>Map</span></strong><small>FIELD OFFICER WORKSPACE</small></span>
         </a>
         <div class="sidebar-section-label">WORKSPACE</div>
         <nav class="sidebar-nav" aria-label="Main navigation">
+            <a class="nav-link {{ request()->routeIs('field-officer.dashboard') ? 'active' : '' }}" href="{{ route('field-officer.dashboard') }}" @if(request()->routeIs('field-officer.dashboard')) aria-current="page" @endif><x-icon name="grid" /><span>Dashboard</span></a>
+            <a class="nav-link {{ request()->routeIs('field-officer.reports.*') ? 'active' : '' }}" href="{{ route('field-officer.reports.index') }}" @if(request()->routeIs('field-officer.reports.*')) aria-current="page" @endif><x-icon name="chart" /><span>Reports &amp; Analytics</span></a>
             <a class="nav-link {{ request()->routeIs('field-officer.members.*') ? 'active' : '' }}" href="{{ route('field-officer.members.index') }}" @if(request()->routeIs('field-officer.members.*')) aria-current="page" @endif><x-icon name="users" /><span>Member Management</span></a>
             <a class="nav-link {{ request()->routeIs('field-officer.association-officers.*') ? 'active' : '' }}" href="{{ route('field-officer.association-officers.index') }}" @if(request()->routeIs('field-officer.association-officers.*')) aria-current="page" @endif><x-icon name="users" /><span>Association Officers</span></a>
             <a class="nav-link {{ request()->routeIs('field-officer.gis.*') ? 'active' : '' }}" href="{{ route('field-officer.gis.index') }}" @if(request()->routeIs('field-officer.gis.*')) aria-current="page" @endif><x-icon name="map" /><span>GIS Mapping</span></a>

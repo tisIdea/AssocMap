@@ -17,7 +17,7 @@
         ['quarter_id', 'Quarter', 'select', $quarters->map(fn ($quarter) => ['value' => $quarter->id, 'label' => 'Q'.$quarter->quarter_number])->all()],
         ['monitoring_date', 'Monitoring Date', 'date'],
         ['site_validated', 'Site Validated', 'select', [['value' => '1', 'label' => 'Yes'], ['value' => '0', 'label' => 'No']]],
-        ['project_status', 'Project Status', 'select', collect($statuses)->map(fn ($label, $value) => compact('value', 'label'))->all()],
+        ['project_status', 'Status During Monitoring', 'select', collect($statuses)->map(fn ($label, $value) => compact('value', 'label'))->all()],
         ['issues_encountered', 'Issues Encountered', 'textarea'],
         ['actions_taken', 'Actions Taken', 'textarea'],
         ['overall_remarks', 'Overall Remarks', 'textarea'],
@@ -41,7 +41,7 @@
         ],
     ];
     $repeatFields = [
-        'production' => [['project_product_id', 'Project Product', 'select', true], ['target_output', 'Target Production', 'number', true], ['actual_output', 'Initial Production', 'number', true], ['unit', 'Unit of Measurement', 'text', true], ['remarks', 'Remarks', 'textarea', false]],
+        'production' => [['project_product_id', 'Project Product', 'select', true], ['target_output', 'Target Output', 'number', true], ['unit', 'Unit of Measurement', 'text', true], ['remarks', 'Remarks', 'textarea', false]],
         'income' => [['period_type', 'Period Type', 'select', true], ['month', 'Month', 'select', false], ['gross_income', 'Gross Income', 'number', true], ['remarks', 'Remarks', 'textarea', false]],
         'materials' => [['project_material_id', 'Project Material', 'select', true], ['condition', 'Condition', 'text', true], ['scheduled_maintenance', 'Scheduled Maintenance', 'date', false], ['actual_maintenance', 'Actual Maintenance', 'date', false], ['remarks', 'Remarks', 'textarea', false]],
     ];
@@ -120,6 +120,10 @@
     <form method="POST" action="{{ route($monitoringPrefix.'.store') }}" id="monitoring-form" class="monitoring-workspace" data-monitoring-workspace novalidate>
         @csrf
         <input type="hidden" name="monitoring_form" value="editor"><input type="hidden" name="monitoring_record_id"><input type="hidden" name="_method" value="PATCH" disabled>
+        @if($record)
+            @php($productionRevision = $restore ? old('production_revision') : $rows->first()['production_revision'])
+            <input type="hidden" name="production_revision" value="{{ is_string($productionRevision) ? $productionRevision : '' }}">
+        @endif
         <input type="hidden" name="production" value=""><input type="hidden" name="materials" value="">
         <p class="field-hint">Fields marked * are required. {{ $section ? 'Only this section is saved. Save or cancel before navigating to another section.' : 'All creation tabs are saved together.' }}</p>
         @if($restore)<div class="notice notice-error" role="alert" data-monitoring-errors tabindex="-1">@foreach($errors->all() as $error)<p>{{ $error }}</p>@endforeach</div>@endif
@@ -133,7 +137,7 @@
             @if($projects->isEmpty())<p class="monitoring-empty">No eligible projects are available. Contact your system administrator about project availability{{ $monitoringPrefix === 'field-officer.monitoring' ? ' or your association assignments' : '' }}.</p>@endif
             <section class="monitoring-context monitoring-card" aria-label="Selected project summary" aria-live="polite">
                 <div class="eyebrow">Association</div><h2 data-context-association>Select a project to see its association</h2><p data-context-project>No project selected</p><p data-context-period></p>
-                <dl class="detail-grid">@foreach(['program-year' => 'Project Program Year', 'status' => 'Project Status', 'validated' => 'Site Validated', 'officer' => 'Monitored By'] as $key => $label)<div><dt>{{ $label }}</dt><dd data-context-{{ $key }}>—</dd></div>@endforeach</dl>
+                <dl class="detail-grid">@foreach(['program-year' => 'Project Program Year', 'status' => 'Status During Monitoring', 'validated' => 'Site Validated', 'officer' => 'Monitored By'] as $key => $label)<div><dt>{{ $label }}</dt><dd data-context-{{ $key }}>—</dd></div>@endforeach</dl>
             </section>
         </section>
         <section class="monitoring-editor-section" aria-labelledby="monitoring-period-heading">
@@ -177,6 +181,7 @@
             <section class="form-section" role="tabpanel" id="editor-panel-income" aria-labelledby="editor-tab-income" data-monitoring-panel="income" hidden><h3>Product Income</h3><div class="field"><label for="monitoring-income-product">Product</label><select id="monitoring-income-product" disabled><option value="">Add a Production product first</option></select></div><p class="field-hint">Choose monthly or quarterly income for the selected product. Switching products preserves every group’s values.</p><div id="monitoring-income-groups"></div><p id="monitoring-income-empty" class="monitoring-empty">Add a production entry first. Income must be linked to a product’s production record.</p>@if(!$section)<button type="button" class="button" data-go-production>Go to Production</button>@else<a class="button" href="{{ route($monitoringPrefix.'.workspace', [$record, 'production']) }}">Go to Production</a>@endif</section>
         </section>
         <div class="modal-actions"><a class="button" href="{{ $record ? route($monitoringPrefix.'.workspace', [$record, $section]) : route($monitoringPrefix.'.index') }}">Cancel</a><button type="submit" class="button button-primary">Save Monitoring Record</button></div>
+        <p role="status" data-monitoring-submit-status></p>
     </form>
 </section>
 </div>

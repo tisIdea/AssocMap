@@ -8,6 +8,9 @@
     ]];
     $module = ['status_filter' => $statusFilter, 'rows' => $projects->map(fn ($project) => [
         'id' => $project->id,
+        'detail_url' => route('field-officer.projects.show', $project),
+        'can_mutate' => $project->association && app(\App\Services\AssociationLifecycleService::class)->isOperational($project->association)
+            && !$project->isFinalized(),
         'association_id' => $project->association_id,
         'association' => $project->association?->name,
         'municipality' => $project->association?->area?->barangay?->municipality?->name,

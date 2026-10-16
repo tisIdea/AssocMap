@@ -11,15 +11,15 @@
         <ul>@forelse($assigned as $association)<li>{{ $association->name }} — {{ ucfirst($association->status) }}{{ $association->archived_at ? ' / archived, read-only' : '' }}</li>@empty<li>No current association assignments.</li>@endforelse</ul>
         <nav aria-label="Current assignment pages">@if($assigned->previousPageUrl())<a class="button" href="{{ $assigned->previousPageUrl() }}">Previous</a>@endif @if($assigned->nextPageUrl())<a class="button" href="{{ $assigned->nextPageUrl() }}">Next</a>@endif</nav>
     </section>
-    <div class="notice"><p>Each association requires one primary Field Officer. Selecting an association transfers that primary assignment to {{ $officer->display_name }}. Unselected associations and Association Account links stay unchanged. To remove an assignment from this officer, open another eligible officer and transfer it there. Archived associations cannot be changed.</p></div>
+    <div class="notice"><p>Each association requires one primary Field Officer. Selecting an association transfers that primary assignment to {{ $officer->display_name }}. Unselected associations and Association Account links stay unchanged. To remove an assignment from this officer, open another eligible officer and transfer it there. Archived or inactive associations are read-only.</p></div>
     <form method="POST" action="{{ route('admin.users.assignments.update', $officer->id, false) }}">
         @csrf
         @method('PATCH')
         <section class="card form-section">
             <h2>Select associations to transfer</h2>
             <p class="field-help">Save selections on this page before moving to another page. Associations already assigned to this officer are checked and read-only.</p>
-            <p class="field-help">Inactive, nonarchived associations can retain or change their primary officer under the existing Association Management rules. Other modules keep their own lifecycle restrictions.</p>
-            <div class="table-scroll"><table class="data-table"><caption>Nonarchived associations, page {{ $choices->currentPage() }} of {{ $choices->lastPage() }}.</caption>
+            <p class="field-help">Only active, nonarchived associations can receive assignment changes. Reactivate an association through Association Management before changing its primary officer.</p>
+            <div class="table-scroll"><table class="data-table"><caption>Active, nonarchived associations, page {{ $choices->currentPage() }} of {{ $choices->lastPage() }}.</caption>
                 <thead><tr><th scope="col">Select</th><th scope="col">Association</th><th scope="col">Status</th><th scope="col">Current primary officer</th></tr></thead>
                 <tbody>@forelse($choices as $association)
                     @php($alreadyAssigned = $association->primary_field_officer_id === $officer->id)
@@ -31,7 +31,7 @@
                         <td>{{ ucfirst($association->status) }}</td>
                         <td>{{ $association->primaryFieldOfficer?->display_name ?? 'User unavailable' }}{{ $alreadyAssigned ? ' (already assigned)' : '' }}</td>
                     </tr>
-                @empty<tr><td colspan="4">No nonarchived associations on this page.</td></tr>@endforelse</tbody>
+                @empty<tr><td colspan="4">No active, nonarchived associations on this page.</td></tr>@endforelse</tbody>
             </table></div>
             <nav aria-label="Eligible association pages">@if($choices->previousPageUrl())<a class="button" href="{{ $choices->previousPageUrl() }}">Previous</a>@endif @if($choices->nextPageUrl())<a class="button" href="{{ $choices->nextPageUrl() }}">Next</a>@endif</nav>
             <p><label><input type="checkbox" name="confirm_reassignment" value="1" required> I confirm that the selected associations will use this Field Officer as their primary officer.</label></p>

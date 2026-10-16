@@ -245,6 +245,7 @@ class UserManagementTest extends TestCase
 
     public function test_multiple_transfers_are_atomic_and_repeated_submission_creates_no_duplicate_events(): void
     {
+        DB::table('associations')->where('id', self::SECOND)->update(['status' => 'active']);
         $this->withSession($this->actorSessionData())->patchJson($this->assignmentUrl(), $this->assignmentData())
             ->assertOk()->assertJsonPath('changed', 2);
         $this->assertSame(3, Association::where('primary_field_officer_id', self::OFFICER_B)->count());
@@ -284,6 +285,15 @@ class UserManagementTest extends TestCase
         $this->assertSame(0, DB::table('audit_logs')->count());
         $this->patchJson($this->assignmentUrl(), $this->assignmentData(['dddddddd-dddd-4ddd-8ddd-dddddddddddd']))
             ->assertUnprocessable();
+    }
+
+    public function test_inactive_association_rolls_back_the_whole_assignment_batch(): void
+    {
+        $this->withSession($this->actorSessionData())->patchJson($this->assignmentUrl(), $this->assignmentData())
+            ->assertUnprocessable()->assertJsonValidationErrors('association_ids');
+        $this->assertSame(self::OFFICER_A, Association::findOrFail(self::ASSOCIATION)->primary_field_officer_id);
+        $this->assertSame(self::OFFICER_A, Association::findOrFail(self::SECOND)->primary_field_officer_id);
+        $this->assertDatabaseCount('audit_logs', 0);
     }
 
     public function test_stale_transfer_cannot_overwrite_a_different_current_officer(): void
@@ -330,6 +340,7 @@ class UserManagementTest extends TestCase
 
     public function test_audit_failure_rolls_back_assignment_changes(): void
     {
+        DB::table('associations')->where('id', self::SECOND)->update(['status' => 'active']);
         Schema::drop('audit_logs');
         $this->withSession($this->actorSessionData())->patchJson($this->assignmentUrl(), $this->assignmentData())->assertStatus(503);
         $this->assertSame(self::OFFICER_A, Association::findOrFail(self::ASSOCIATION)->primary_field_officer_id);

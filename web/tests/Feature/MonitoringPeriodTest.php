@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Http\Controllers\MonitoringWorkspaceController;
+use App\Models\MonitoringRecord;
 use App\Models\UserProfile;
 use App\Services\MonitoringService;
 use Illuminate\Database\QueryException;
@@ -136,6 +137,75 @@ class MonitoringPeriodTest extends TestCase
     {
         DB::table('monitoring_records')->insert(['id' => $id, 'project_id' => $project, 'year' => 2026,
             'quarter_id' => $quarter, 'monitoring_date' => '2026-01-15', 'project_status' => 'cancelled']);
+    }
+
+    public static function readOnlyWrites(): array
+    {
+        $cases = [];
+        foreach (['inactive' => ['inactive', null], 'archived' => ['active', '2026-01-01'],
+            'both' => ['inactive', '2026-01-01']] as $state => [$status, $archivedAt]) {
+            foreach (['create', 'overview', 'update', 'production', 'income', 'materials', 'visit', 'edit_visit'] as $operation) {
+                $cases[$state.' '.$operation] = [$status, $archivedAt, $operation];
+            }
+        }
+        return $cases;
+    }
+
+    #[DataProvider('readOnlyWrites')]
+    public function test_administrator_cannot_write_monitoring_under_a_read_only_association(
+        string $status, ?string $archivedAt, string $operation): void
+    {
+        if ($operation !== 'create') $this->insertPeriod();
+        $record = $operation === 'create' ? null : MonitoringRecord::findOrFail(self::RECORD);
+        $before = $record?->getRawOriginal();
+        DB::table('associations')->where('id', self::ASSOCIATION)
+            ->update(['status' => $status, 'archived_at' => $archivedAt]);
+        $service = app(MonitoringService::class);
+        $actor = $this->actor();
+        try {
+            match ($operation) {
+                'create' => $service->create($this->data() + ['production' => [[
+                    'new_product' => ['product_name' => 'Must not be created', 'product_type' => 'raw'],
+                    'target_output' => 1, 'actual_output' => 1, 'unit' => 'kg',
+                ]]], $actor),
+                'overview' => $service->updateOverview($record, ['monitored_by' => self::ADMIN, 'site_validated' => true], $actor),
+                'update' => $service->update($record, $this->data(), $actor),
+                'visit' => $service->createVisitReport($record, $this->data(), $actor),
+                'edit_visit' => $service->updateVisitReport($record, '88888888-8888-4888-8888-888888888888', $this->data(), $actor),
+                default => $service->updateSection($record, $operation, ['production' => [], 'materials' => [], 'project_status' => 'ongoing'], $actor),
+            };
+            $this->fail('Read-only associations must reject all monitoring mutations.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('association_id', $exception->errors());
+            $this->assertSame(422, $exception->status);
+        }
+        $this->assertDatabaseCount('monitoring_records', $record ? 1 : 0);
+        if ($record) $this->assertSame($before, $record->fresh()->getRawOriginal());
+        $this->assertDatabaseCount('project_products', 0);
+        $this->assertDatabaseCount('project_materials', 0);
+        Http::assertNothingSent();
+    }
+
+    public function test_administrator_can_still_read_archived_association_visit_history(): void
+    {
+        $this->insertPeriod();
+        Schema::create('monitoring_visit_reports', function (Blueprint $table) {
+            $table->uuid('id')->primary(); $table->uuid('monitoring_record_id');
+            $table->uuid('conducted_by_user_id')->nullable(); $table->date('monitoring_date');
+        });
+        DB::table('monitoring_visit_reports')->insert(['id' => '88888888-8888-4888-8888-888888888888',
+            'monitoring_record_id' => self::RECORD, 'monitoring_date' => '2026-01-15']);
+        DB::table('associations')->where('id', self::ASSOCIATION)
+            ->update(['status' => 'inactive', 'archived_at' => '2026-01-01']);
+        $reports = app(MonitoringService::class)->getVisitReports(MonitoringRecord::findOrFail(self::RECORD), $this->actor());
+        $this->assertCount(1, $reports);
+        $request = Request::create('/admin/monitoring/'.self::RECORD);
+        $request->attributes->set('current_user', $this->actor());
+        $view = (new MonitoringWorkspaceController)->workspace($request, MonitoringRecord::findOrFail(self::RECORD));
+        $this->assertFalse($view->getData()['canManage']);
+        $this->assertDatabaseCount('monitoring_records', 1);
+        $this->assertDatabaseCount('monitoring_visit_reports', 1);
+        Http::assertNothingSent();
     }
 
     public function test_period_choices_use_project_identity_and_current_officer_scope(): void

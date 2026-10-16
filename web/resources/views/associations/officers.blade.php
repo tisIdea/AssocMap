@@ -5,11 +5,11 @@
     <a class="back-link" href="{{ route($prefix.'.association-officers.index') }}"><x-icon name="back" />Back to Association Officers</a>
     @include('partials.page-header', ['title' => 'Association Officers', 'description' => $association->name, 'eyebrow' => 'Association Management'])
     <p>President: {{ $association->currentPresident ? collect([$association->currentPresident->first_name, $association->currentPresident->middle_name, $association->currentPresident->last_name, $association->currentPresident->suffix])->filter(fn ($part) => filled($part))->implode(' ') : 'No active President assigned' }}</p>
-    @if($prefix === 'admin' && session('success'))<div class="notice notice-success" role="status">{{ session('success') }}</div>@endif
+    @if(session('success'))<div class="notice notice-success" role="status">{{ session('success') }}</div>@endif
     @php($officerErrors = $errors->getBag('officerPosition'))
     @if($officerErrors->any())<div class="notice notice-error" role="alert"><ul>@foreach($officerErrors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>@endif
     <div class="notice"><p>Each member has one current organizational position. Only one active, nonarchived President and Vice President may hold office; vacancies are allowed. Other officer positions may have multiple holders. Changing positions preserves membership and account access.</p></div>
-    @if($association->archived_at)<p class="notice">This association is archived. Officer records are read-only.</p>@endif
+    @if($association->archived_at || $association->status !== 'active')<p class="notice">This association is archived or inactive. Officer records are read-only.</p>@endif
     <section class="card form-section">
         <h2>Current active officers ({{ $officers->total() }})</h2>
         <div class="table-scroll"><table class="data-table">
@@ -17,7 +17,7 @@
             <thead><tr><th scope="col">Member</th><th scope="col">Position</th><th scope="col">Actions</th></tr></thead>
             <tbody>@forelse($officers as $officer)
                 <tr><td>{{ $officer->first_name }} {{ $officer->last_name }}</td><td>{{ $officer->position?->name ?? 'Position unavailable' }}{{ $officer->position?->is_active ? '' : ' (inactive position)' }}</td>
-                    <td>@if(!$association->archived_at)
+                    <td>@if(!$association->archived_at && $association->status === 'active')
                         @if($officer->position?->is_active)<a class="button" href="{{ route($prefix.'.association-officers.show', ['association' => $association, 'replace' => $officer->id]) }}">Replace</a>
                         @else<p>Inactive positions cannot be assigned to a replacement.</p>@endif
                         <form method="POST" action="{{ route($prefix.'.association-officers.update', $association) }}">
@@ -34,7 +34,7 @@
         </table></div>
         <nav aria-label="Officer pages">@if($officers->previousPageUrl())<a class="button" href="{{ $officers->previousPageUrl() }}">Previous</a>@endif @if($officers->nextPageUrl())<a class="button" href="{{ $officers->nextPageUrl() }}">Next</a>@endif</nav>
     </section>
-    @if(!$association->archived_at)
+    @if(!$association->archived_at && $association->status === 'active')
         @if($former)
             <div class="notice"><p>Replace {{ $former->first_name }} {{ $former->last_name }} as {{ $former->position?->name }}. The former holder will become Member when the new appointment succeeds.</p><a href="{{ route($prefix.'.association-officers.show', $association) }}">Cancel replacement</a></div>
         @endif

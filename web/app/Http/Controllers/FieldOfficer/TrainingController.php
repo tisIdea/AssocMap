@@ -162,6 +162,7 @@ class TrainingController extends Controller
 
         $projects =
             Project::query()
+                ->whereNotIn('status', ['completed', 'terminated'])
                 ->whereIn(
                     'association_id',
                     $associationIds
@@ -361,6 +362,7 @@ class TrainingController extends Controller
             'id' =>
                 $training->id,
 
+            'project_finalized' => $training->relatedProject?->isFinalized() ?? false,
             'expected_updated_at' => $training->updated_at?->format('Y-m-d\TH:i:s.uP'),
 
             'association_id' =>

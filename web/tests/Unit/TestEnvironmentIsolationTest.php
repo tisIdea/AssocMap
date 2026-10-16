@@ -49,6 +49,8 @@ class TestEnvironmentIsolationTest extends TestCase
         $this->assertTrue(Http::preventingStrayRequests());
         $this->assertSame('testing', config('app.env'));
         $this->assertSame(':memory:', config('database.connections.sqlite.database'));
+        $this->assertStringEndsWith('/tests/Support/environment', str_replace('\\', '/', $this->app->environmentPath()));
+        $this->assertSame('.env.testing', $this->app->environmentFile());
     }
 
     public function test_unsafe_loaded_configuration_is_rejected(): void

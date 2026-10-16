@@ -21,6 +21,7 @@ class MemberApplicationService
         private MemberExecutivePositionService $executivePositions,
         private MemberApplicationPhotoService $photos,
         private MemberPositionIntegrityService $positions,
+        private AssociationLifecycleService $lifecycle,
     ) {}
 
     public function submit(array $data, UserProfile $currentUser): MemberApplication
@@ -42,14 +43,13 @@ class MemberApplicationService
         $this->ensureFishRAvailable($data['fishr_registration_number'] ?? null);
 
         $applicationId = (string) Str::uuid();
-        $photoPath = isset($data['applicant_photo'])
-            ? $this->photos->store($data['applicant_photo'], $applicationId)
-            : null;
+        $photoPath = null;
         $callbackCompleted = false;
 
         try {
             return DB::transaction(function () use ($data, $currentUser, $associationAccount,
-                $position, $applicationId, $photoPath, &$callbackCompleted) {
+                $position, $applicationId, &$photoPath, &$callbackCompleted) {
+                $this->lifecycle->lockOperational([$associationAccount->association_id]);
                 $actor = UserProfile::query()->with('role')->whereKey($currentUser->id)->lockForUpdate()->first();
                 $this->ensureAssociationAccountCanSubmit($actor);
                 $link = AssociationAccount::query()
@@ -68,6 +68,9 @@ class MemberApplicationService
 
                 $this->executivePositions->ensureApplicationPositionAvailable($link->association_id, $position);
 
+                $photoPath = isset($data['applicant_photo'])
+                    ? $this->photos->store($data['applicant_photo'], $applicationId)
+                    : null;
                 $application = new MemberApplication([
                     'association_id' => $link->association_id,
                     'submitted_by_user_id' => $actor->id,
@@ -255,6 +258,7 @@ class MemberApplicationService
                     'This application does not belong to an association assigned to this Field Officer.',
             ]);
         }
+        $this->lifecycle->assertOperational($association);
 
         return [$application, $fieldOfficer];
     }

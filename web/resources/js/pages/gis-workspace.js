@@ -73,6 +73,11 @@ export async function initGis(root) {
                 ['Published by', actorName(p.published_by_name, Boolean(p.published_at || p.published_by))],
                 ['Archived by', actorName(p.archived_by_name, Boolean(p.archived_at || p.archived_by))]]
                 .forEach(([label, value]) => addDetail(details, label, value));
+            if (p.project_finalized) {
+                addDetail(details, 'Project status', p.project_status === 'terminated' ? 'Terminated'
+                    : (p.project_status === 'completed' ? 'Completed' : p.project_status));
+                addDetail(details, 'Lifecycle', 'Operational history is read-only. GIS details and publication may be maintained; ownership and deletion are protected.');
+            }
             if (!p.archived_at) {
                 const edit = document.createElement('a'); edit.className = 'button'; edit.textContent = 'Edit location';
                 edit.href = `${base}/${encodeURIComponent(feature.id)}/edit`; actions.append(edit);
@@ -83,9 +88,11 @@ export async function initGis(root) {
                     button.addEventListener('click', () => confirmAction(action, feature, button)); actions.append(button);
                 });
             }
-            const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'button';
-            remove.textContent = 'Delete permanently';
-            remove.addEventListener('click', () => confirmAction('delete', feature, remove)); actions.append(remove);
+            if (!p.project_finalized) {
+                const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'button';
+                remove.textContent = 'Delete permanently';
+                remove.addEventListener('click', () => confirmAction('delete', feature, remove)); actions.append(remove);
+            }
         }
     }
 

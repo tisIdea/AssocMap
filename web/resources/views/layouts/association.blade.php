@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 @php $workspaceHeading = request()->routeIs('association.gis.*') ? 'GIS Mapping' : (request()->routeIs('association.monitoring.*') ? 'Monitoring' : 'Member Applications'); @endphp
 <html lang="en">
+@php if (request()->routeIs('association.reports.*')) $workspaceHeading = 'Reports & Analytics'; @endphp
+@php if (request()->routeIs('association.dashboard')) $workspaceHeading = 'Dashboard'; @endphp
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -11,12 +13,14 @@
 <body>
     <a class="skip-link" href="#main-content">Skip to content</a>
     <aside class="sidebar" id="association-sidebar" aria-label="Association Account navigation">
-        <a class="brand" href="{{ route('association.member-applications.index') }}" aria-label="AssocMap member applications">
+        <a class="brand" href="{{ route('association.dashboard') }}" aria-label="AssocMap dashboard">
             <span class="brand-symbol"><x-icon name="map" /></span>
             <span class="brand-copy"><strong>Assoc<span>Map</span></strong><small>ASSOCIATION WORKSPACE</small></span>
         </a>
         <div class="sidebar-section-label">WORKSPACE</div>
         <nav class="sidebar-nav" aria-label="Main navigation">
+            <a class="nav-link {{ request()->routeIs('association.dashboard') ? 'active' : '' }}" href="{{ route('association.dashboard') }}" @if(request()->routeIs('association.dashboard')) aria-current="page" @endif><x-icon name="grid" /><span>Dashboard</span></a>
+            <a class="nav-link {{ request()->routeIs('association.reports.*') ? 'active' : '' }}" href="{{ route('association.reports.index') }}" @if(request()->routeIs('association.reports.*')) aria-current="page" @endif><x-icon name="chart" /><span>Reports &amp; Analytics</span></a>
             <a class="nav-link {{ request()->routeIs('association.gis.*') ? 'active' : '' }}" href="{{ route('association.gis.index') }}" @if(request()->routeIs('association.gis.*')) aria-current="page" @endif><x-icon name="map" /><span>GIS Mapping</span></a>
             <a class="nav-link {{ request()->routeIs('association.member-applications.*') ? 'active' : '' }}" href="{{ route('association.member-applications.index') }}" @if(request()->routeIs('association.member-applications.*')) aria-current="page" @endif><x-icon name="users" /><span>Member Applications</span></a>
             <a class="nav-link {{ request()->routeIs('association.monitoring.*') ? 'active' : '' }}" href="{{ route('association.monitoring.index') }}" @if(request()->routeIs('association.monitoring.*')) aria-current="page" @endif><x-icon name="map" /><span>Monitoring</span></a>

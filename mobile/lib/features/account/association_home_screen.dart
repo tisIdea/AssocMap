@@ -5,6 +5,10 @@ import '../../app/routing/app_routes.dart';
 import '../../core/authentication/auth_controller.dart';
 import '../../core/widgets/data_mode_banner.dart';
 import '../../data/models/auth_session.dart';
+import '../../data/repositories/analytics_repository.dart';
+import '../../data/repositories/dashboard_repository.dart';
+import 'association_dashboard_screen.dart';
+import '../reports/association_analytics_screen.dart';
 
 class AssociationHomeScreen extends StatefulWidget {
   const AssociationHomeScreen({
@@ -12,10 +16,14 @@ class AssociationHomeScreen extends StatefulWidget {
     required this.config,
     required this.controller,
     required this.session,
+    this.analytics = const UnavailableAnalyticsRepository(),
+    this.dashboard = const UnavailableDashboardRepository(),
   });
   final AppConfig config;
   final AuthController controller;
   final AuthSession session;
+  final AnalyticsRepository analytics;
+  final DashboardRepository dashboard;
 
   @override
   State<AssociationHomeScreen> createState() => _AssociationHomeScreenState();
@@ -59,7 +67,7 @@ class _AssociationHomeScreenState extends State<AssociationHomeScreen> {
     final session = widget.session;
     return Scaffold(
       appBar: AppBar(
-        title: Text(_tab == 0 ? 'Association workspace' : 'Account'),
+        title: Text(_tab == 0 ? 'Association dashboard' : (_tab == 1 ? 'Reports & Analytics' : 'Account')),
         actions: [
           IconButton(
             tooltip: 'Open public map',
@@ -79,7 +87,13 @@ class _AssociationHomeScreenState extends State<AssociationHomeScreen> {
           children: [
             DataModeBanner(mode: widget.config.mode),
             Expanded(
-              child: SingleChildScrollView(
+              child: _tab == 0 ? AssociationDashboardScreen(
+                repository: widget.dashboard,
+                session: session,
+                onSessionExpired: widget.controller.expireSession,
+                onOpenReports: () => setState(() => _tab = 1),
+                onOpenMap: () => Navigator.of(context).pushNamed(AppRoutes.publicMap),
+              ) : _tab == 1 ? AssociationAnalyticsScreen(repository: widget.analytics, onSessionExpired: widget.controller.expireSession) : SingleChildScrollView(
                 padding: const EdgeInsets.all(24),
                 child: Center(
                   child: ConstrainedBox(
@@ -97,41 +111,7 @@ class _AssociationHomeScreenState extends State<AssociationHomeScreen> {
                           style: const TextStyle(height: 1.5),
                         ),
                         const SizedBox(height: 20),
-                        if (_tab == 0) ...[
-                          Card(
-                            child: Padding(
-                              padding: const EdgeInsets.all(20),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Icon(Icons.pending_actions_outlined),
-                                  const SizedBox(height: 12),
-                                  Text(
-                                    'Association modules pending',
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.titleLarge,
-                                  ),
-                                  const SizedBox(height: 10),
-                                  const Text(
-                                    'Association records and operations will appear here once the '
-                                    'approved mobile modules and backend contracts are confirmed. '
-                                    'This phase provides sign-in and navigation only.',
-                                    style: TextStyle(height: 1.5),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 20),
-                          FilledButton.icon(
-                            onPressed: () => Navigator.of(
-                              context,
-                            ).pushNamed(AppRoutes.publicMap),
-                            icon: const Icon(Icons.map_outlined),
-                            label: const Text('Explore public map'),
-                          ),
-                        ] else ...[
+                        ...[
                           const ListTile(
                             contentPadding: EdgeInsets.zero,
                             leading: Icon(Icons.groups_outlined),
@@ -179,7 +159,11 @@ class _AssociationHomeScreenState extends State<AssociationHomeScreen> {
         destinations: const [
           NavigationDestination(
             icon: Icon(Icons.dashboard_outlined),
-            label: 'Workspace',
+            label: 'Dashboard',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.analytics_outlined),
+            label: 'Reports',
           ),
           NavigationDestination(
             icon: Icon(Icons.person_outline),

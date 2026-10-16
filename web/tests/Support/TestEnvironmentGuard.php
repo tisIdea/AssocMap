@@ -15,6 +15,8 @@ final class TestEnvironmentGuard
 {
     public static function install(Application $app): void
     {
+        // Isolated tests must never load the application's credential file.
+        $app->useEnvironmentPath(__DIR__.'/environment')->loadEnvironmentFrom('.env.testing');
         $app->extend('db', static function (DatabaseManager $manager, Application $app) {
             if ($manager->getConnections() !== []) {
                 throw new RuntimeException('Test isolation must be installed before database connections are created.');

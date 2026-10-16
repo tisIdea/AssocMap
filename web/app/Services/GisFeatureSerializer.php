@@ -26,6 +26,9 @@ class GisFeatureSerializer
             $properties += [
                 'association_id' => $location->association_id, 'project_id' => $location->project_id,
                 'parent_association_id' => $location->parent_association_id,
+                'project_status' => $location->project_status,
+                'project_finalized' => in_array($location->project_status, ['completed', 'terminated'], true)
+                    || $location->project_closed_at !== null,
                 'public_title' => $location->public_title, 'public_description' => $location->public_description,
                 'public_address' => $location->public_address, 'is_published' => $location->is_published,
                 'published_by' => $location->published_by, 'published_at' => $location->published_at?->toIso8601String(),

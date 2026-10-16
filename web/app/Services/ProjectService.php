@@ -16,10 +16,13 @@ use Illuminate\Validation\ValidationException;
 
 class ProjectService
 {
+    public function __construct(private AssociationLifecycleService $lifecycle, private ProjectLifecycleService $projects) {}
+
     public function create(
         array $data,
         UserProfile $currentUser
     ): Project {
+        $this->assertOrdinaryStatus($data);
         $association = $this->resolveAssociationForUser(
             $data['association_id'],
             $currentUser
@@ -39,6 +42,8 @@ class ProjectService
             $category,
             $saadActivity
         ) {
+            $this->lifecycle->lockOperational([$association->id]);
+            $association = $this->resolveAssociationForUser($association->id, $currentUser);
             $commodity = $this->resolveCommodity(
                 $data,
                 $category,
@@ -112,10 +117,12 @@ class ProjectService
         array $data,
         UserProfile $currentUser
     ): Project {
+        $this->assertOrdinaryStatus($data);
         $this->ensureUserCanManageProject(
             $project,
             $currentUser
         );
+        $this->projects->assertNotFinalized($project, 'project');
 
         if ($project->archived_at !== null) {
             throw ValidationException::withMessages([
@@ -165,6 +172,16 @@ class ProjectService
             $category,
             $saadActivity
         ) {
+            $project = $this->lockForMutation($project, $currentUser, [$association->id]);
+            if ($project->archived_at !== null) {
+                throw ValidationException::withMessages(['project' => 'Archived projects cannot be edited.']);
+            }
+            $association = $this->resolveAssociationForUser($association->id, $currentUser);
+            if ($project->association_id !== $association->id && $this->projectHasMonitoring($project)) {
+                throw ValidationException::withMessages([
+                    'association_id' => 'The association cannot be changed because this project already has monitoring records.',
+                ]);
+            }
             $commodity = $this->resolveCommodity(
                 $data,
                 $category,
@@ -239,16 +256,10 @@ class ProjectService
         if (DB::transactionLevel() === 0) {
             throw new \LogicException('Resource registration requires the caller transaction.');
         }
-        $lockedProject = Project::query()->where('id', $project->id)->lockForUpdate()->first();
-        if (! $lockedProject || $lockedProject->association_id !== $project->association_id) {
-            throw ValidationException::withMessages(['project_id' => 'The project has changed. Reload its available resources before saving.']);
-        }
-        $project = $lockedProject;
+        $project = $this->lockForMutation($project, $currentUser);
         if ($project->archived_at !== null) {
             throw ValidationException::withMessages(['project_id' => 'Resources cannot be registered under an archived project.']);
         }
-        $this->ensureUserCanManageProject($project, $currentUser);
-        Association::query()->where('id', $project->association_id)->lockForUpdate()->first();
         $this->resolveAssociationForUser($project->association_id, $currentUser);
     }
 
@@ -306,50 +317,50 @@ class ProjectService
         Project $project,
         UserProfile $currentUser
     ): void {
-        $this->ensureUserCanManageProject(
-            $project,
-            $currentUser
-        );
-
-        if ($project->archived_at !== null) {
-            return;
-        }
-
-        $project->update([
-            'archived_at' =>
-                now(),
-
-            'archived_by' =>
-                $currentUser->id,
-
-            'updated_by' =>
-                $currentUser->id,
-        ]);
+        DB::transaction(function () use ($project, $currentUser) {
+            $project = $this->lockForMutation($project, $currentUser);
+            if ($project->archived_at !== null) return;
+            $project->update([
+                'archived_at' => now(),
+                'archived_by' => $currentUser->id,
+                'updated_by' => $currentUser->id,
+            ]);
+        }, 3);
     }
 
     public function unarchive(
         Project $project,
         UserProfile $currentUser
     ): void {
-        $this->ensureUserCanManageProject(
-            $project,
-            $currentUser
-        );
+        DB::transaction(function () use ($project, $currentUser) {
+            $project = $this->lockForMutation($project, $currentUser);
+            if ($project->archived_at === null) return;
+            $project->update([
+                'archived_at' => null,
+                'archived_by' => null,
+                'updated_by' => $currentUser->id,
+            ]);
+        }, 3);
+    }
 
-        if ($project->archived_at === null) {
-            return;
+    private function lockForMutation(Project $project, UserProfile $actor, array $destinationIds = []): Project
+    {
+        $this->lifecycle->lockOperational([$project->association_id, ...$destinationIds]);
+        $locked = Project::whereKey($project->id)->lockForUpdate()->firstOrFail();
+        if ($locked->association_id !== $project->association_id) {
+            throw ValidationException::withMessages(['project_id' => 'The project association changed. Refresh before saving.'])->status(409);
         }
+        $this->ensureUserCanManageProject($locked, $actor);
+        $this->projects->assertNotFinalized($locked, 'project');
 
-        $project->update([
-            'archived_at' =>
-                null,
+        return $locked;
+    }
 
-            'archived_by' =>
-                null,
-
-            'updated_by' =>
-                $currentUser->id,
-        ]);
+    private function assertOrdinaryStatus(array $data): void
+    {
+        if (in_array($data['status'] ?? null, ['completed', 'terminated'], true)) {
+            throw ValidationException::withMessages(['status' => 'Use Complete Project or Terminate Project with Final Remarks and exact confirmation.']);
+        }
     }
 
     private function resolveAssociationForUser(

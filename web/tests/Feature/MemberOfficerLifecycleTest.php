@@ -226,6 +226,73 @@ class MemberOfficerLifecycleTest extends TestCase
         return [[1], [2], [3], [4]];
     }
 
+    public static function readOnlyDecisions(): array
+    {
+        $cases = [];
+        foreach (['inactive' => ['inactive', null], 'archived' => ['active', '2026-01-01'],
+            'both' => ['inactive', '2026-01-01']] as $state => [$status, $archivedAt]) {
+            foreach (['approve', 'reject'] as $decision) $cases[$state.' '.$decision] = [$status, $archivedAt, $decision];
+        }
+        return $cases;
+    }
+
+    #[DataProvider('readOnlyDecisions')]
+    public function test_read_only_association_keeps_application_decisions_and_classifications_unchanged(
+        string $status, ?string $archivedAt, string $decision): void
+    {
+        $application = $this->application(1);
+        $before = $application->getRawOriginal();
+        DB::table('associations')->where('id', self::ASSOCIATION)
+            ->update(['status' => $status, 'archived_at' => $archivedAt]);
+        $service = app(MemberApplicationService::class);
+        $this->assertRejected(fn () => $decision === 'approve'
+            ? $service->approve($application, $this->actor())
+            : $service->reject($application, $this->actor(), 'Synthetic reason'), 'association_id');
+        $this->assertSame($before, $application->fresh()->getRawOriginal());
+        $this->assertSame([1], $application->classifications()->pluck('member_classifications.id')->all());
+        $this->assertDatabaseCount('members', 0);
+        $this->assertDatabaseCount('audit_logs', 0);
+    }
+
+    public static function readOnlyMemberChanges(): array
+    {
+        $cases = [];
+        foreach (['inactive' => ['inactive', null], 'archived' => ['active', '2026-01-01'],
+            'both' => ['inactive', '2026-01-01']] as $state => [$status, $archivedAt]) {
+            foreach (['update', 'archive', 'unarchive'] as $operation) $cases[$state.' '.$operation] = [$status, $archivedAt, $operation];
+        }
+        return $cases;
+    }
+
+    #[DataProvider('readOnlyMemberChanges')]
+    public function test_read_only_association_blocks_member_mutations_without_audit_or_history_changes(
+        string $status, ?string $archivedAt, string $operation): void
+    {
+        $member = $this->member(1, ['archived_at' => $operation === 'unarchive' ? '2025-02-01' : null]);
+        $before = $member->getRawOriginal();
+        $data = ['member_record_id' => $member->id,
+            'expected_updated_at' => $member->updated_at->format('Y-m-d\TH:i:s.uP')];
+        $data += $operation === 'update' ? ['first_name' => 'Changed'] : ['confirm_change' => '1'];
+        DB::table('associations')->where('id', self::ASSOCIATION)
+            ->update(['status' => $status, 'archived_at' => $archivedAt]);
+        $this->assertRejected(fn () => app(MemberService::class)->{$operation}($member, $data, $this->actor()), 'member');
+        $this->assertSame($before, $member->fresh()->getRawOriginal());
+        $this->assertSame([1], $member->classifications()->pluck('member_classifications.id')->all());
+        $this->assertDatabaseCount('audit_logs', 0);
+    }
+
+    public function test_profile_update_cannot_transfer_a_member_into_an_inactive_association(): void
+    {
+        $member = $this->member(1, ['archived_at' => null]);
+        $before = $member->getRawOriginal();
+        DB::table('associations')->where('id', self::OTHER_ASSOCIATION)->update(['status' => 'inactive']);
+        $data = ['member_record_id' => $member->id, 'expected_updated_at' => $member->updated_at->format('Y-m-d\TH:i:s.uP'),
+            'association_id' => self::OTHER_ASSOCIATION, 'first_name' => 'Must not change'];
+        $this->assertRejected(fn () => app(MemberService::class)->update($member, $data, $this->actor()), 'member');
+        $this->assertSame($before, $member->fresh()->getRawOriginal());
+        $this->assertDatabaseCount('audit_logs', 0);
+    }
+
     public function test_position_deactivated_after_submission_is_rejected_without_substitution(): void
     {
         $application = $this->application();

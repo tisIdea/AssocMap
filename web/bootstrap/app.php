@@ -13,6 +13,7 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        $middleware->trimStrings(except: ['completion_confirmation', 'termination_confirmation']);
         $middleware->prepend(\App\Http\Middleware\ProtectInvitationActivation::class);
         // Trust the local Cloudflare Tunnel reverse proxy.
         $middleware->trustProxies(
@@ -31,6 +32,12 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
+        $exceptions->dontReportWhen(fn (\Throwable $exception) => \App\Http\Middleware\ReportingRequestGuard::applies(request()));
+        $exceptions->render(function (\Throwable $exception, Request $request) {
+            if (! \App\Http\Middleware\ReportingRequestGuard::applies($request)) return null;
+
+            return \App\Http\Middleware\ReportingRequestGuard::render($exception, $request);
+        });
         $exceptions->dontReportWhen(fn (\Throwable $exception) => \App\Http\Middleware\ApiRequestGuard::applies(request()));
         $exceptions->render(function (\Throwable $exception, Request $request) {
             if (! \App\Http\Middleware\ApiRequestGuard::applies($request)) return null;

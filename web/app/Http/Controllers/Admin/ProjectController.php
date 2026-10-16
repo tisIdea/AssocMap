@@ -11,6 +11,7 @@ use App\Models\FisheriesProjectCategory;
 use App\Models\Project;
 use App\Services\ProjectService;
 use App\Services\GisQueryService;
+use App\Services\AssociationLifecycleService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -29,6 +30,7 @@ class ProjectController extends Controller
                 'planned',
                 'ongoing',
                 'completed',
+                'terminated',
                 'suspended',
                 'cancelled',
                 'archived',
@@ -61,6 +63,7 @@ class ProjectController extends Controller
                         'planned',
                         'ongoing',
                         'completed',
+                        'terminated',
                         'suspended',
                         'cancelled',
                     ],
@@ -241,6 +244,9 @@ class ProjectController extends Controller
 
         return [
             'id' => $project->id,
+            'detail_url' => route('admin.projects.show', $project),
+            'can_mutate' => $association && app(AssociationLifecycleService::class)->isOperational($association)
+                && !$project->isFinalized(),
 
             'association_id' =>
                 $project->association_id,

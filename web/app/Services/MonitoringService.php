@@ -12,20 +12,25 @@ use App\Models\Project;
 use App\Models\ProjectMaterial;
 use App\Models\ProjectProduct;
 use App\Models\Quarter;
+use App\Models\Role;
 use App\Models\UserProfile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Database\QueryException;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\Log;
 use Carbon\CarbonImmutable;
 
 class MonitoringService
 {
+    public function __construct(private AssociationLifecycleService $lifecycle, private ProjectLifecycleService $projects,
+        private ProductionMonitoringService $production) {}
+
     public function updateOverview(MonitoringRecord $record, array $data, UserProfile $currentUser): void
     {
         DB::transaction(function () use ($record, $data, $currentUser) {
-            $record = MonitoringRecord::whereKey($record->id)->lockForUpdate()->firstOrFail();
+            $record = $this->lockRecordForMutation($record, $currentUser);
             $this->ensureUserCanManageMonitoring($record, $currentUser);
             $project = $this->resolveProjectForUser($record->project_id, $currentUser);
             $userId = $data['monitored_by'] ?? null;
@@ -45,39 +50,45 @@ class MonitoringService
 
     public function updateSection(MonitoringRecord $record, string $section, array $data, UserProfile $currentUser): void
     {
-        DB::transaction(function () use ($record, $section, $data, $currentUser) {
-            $record = MonitoringRecord::whereKey($record->id)->lockForUpdate()->firstOrFail();
-            $this->ensureUserCanManageMonitoring($record, $currentUser);
-            $project = $this->resolveProjectForUser($record->project_id, $currentUser);
-            if ($section === 'production') {
-                $rows = $data['production'] ?? [];
-                foreach ($rows as &$row) {
-                    unset($row['income']);
-                }
-                unset($row);
-                $this->syncProduction($record, $project, $rows);
-            } elseif ($section === 'materials') {
-                $this->syncMaterials($record, $project, $data['materials'] ?? []);
-            } elseif ($section === 'income') {
-                $submitted = [];
-                foreach ($data['production'] ?? [] as $index => $row) {
-                    $id = $row['id'] ?? null;
-                    if (! $id || in_array($id, $submitted, true)) {
-                        throw ValidationException::withMessages(["production.{$index}.id" => 'Income requires a unique saved Production record. Save Production first.']);
+        try {
+            DB::transaction(function () use ($record, $section, $data, $currentUser) {
+                $record = $this->lockRecordForMutation($record, $currentUser);
+                $this->ensureUserCanManageMonitoring($record, $currentUser);
+                $project = $this->resolveProjectForUser($record->project_id, $currentUser);
+                if ($section === 'production') {
+                    $this->production->assertRevision($record, $data);
+                    $rows = $data['production'] ?? [];
+                    foreach ($rows as &$row) {
+                        unset($row['income']);
                     }
-                    $production = $record->production()->whereKey($id)->lockForUpdate()->first();
-                    if (! $production || $production->project_product_id !== $row['project_product_id']) {
-                        throw ValidationException::withMessages(["production.{$index}.id" => 'This Production record is unavailable.']);
+                    unset($row);
+                    $this->syncProduction($record, $project, $rows);
+                } elseif ($section === 'materials') {
+                    $this->syncMaterials($record, $project, $data['materials'] ?? []);
+                } elseif ($section === 'income') {
+                    $submitted = [];
+                    foreach ($data['production'] ?? [] as $index => $row) {
+                        $id = $row['id'] ?? null;
+                        if (! $id || in_array($id, $submitted, true)) {
+                            throw ValidationException::withMessages(["production.{$index}.id" => 'Income requires a unique saved Production record. Save Production first.']);
+                        }
+                        $production = $record->production()->whereKey($id)->lockForUpdate()->first();
+                        if (! $production || $production->project_product_id !== $row['project_product_id']) {
+                            throw ValidationException::withMessages(["production.{$index}.id" => 'This Production record is unavailable.']);
+                        }
+                        $submitted[] = $id;
+                        $this->syncIncome($production, $row['income'] ?? []);
                     }
-                    $submitted[] = $id;
-                    $this->syncIncome($production, $row['income'] ?? []);
+                } else {
+                    abort(404);
                 }
-            } else {
-                abort(404);
-            }
-            $record->update(['updated_by' => $currentUser->id]
-                + ($section === 'production' ? ['project_status' => $data['project_status']] : []));
-        }, 3);
+                $record->update(['updated_by' => $currentUser->id]
+                    + ($section === 'production' ? ['project_status' => $data['project_status']] : []));
+            }, 3);
+        } catch (QueryException $exception) {
+            if ($section === 'production') $this->productionWriteFailure($exception);
+            throw $exception;
+        }
     }
 
     public function create(
@@ -105,11 +116,7 @@ class MonitoringService
             $currentUser,
             $project
         ) {
-            $project = Project::query()->where('id', $project->id)->lockForUpdate()->first();
-            if (! $project) {
-                throw ValidationException::withMessages(['project_id' => 'The selected project is unavailable.']);
-            }
-            $project = $this->resolveProjectForUser($project->id, $currentUser);
+            $project = $this->lockProjectForWrite($project, $currentUser);
             $this->ensureMonitoringPeriodIsUnique($project, (int) $data['year'], (int) $data['quarter_id']);
             $data = $this->resolveCreationResources($project, $data, $currentUser);
 
@@ -185,6 +192,7 @@ class MonitoringService
             if (($exception->errorInfo[0] ?? null) === '23505' && str_contains($exception->getMessage(), 'uq_project_product_name_ci')) {
                 throw ValidationException::withMessages(['production' => 'A proposed product name now exists under this project. Select the existing product instead.']);
             }
+            if (! empty($data['production'])) $this->productionWriteFailure($exception);
             throw $exception;
         }
     }
@@ -195,7 +203,7 @@ class MonitoringService
         UserProfile $currentUser
     ): MonitoringVisitReport {
         return DB::transaction(function () use ($record, $data, $currentUser) {
-            $record = MonitoringRecord::query()->whereKey($record->id)->lockForUpdate()->firstOrFail();
+            $record = $this->lockRecordForMutation($record, $currentUser);
             $this->ensureUserCanManageMonitoring($record, $currentUser);
             $this->resolveProjectForUser($record->project_id, $currentUser);
 
@@ -216,7 +224,7 @@ class MonitoringService
         UserProfile $currentUser
     ): MonitoringVisitReport {
         return DB::transaction(function () use ($record, $reportId, $data, $currentUser) {
-            $record = MonitoringRecord::query()->whereKey($record->id)->lockForUpdate()->firstOrFail();
+            $record = $this->lockRecordForMutation($record, $currentUser);
             $this->ensureUserCanManageMonitoring($record, $currentUser);
             $this->resolveProjectForUser($record->project_id, $currentUser);
 
@@ -295,61 +303,32 @@ class MonitoringService
 
     private function syncMonthlyDetails(MonitoringProduction $production, array $data, string $prefix): void
     {
-        if (! array_key_exists('monthly_details', $data) && ! array_key_exists('deleted_monthly_ids', $data)) {
-            return;
-        }
-        $validator = Validator::make($data, [
-            'monthly_details' => ['nullable', 'array', 'max:3'],
-            'monthly_details.*' => ['array:id,month,activity_count,total_quantity,remarks'],
-            'monthly_details.*.id' => ['nullable', 'uuid', 'distinct'],
-            'monthly_details.*.month' => ['required', 'integer', 'between:1,12', 'distinct'],
-            'monthly_details.*.activity_count' => ['required', 'integer', 'min:1', 'max:2147483647'],
-            'monthly_details.*.total_quantity' => ['required', 'numeric', 'decimal:0,2', 'min:0', 'max:999999999999.99'],
-            'monthly_details.*.remarks' => ['nullable', 'string'],
-            'deleted_monthly_ids' => ['array', 'max:3'],
-            'deleted_monthly_ids.*' => ['required', 'uuid', 'distinct'],
-        ]);
-        if ($validator->fails()) {
-            $errors = [];
-            foreach ($validator->errors()->messages() as $field => $messages) $errors[$prefix.'.'.$field] = $messages;
-            throw ValidationException::withMessages($errors);
+        $record = $production->monitoringRecord;
+        $record->setRelation('quarter', $record->quarter()->sharedLock()->firstOrFail());
+        $quarterNumber = $record->quarter->quarter_number;
+        $details = $data['monthly_details'] ?? [];
+        $this->production->calculateActualOutput($record->year, $quarterNumber, $details, $prefix);
+        if (! empty($data['deleted_monthly_ids'])) {
+            throw ValidationException::withMessages([$prefix.'.monthly_details' => 'All three months must be retained. Monthly Production cannot be deleted.']);
         }
         $saved = $production->monthlyDetails()->lockForUpdate()->get()->keyBy('id');
-        $deleted = $data['deleted_monthly_ids'] ?? [];
-        foreach ($deleted as $id) {
-            if (! $saved->has($id)) {
-                throw ValidationException::withMessages([$prefix.'.deleted_monthly_ids' => 'A monthly record selected for removal does not belong to this Production record.']);
-            }
-        }
-        $quarter = $production->monitoringRecord->quarter()->sharedLock()->firstOrFail();
-        $firstMonth = (($quarter->quarter_number - 1) * 3) + 1;
-        $months = $saved->except($deleted)->mapWithKeys(fn ($row) => [$row->id => $row->month])->all();
-        foreach ($data['monthly_details'] ?? [] as $index => $detail) {
+        foreach ($details as $index => $detail) {
             $id = $detail['id'] ?? null;
-            if ($id && (! $saved->has($id) || in_array($id, $deleted, true))) {
-                throw ValidationException::withMessages([$prefix.".monthly_details.{$index}.id" => 'This monthly record is unavailable or belongs to another Production record.']);
+            if (($id && (! $saved->has($id) || $saved[$id]->month !== (int) $detail['month']))
+                || (! $id && $saved->contains('month', (int) $detail['month']))) {
+                throw ValidationException::withMessages([$prefix.".monthly_details.{$index}.id" => 'Reload Production. This month must keep its saved identity.'])->status(409);
             }
-            $month = (int) $detail['month'];
-            if ($month < $firstMonth || $month > $firstMonth + 2) {
-                throw ValidationException::withMessages([$prefix.".monthly_details.{$index}.month" => 'Select a Production month within the Monitoring quarter.']);
-            }
-            if (in_array($month, array_diff_key($months, $id ? [$id => true] : []), true)) {
-                throw ValidationException::withMessages([$prefix.".monthly_details.{$index}.month" => 'Only one monthly entry is allowed per Production month.']);
-            }
-            $months[$id ?? 'new-'.$index] = $month;
-        }
-        foreach ($deleted as $id) {
-            $saved[$id]->delete();
-        }
-        foreach ($data['monthly_details'] ?? [] as $detail) {
             $payload = array_intersect_key($detail, array_flip(['month', 'activity_count', 'total_quantity', 'remarks']));
-            if (array_key_exists('remarks', $payload)) {
-                $payload['remarks'] = trim($payload['remarks'] ?? '');
-                if ($payload['remarks'] === '') $payload['remarks'] = null;
-            }
-            if (! empty($detail['id'])) $saved[$detail['id']]->update($payload);
+            $payload['remarks'] = isset($payload['remarks']) ? (trim($payload['remarks']) ?: null) : null;
+            if ($id) $saved[$id]->update($payload);
             else $production->monthlyDetails()->create($payload);
         }
+        $persisted = $production->monthlyDetails()->lockForUpdate()->get()->map(fn ($row) => $row->only([
+            'id', 'month', 'activity_count', 'total_quantity', 'remarks',
+        ]))->all();
+        $production->update(['actual_output' => $this->production->calculateActualOutput(
+            $record->year, $quarterNumber, $persisted, $prefix
+        )]);
     }
 
     private function resolveCreationResources(Project $project, array $data, UserProfile $currentUser): array
@@ -454,53 +433,66 @@ class MonitoringService
             $record->id
         );
 
-        return DB::transaction(function () use (
-            $record,
-            $data,
-            $currentUser,
-            $project
-        ) {
-            $record = MonitoringRecord::whereKey($record->id)->lockForUpdate()->firstOrFail();
-            $this->ensureUserCanManageMonitoring($record, $currentUser);
-            $this->resolveProjectForUser($record->project_id, $currentUser);
-            $record->update([
-                'project_status' =>
-                    $data['project_status'],
-
-                'updated_by' =>
-                    $currentUser->id,
-            ]);
-
-            if (
-                array_key_exists(
-                    'production',
-                    $data
-                )
+        try {
+            return DB::transaction(function () use (
+                $record,
+                $data,
+                $currentUser,
+                $project
             ) {
-                $this->syncProduction(
-                    $record,
-                    $project,
-                    $data['production'] ?? []
-                );
-            }
+                $record = $this->lockRecordForMutation($record, $currentUser);
+                $this->ensureUserCanManageMonitoring($record, $currentUser);
+                $this->resolveProjectForUser($record->project_id, $currentUser);
+                if (array_key_exists('production', $data)) $this->production->assertRevision($record, $data);
+                $record->update([
+                    'project_status' =>
+                        $data['project_status'],
 
-            if (
-                array_key_exists(
-                    'materials',
-                    $data
-                )
-            ) {
-                $this->syncMaterials(
-                    $record,
-                    $project,
-                    $data['materials'] ?? []
-                );
-            }
+                    'updated_by' =>
+                        $currentUser->id,
+                ]);
 
-            return $this->loadMonitoringRecord(
-                $record
-            );
-        }, 3);
+                if (
+                    array_key_exists(
+                        'production',
+                        $data
+                    )
+                ) {
+                    $this->syncProduction(
+                        $record,
+                        $project,
+                        $data['production'] ?? []
+                    );
+                }
+
+                if (
+                    array_key_exists(
+                        'materials',
+                        $data
+                    )
+                ) {
+                    $this->syncMaterials(
+                        $record,
+                        $project,
+                        $data['materials'] ?? []
+                    );
+                }
+
+                return $this->loadMonitoringRecord(
+                    $record
+                );
+            }, 3);
+        } catch (QueryException $exception) {
+            if (array_key_exists('production', $data)) $this->productionWriteFailure($exception);
+            throw $exception;
+        }
+    }
+
+    private function productionWriteFailure(QueryException $exception): never
+    {
+        Log::warning('Production Monitoring write failed.', ['code' => 'production_write_failed',
+            'sqlstate' => $exception->errorInfo[0] ?? null]);
+        throw ValidationException::withMessages(['production' => 'Production could not be saved. Reload and review the record before retrying, or contact the administrator.'])->status(503);
     }
 
     /*
@@ -508,6 +500,35 @@ class MonitoringService
     | PROJECT / ROLE AUTHORIZATION
     |--------------------------------------------------------------------------
     */
+
+    private function lockProjectForWrite(Project $project, UserProfile $actor): Project
+    {
+        $fresh = UserProfile::whereKey($actor->id)->sharedLock()->first();
+        $role = $fresh ? Role::whereKey($fresh->role_id)->sharedLock()->first() : null;
+        abort_unless($fresh?->is_active && $role?->is_active
+            && $role->code === $actor->role?->code, 403);
+        $fresh->setRelation('role', $role);
+        $this->lifecycle->lockOperational([$project->association_id]);
+        $locked = Project::whereKey($project->id)->lockForUpdate()->firstOrFail();
+        if ($locked->association_id !== $project->association_id) {
+            throw ValidationException::withMessages(['project_id' => 'The project association changed. Refresh before saving.'])->status(409);
+        }
+        $this->projects->assertNotFinalized($locked);
+
+        return $this->resolveProjectForUser($locked->id, $fresh);
+    }
+
+    private function lockRecordForMutation(MonitoringRecord $record, UserProfile $actor): MonitoringRecord
+    {
+        $project = Project::whereKey($record->project_id)->firstOrFail();
+        $this->lockProjectForWrite($project, $actor);
+        $locked = MonitoringRecord::whereKey($record->id)->lockForUpdate()->firstOrFail();
+        if ($locked->project_id !== $record->project_id) {
+            throw ValidationException::withMessages(['monitoring' => 'The monitoring project changed. Refresh before saving.'])->status(409);
+        }
+
+        return $locked;
+    }
 
     private function resolveProjectForUser(
         string $projectId,
@@ -688,233 +709,71 @@ class MonitoringService
     |--------------------------------------------------------------------------
     */
 
-    private function createProduction(
-        MonitoringRecord $record,
-        Project $project,
-        array $productionRows
-    ): void {
-        foreach (
-            $productionRows as $index => $production
-        ) {
-            $product =
-                $this->resolveProjectProduct(
-                    $project,
-                    $production[
-                        'project_product_id'
-                    ]
-                );
-
-            $productionRecord =
-                $record->production()->create([
-                    'project_product_id' =>
-                        $product->id,
-
-                    'target_output' =>
-                        $production[
-                            'target_output'
-                        ],
-
-                    'actual_output' =>
-                        $production[
-                            'actual_output'
-                        ],
-
-                    'unit' =>
-                        trim(
-                            $production['unit']
-                        ),
-
-                    'remarks' =>
-                        $production[
-                            'remarks'
-                        ] ?? null,
-                ]);
-
-            $this->syncMonthlyDetails($productionRecord, $production, "production.{$index}");
-            $this->createIncome(
-                $productionRecord,
-                $production[
-                    'income'
-                ] ?? []
-            );
-        }
+    private function createProduction(MonitoringRecord $record, Project $project, array $productionRows): void
+    {
+        $this->syncProduction($record, $project, $productionRows);
     }
 
-    private function syncProduction(
-        MonitoringRecord $record,
-        Project $project,
-        array $productionRows
-    ): void {
+    private function syncProduction(MonitoringRecord $record, Project $project, array $productionRows): void
+    {
         $submittedIds = [];
-
-        foreach (
-            $productionRows as $index => $production
-        ) {
-            $product =
-                $this->resolveProjectProduct(
-                    $project,
-                    $production[
-                        'project_product_id'
-                    ]
-                );
-
-            $productionId =
-                $production['id']
-                    ?? null;
-
-            if ($productionId) {
-                if (
-                    in_array(
-                        $productionId,
-                        $submittedIds,
-                        true
-                    )
-                ) {
-                    throw ValidationException::withMessages([
-                        'production' =>
-                            'The same production record cannot be submitted more than once.',
-                    ]);
+        $productIds = [];
+        foreach ($productionRows as $index => $row) {
+            $prefix = "production.{$index}";
+            $product = $this->resolveProjectProduct($project, $row['project_product_id']);
+            if (isset($productIds[$product->id])) {
+                throw ValidationException::withMessages([$prefix.'.project_product_id' => 'Select each project product only once.']);
+            }
+            $productIds[$product->id] = true;
+            $id = $row['id'] ?? null;
+            $existing = null;
+            if ($id) {
+                if (isset($submittedIds[$id])) {
+                    throw ValidationException::withMessages([$prefix.'.id' => 'Submit each Production record only once.']);
                 }
-
-                $existing =
-                    MonitoringProduction::query()
-                        ->where(
-                            'id',
-                            $productionId
-                        )
-                        ->where(
-                            'monitoring_record_id',
-                            $record->id
-                        )
-                        ->lockForUpdate()
-                        ->first();
-
-                if (! $existing) {
-                    throw ValidationException::withMessages([
-                        'production' =>
-                            'One of the submitted production records does not belong to this monitoring record.',
-                    ]);
+                $submittedIds[$id] = true;
+                $existing = $record->production()->whereKey($id)->lockForUpdate()->first();
+                if (! $existing || $existing->project_product_id !== $product->id) {
+                    throw ValidationException::withMessages([$prefix.'.id' => 'This Production record or product is unavailable.']);
                 }
-
-                $unit = trim($production['unit']);
-                $identityChanges = [];
-                if ((string) $existing->project_product_id !== (string) $product->id) {
-                    $identityChanges['project_product_id'] = $product->id;
-                }
-                if ((string) $existing->unit !== $unit) {
-                    $identityChanges['unit'] = $unit;
-                }
-                if ($identityChanges && $existing->monthlyDetails()->exists()) {
-                    $errors = [];
-                    foreach (array_keys($identityChanges) as $field) {
-                        $errors["production.{$index}.{$field}"] = 'Product and unit cannot change while saved monthly Production details exist. Save explicit monthly removals first.';
+                if (! $this->production->canEditMonthly($existing)) {
+                    if (array_diff(array_keys($row), ['id', 'project_product_id', 'income'])) {
+                        throw ValidationException::withMessages([$prefix => 'Legacy quarterly-only or unreconciled Production is preserved read-only. A separate conversion decision is required.']);
                     }
-                    throw ValidationException::withMessages($errors);
+                    if (array_key_exists('income', $row)) $this->syncIncome($existing, $row['income'] ?? []);
+                    continue;
                 }
-
-                // Save permitted identity changes before monthly details protect the parent.
-                $existing->update($identityChanges + [
-                    'target_output' =>
-                        $production[
-                            'target_output'
-                        ],
-
-                    'actual_output' =>
-                        $production[
-                            'actual_output'
-                        ],
-
-                    'remarks' =>
-                        $production[
-                            'remarks'
-                        ] ?? null,
-                ]);
-                $this->syncMonthlyDetails($existing, $production, "production.{$index}");
-
-                if (
-                    array_key_exists(
-                        'income',
-                        $production
-                    )
-                ) {
-                    $this->syncIncome(
-                        $existing,
-                        $production[
-                            'income'
-                        ] ?? []
-                    );
-                }
-
-                $submittedIds[] =
-                    $existing->id;
-
-                continue;
+            } elseif ($record->production()->where('project_product_id', $product->id)->exists()) {
+                throw ValidationException::withMessages([$prefix.'.project_product_id' => 'This product already has Production. Reload before saving.'])->status(409);
             }
-
-            $created =
-                $record->production()->create([
-                    'project_product_id' =>
-                        $product->id,
-
-                    'target_output' =>
-                        $production[
-                            'target_output'
-                        ],
-
-                    'actual_output' =>
-                        $production[
-                            'actual_output'
-                        ],
-
-                    'unit' =>
-                        trim(
-                            $production['unit']
-                        ),
-
-                    'remarks' =>
-                        $production[
-                            'remarks'
-                        ] ?? null,
-                ]);
-
-            $this->syncMonthlyDetails($created, $production, "production.{$index}");
-            $this->createIncome(
-                $created,
-                $production[
-                    'income'
-                ] ?? []
-            );
-
-            $submittedIds[] =
-                $created->id;
-        }
-
-        $removed =
-            MonitoringProduction::query()
-                ->where(
-                    'monitoring_record_id',
-                    $record->id
-                )
-                ->when(
-                    ! empty($submittedIds),
-                    fn ($query) =>
-                        $query->whereNotIn(
-                            'id',
-                            $submittedIds
-                        )
-                )
-                ->get();
-
-        foreach ($removed as $production) {
-            if ($production->monthlyDetails()->exists()) {
-                throw ValidationException::withMessages(['production' => 'Remove this product’s saved monthly details explicitly and save before removing its quarterly Production entry.']);
+            $validator = Validator::make($row, [
+                'target_output' => ['required', 'regex:/\\A\\d{1,12}(?:\\.\\d{1,2})?\\z/D'],
+                'unit' => ['required', 'string', 'max:50'],
+                'remarks' => ['nullable', 'string'],
+            ]);
+            if ($validator->fails()) {
+                $errors = [];
+                foreach ($validator->errors()->messages() as $field => $messages) $errors[$prefix.'.'.$field] = $messages;
+                throw ValidationException::withMessages($errors);
             }
-            /*
-             * monitoring_income uses ON DELETE CASCADE,
-             * so its income rows are removed together.
-             */
-            $production->delete();
+            $unit = trim($row['unit']);
+            if ($existing && $existing->unit !== $unit) {
+                throw ValidationException::withMessages([$prefix.'.unit' => 'Saved Production must retain its measurement unit.']);
+            }
+            $total = $this->production->calculateActualOutput($record->year, $record->quarter->quarter_number,
+                $row['monthly_details'] ?? [], $prefix);
+            $payload = ['target_output' => $row['target_output'], 'unit' => $unit,
+                'remarks' => $row['remarks'] ?? null, 'actual_output' => $total];
+            $isNew = $existing === null;
+            if ($existing) $existing->update($payload);
+            else $existing = $record->production()->create(['project_product_id' => $product->id] + $payload);
+            $this->syncMonthlyDetails($existing, $row, $prefix);
+            if (array_key_exists('income', $row)) {
+                if ($isNew) $this->createIncome($existing, $row['income'] ?? []);
+                else $this->syncIncome($existing, $row['income'] ?? []);
+            }
         }
+        // Omitted products retain their Production, monthly and Income history.
     }
 
     private function resolveProjectProduct(

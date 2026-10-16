@@ -18,6 +18,7 @@ class AssociationOfficerService
     public function __construct(
         private MemberExecutivePositionService $executives,
         private AuditLogService $audit,
+        private AssociationLifecycleService $lifecycle,
     ) {
     }
 
@@ -54,9 +55,7 @@ class AssociationOfficerService
             $association = Association::whereKey($association->id)->lockForUpdate()->firstOrFail();
             $this->authorize($actor, $association);
             $request->attributes->set('current_user', $actor);
-            if ($association->archived_at !== null) {
-                throw ValidationException::withMessages(['association' => 'Archived associations are read-only.']);
-            }
+            $this->lifecycle->assertOperational($association, 'association');
 
             $action = $data['action'];
             if (! in_array($action, ['assign', 'replace', 'remove'], true)

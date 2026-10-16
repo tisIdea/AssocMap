@@ -1,6 +1,6 @@
 <script type="module">
     const records = {{ Illuminate\Support\Js::from($rows->values()) }};
-    const quarters = {{ Illuminate\Support\Js::from($quarters->map(fn ($quarter) => ['id' => $quarter->id, 'quarter_number' => $quarter->quarter_number])->values()) }};
+    const quarters = {{ Illuminate\Support\Js::from($quarters->map(fn ($quarter) => ['id' => $quarter->id, 'quarter_number' => $quarter->quarter_number, 'months' => app(\App\Services\ProductionMonitoringService::class)->monthsForQuarter($quarter->quarter_number)])->values()) }};
     const monthNames = {{ Illuminate\Support\Js::from($months) }};
     const projects = {{ Illuminate\Support\Js::from($projectRows) }};
     const occupiedPeriods = {{ Illuminate\Support\Js::from($occupiedPeriods ?? collect()) }};
@@ -73,7 +73,7 @@
         const quarter = quarters.find(item => String(item.id) === String(record?.quarter_id ?? form.elements.quarter_id.value));
         const year = Number(record?.year ?? form.elements.year.value);
         if (!quarter || year < 2000 || year > 2100) return null;
-        const first = (Number(quarter.quarter_number) - 1) * 3 + 1;
+        const first = quarter.months[0];
         const last = first + 2;
         return {start: `${year}-${String(first).padStart(2, '0')}-01`, end: `${year}-${String(last).padStart(2, '0')}-${new Date(year, last, 0).getDate()}`};
     }
@@ -86,45 +86,62 @@
         target.elements.conducted_by.value = report?.conducted_by ?? '';
     }
     function refreshMonthly(production) {
+        const output = production.querySelector('[data-quarterly-output]');
+        const notice = production.querySelector('[data-monthly-notice]');
+        if (production.dataset.legacyProduction) {
+            output.textContent = production.savedProduction.actual_output + ' ' + production.savedProduction.unit;
+            monthlyRows(production).forEach(row => { row.querySelector('[data-month-unit]').textContent = production.savedProduction.unit; });
+            notice.textContent = 'Legacy quarterly-only or unreconciled record: saved output and monthly details are read-only. No monthly values are inferred.';
+            return;
+        }
         const rows = monthlyRows(production), allowed = reportingMonths();
-        const used = rows.map(row => row.querySelector('[data-key="month"]').value);
         let cents = 0n;
+        let complete = allowed.length === 3 && rows.length === 3;
         rows.forEach(row => {
-            const select = row.querySelector('[data-key="month"]'), value = select.value;
-            select.replaceChildren(new Option('Select Production month', ''));
-            allowed.forEach(month => { const option = new Option(monthNames[month], month); option.disabled = String(month) !== value && used.includes(String(month)); select.add(option); });
-            if (value && !allowed.includes(Number(value))) { const invalid = new Option('Outside this quarter — choose a valid month', value); invalid.disabled = true; select.add(invalid); }
-            select.value = value;
-            select.setCustomValidity(value && (!allowed.includes(Number(value)) || used.filter(month => month === value).length > 1) ? 'Select a unique month within this quarter.' : '');
-            const quantity = row.querySelector('[data-key="total_quantity"]').value;
-            if (/^\d+(\.\d{1,2})?$/.test(quantity)) { const [whole, fraction = ''] = quantity.split('.'); cents += BigInt(whole) * 100n + BigInt(fraction.padEnd(2, '0')); }
+            const month = Number(row.querySelector('[data-key="month"]').value);
+            row.querySelector('[data-month-name]').textContent = [monthNames[month], form.elements.year.value].filter(Boolean).join(' ');
+            const quantity = row.querySelector('[data-key="total_quantity"]');
+            const count = row.querySelector('[data-key="activity_count"]');
+            row.querySelector('[data-month-unit]').textContent = production.querySelector('[data-key="unit"]').value || 'Use the product measurement unit';
+            const validQuantity = /^\d{1,12}(\.\d{1,2})?$/.test(quantity.value);
+            quantity.setCustomValidity(!allowed.includes(month) ? 'Select a monitoring quarter before entering Production.'
+                : quantity.value && !validQuantity ? 'Enter a nonnegative quantity with up to 12 whole digits and 2 decimal places.' : '');
+            const valid = validQuantity && count.value !== '' && count.validity.valid;
+            complete &&= valid && allowed.includes(month);
+            if (valid) {
+                const [whole, fraction = ''] = quantity.value.split('.');
+                cents += BigInt(whole) * 100n + BigInt(fraction.padEnd(2, '0'));
+            }
         });
-        production.querySelector('[data-monthly-subtotal]').textContent = `Monthly detail subtotal: ${cents / 100n}.${String(cents % 100n).padStart(2, '0')} ${production.querySelector('[data-key="unit"]').value} — quarterly actual output stays unchanged.`;
-        production.querySelector('[data-add-monthly]').disabled = !allowed.length || rows.length >= 3;
+        const overflow = cents > 99999999999999n;
+        if (overflow && rows.length) rows[rows.length - 1].querySelector('[data-key="total_quantity"]').setCustomValidity('Quarterly Actual Output exceeds NUMERIC(14,2).');
+        output.textContent = complete && !overflow ? `${cents / 100n}.${String(cents % 100n).padStart(2, '0')} ${production.querySelector('[data-key="unit"]').value}` : 'Enter all three monthly quantities and activity counts';
+        notice.textContent = 'Enter an activity count and actual production quantity for each month. Enter 0 explicitly for confirmed zero; blank means unrecorded. The server calculates and saves the quarterly sum.';
     }
-    function addMonthly(production, values = {}, index = null) {
-        index ??= Number(production.dataset.nextMonthly || 0);
-        production.dataset.nextMonthly = String(Math.max(Number(production.dataset.nextMonthly || 0), Number(index) + 1));
+    function addMonthly(production, values = {}, index = 0) {
         const row = document.getElementById('monitoring-monthly-template').content.firstElementChild.cloneNode(true);
-        row.dataset.savedId = values.id ?? '';
-        const savedProduction = editingRecord?.production?.find(item => item.id === production.querySelector('[data-key="id"]').value);
-        row.originalMonthlyValues = {...(savedProduction?.monthly_details?.find(detail => detail.id === values.id) ?? values)};
         ownInputs(row).forEach(input => {
             input.name = `${production.dataset.prefix}[monthly_details][${index}][${input.dataset.key}]`;
             input.id = 'monitoring-' + input.name.replace(/[^a-zA-Z0-9_-]/g, '-');
             row.querySelector(`[data-label="${input.dataset.key}"]`)?.setAttribute('for', input.id);
-            if (input.dataset.key === 'month' && values.month) input.add(new Option(monthNames[values.month] ?? 'Unavailable month', values.month));
             input.value = values[input.dataset.key] ?? '';
             if (input.dataset.key === 'id') input.disabled = !values.id;
         });
+        const month = Number(values.month);
+        row.querySelector('[data-month-name]').textContent = [monthNames[month], form.elements.year.value].filter(Boolean).join(' ');
+        const quantity = row.querySelector('[data-key="total_quantity"]');
+        quantity.setAttribute('aria-describedby', quantity.id + '-unit');
+        const unit = row.querySelector('[data-month-unit]'); unit.id = quantity.id + '-unit';
+        unit.textContent = production.querySelector('[data-key="unit"]').value || 'Use the product measurement unit';
         production.querySelector('[data-monthly-container]').append(row);
-        refreshMonthly(production);
         return row;
     }
-    function addMonthlyDeletion(production, id) {
-        const input = document.createElement('input');
-        input.type = 'hidden'; input.name = `${production.dataset.prefix}[deleted_monthly_ids][]`; input.value = id;
-        production.append(input);
+    function fillQuarterMonths(production, details = []) {
+        production.querySelector('[data-monthly-container]').replaceChildren();
+        const entries = Object.values(details ?? {});
+        const rows = production.dataset.legacyProduction ? entries : reportingMonths().map(month => entries.find(detail => Number(detail.month) === month) ?? {month});
+        rows.forEach((detail, index) => addMonthly(production, detail, index));
+        refreshMonthly(production);
     }
     form.addEventListener('input', event => { if (event.target.name === 'conducted_by' && event.target.value.trim()) form.elements.conducted_by_user_id.value = ''; });
     form.addEventListener('change', event => { if (event.target.name === 'conducted_by_user_id' && event.target.value) form.elements.conducted_by.value = ''; });
@@ -301,8 +318,7 @@
     function reportingMonths() {
         const quarter = quarters.find(quarter => String(quarter.id) === form.elements.quarter_id.value);
         if (!quarter) return [];
-        const first = (Number(quarter.quarter_number) - 1) * 3 + 1;
-        return [first, first + 1, first + 2];
+        return quarter.months;
     }
     function refreshIncome(production) {
         const rows = incomeRows(production);
@@ -445,20 +461,29 @@
             }
             syncResourceMode(row);
             if (kind === 'production') {
+                const output = row.querySelector('[data-quarterly-output]');
+                output.id = 'monitoring-quarterly-output-' + index;
+                row.querySelector('[data-quarterly-label]').htmlFor = output.id;
                 const saved = editingRecord?.production?.find(item => item.id === values.id);
-                const deleted = values.deleted_monthly_ids ?? [];
-                deleted.forEach(id => addMonthlyDeletion(row, id));
-                const submitted = Object.values(values.monthly_details ?? {});
-                const retained = (saved?.monthly_details ?? []).filter(detail => !deleted.includes(detail.id) && !submitted.some(item => item.id === detail.id));
-                Object.entries(values.monthly_details ?? {}).forEach(([index, detail]) => addMonthly(row, detail, index));
-                retained.forEach(detail => addMonthly(row, detail));
-                refreshMonthly(row);
-                row.dataset.protectedMonthly = saved?.monthly_details?.length ? '1' : '';
-                if (row.dataset.protectedMonthly) {
-                    ['project_product_id', 'unit'].forEach(key => { const input = row.querySelector(`[data-key="${key}"]`); const proxy = document.createElement('input'); proxy.type = 'hidden'; proxy.name = input.name; proxy.value = saved[key]; row.append(proxy); input.value = saved[key]; input.disabled = true; });
+                row.savedProduction = saved;
+                row.dataset.legacyProduction = saved && !saved.can_edit_monthly ? '1' : '';
+                fillQuarterMonths(row, row.dataset.legacyProduction ? saved.monthly_details : values.monthly_details);
+                if (saved) {
                     row.querySelector('[data-monitoring-remove-row]').disabled = true;
-                    const help = document.createElement('p'); help.textContent = 'Product, unit and quarterly removal are protected while saved monthly details exist. Save explicit monthly removals first.'; row.append(help);
+                    const protectedKeys = row.dataset.legacyProduction
+                        ? ['project_product_id', 'unit', 'target_output', 'remarks'] : ['project_product_id', 'unit'];
+                    protectedKeys.forEach(key => {
+                        const input = row.querySelector(`[data-key="${key}"]`);
+                        input.value = saved[key] ?? '';
+                        input.disabled = true;
+                        if (key === 'project_product_id' || !row.dataset.legacyProduction) {
+                            const proxy = document.createElement('input'); proxy.type = 'hidden';
+                            proxy.name = input.name; proxy.value = input.value; proxy.dataset.key = key; row.append(proxy);
+                        }
+                    });
+                    if (row.dataset.legacyProduction) row.querySelectorAll('[data-kind="monthly"] input, [data-kind="monthly"] textarea').forEach(input => { input.disabled = true; });
                 }
+                refreshMonthly(row);
             }
         } else {
             parent.incomeGroup.querySelector('[data-income-container]').append(row);
@@ -498,7 +523,7 @@
             containers[kind].replaceChildren();
             counters[kind] = 0;
             Object.entries(values[kind] ?? {}).forEach(([index, row]) => addRow(kind, row, index));
-            if (kind === 'production' && record) record.production.filter(row => row.monthly_details?.length && !Object.values(values.production ?? {}).some(item => item.id === row.id)).forEach(row => addRow(kind, row));
+            if (kind === 'production' && record) record.production.filter(row => !Object.values(values.production ?? {}).some(item => item.id === row.id)).forEach(row => addRow(kind, row));
             refreshUnique(kind);
         }
         selectedProjectValue = projectSelect.value;
@@ -538,50 +563,23 @@
         if (editingRecord) { input.value = editingRecord[name]; return; }
         if (input.value === periodValues[name]) return;
         const savedIncome = rootRows('production').some(row => row.persistedFrequency);
+        if (name === 'quarter_id' && rootRows('production').some(row => monthlyRows(row).some(month =>
+            ['total_quantity', 'activity_count'].some(key => month.querySelector(`[data-key="${key}"]`).value !== '')))
+            && !window.confirm('Change the quarter and clear unsaved monthly Production entries? Each month in the new quarter must be recorded explicitly.')) {
+            input.value = periodValues[name];
+            updateContext();
+            return;
+        }
         if (savedIncome && !window.confirm('Change the reporting period of saved income? Existing amounts will remain, and monthly entries must be reviewed against the new quarter. Cancel preserves the current period.')) {
             input.value = periodValues[name];
         }
         periodValues[name] = input.value;
         rootRows('production').forEach(refreshIncome);
-        rootRows('production').forEach(refreshMonthly);
+        rootRows('production').forEach(row => name === 'quarter_id' ? fillQuarterMonths(row) : refreshMonthly(row));
         updateContext();
     }));
     form.addEventListener('click', event => {
-        const cancelMonthly = event.target.closest('[data-cancel-monthly]');
-        if (cancelMonthly) {
-            const row = cancelMonthly.closest('[data-kind="monthly"]'), production = row.closest('[data-kind="production"]');
-            if (row.dataset.savedId) {
-                ownInputs(row).forEach(input => {
-                    const value = row.originalMonthlyValues[input.dataset.key] ?? '';
-                    if (input.dataset.key === 'month' && value && !Array.from(input.options).some(option => option.value === String(value))) input.add(new Option(monthNames[value] ?? 'Unavailable month', value));
-                    input.value = value;
-                    input.removeAttribute('aria-invalid'); input.removeAttribute('aria-describedby');
-                });
-                row.querySelectorAll('[data-field-error]').forEach(error => error.remove());
-            } else row.remove();
-            refreshMonthly(production);
-            (row.dataset.savedId ? row.querySelector('[data-key="month"]') : production.querySelector('[data-add-monthly]')).focus();
-            return;
-        }
-        const monthly = event.target.closest('[data-add-monthly]');
-        if (monthly) {
-            const production = monthly.closest('[data-kind="production"]');
-            const draft = monthlyRows(production).find(row => !row.dataset.savedId && !row.querySelector('[data-key="month"]').value);
-            (draft ?? addMonthly(production)).querySelector('[data-key="month"]').focus();
-            return;
-        }
-        const removeMonthly = event.target.closest('[data-remove-monthly]');
-        if (removeMonthly) {
-            const row = removeMonthly.closest('[data-kind="monthly"]'), production = row.closest('[data-kind="production"]');
-            confirmRemoval('Remove Monthly Production?', row.dataset.savedId
-                ? 'This monthly entry will be marked for removal. It is deleted only when you save Production. Cancel keeps it unchanged.'
-                : 'Remove this unsaved monthly entry? Saved monthly entries remain unchanged.', removeMonthly, () => {
-                if (!row.isConnected) return;
-                if (row.dataset.savedId) addMonthlyDeletion(production, row.dataset.savedId);
-                row.remove(); refreshMonthly(production); production.querySelector('[data-add-monthly]').focus();
-            });
-            return;
-        }
+
         const root = event.target.closest('[data-add-root]');
         if (root) { const row = addRow(root.dataset.addRoot); Array.from(row.querySelectorAll('input, select, textarea')).find(input => input.type !== 'hidden' && !input.disabled && !input.closest('[hidden]'))?.focus(); }
         const income = event.target.closest('[data-add-income]');
@@ -595,14 +593,14 @@
         if (remove) {
             const row = remove.closest('[data-kind]');
             const kind = row.dataset.kind;
-            if (kind === 'production' && row.dataset.protectedMonthly) return;
+            if (kind === 'production' && row.querySelector('[data-key="id"]').value) return;
             const label = {production: 'Production', income: 'Income', materials: 'Material Observation'}[kind];
             const saved = Boolean(row.querySelector('[data-key="id"]')?.value);
             const warning = saved
                 ? (kind === 'production' ? 'This Production entry and its linked Income will be deleted only when you save Production.' : `This ${label.toLowerCase()} entry will be deleted only when you save its section.`)
                 : (kind === 'production' ? 'This unsaved Production entry and its linked Income drafts will be discarded. No saved entry is deleted now.' : `This unsaved ${label.toLowerCase()} entry will be discarded. No saved entry is deleted now.`);
             confirmRemoval(`Remove ${label}?`, warning + ' Cancel keeps the entry unchanged.', remove, () => {
-                if (!row.isConnected || (kind === 'production' && row.dataset.protectedMonthly)) return;
+                if (!row.isConnected || (kind === 'production' && row.querySelector('[data-key="id"]').value)) return;
                 const parent = kind === 'income' ? row.closest('[data-production-income]').productionRow : null;
                 if (kind === 'production') row.incomeGroup.remove();
                 row.remove();
@@ -652,7 +650,9 @@
         if (row.dataset.kind === 'production') { updateProductHeading(row); refreshProductNames(); }
         else updateMaterialHeading(row);
     });
+    let submitting = false;
     form.addEventListener('submit', event => {
+        if (submitting) { event.preventDefault(); return; }
         if (!refreshQuarterAvailability()) {
             event.preventDefault();
             document.getElementById('monitoring-quarter-availability').focus();
@@ -673,6 +673,16 @@
         }
         form.querySelectorAll('[data-identity-payload]').forEach(input => input.remove());
         if (editingRecord) ['project_id', 'year', 'quarter_id'].forEach(key => { const proxy = document.createElement('input'); proxy.type = 'hidden'; proxy.name = key; proxy.value = editingRecord[key]; proxy.dataset.identityPayload = ''; form.append(proxy); });
+        submitting = true;
+        form.querySelector('[type="submit"]').disabled = true;
+        form.setAttribute('aria-busy', 'true');
+        form.querySelector('[data-monitoring-submit-status]').textContent = 'Saving Monitoring. Please wait.';
+    });
+    window.addEventListener('pageshow', () => {
+        submitting = false; form.removeAttribute('aria-busy');
+        form.querySelector('[data-monitoring-submit-status]').textContent = '';
+        form.querySelector('[type="submit"]').disabled = false;
+        refreshQuarterAvailability();
     });
     const editing = records[0] ?? null;
     populate(initial, editing);

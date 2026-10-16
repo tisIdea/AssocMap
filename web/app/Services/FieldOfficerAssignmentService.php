@@ -11,7 +11,7 @@ use Illuminate\Validation\ValidationException;
 
 class FieldOfficerAssignmentService
 {
-    public function __construct(private AuditLogService $audit)
+    public function __construct(private AuditLogService $audit, private AssociationLifecycleService $lifecycle)
     {
     }
 
@@ -47,9 +47,7 @@ class FieldOfficerAssignmentService
             }
             $changed = 0;
             foreach ($associations as $association) {
-                if ($association->archived_at !== null) {
-                    throw ValidationException::withMessages(['association_ids' => 'Archived associations cannot be reassigned.']);
-                }
+                $this->lifecycle->assertOperational($association, 'association_ids');
                 $expected = $data['expected_officers'][$association->id] ?? null;
                 if (! is_string($expected)) {
                     throw ValidationException::withMessages(['association_ids' => 'Assignment snapshots are missing. Reload and select the associations again.']);

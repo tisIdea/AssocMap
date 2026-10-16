@@ -33,8 +33,9 @@ export function initAdminNavigation() {
                 if (active) link.setAttribute('aria-current', 'page');
                 else link.removeAttribute('aria-current');
             });
-            $('.program-toggle').classList.toggle('active', module !== 'gis' && module !== 'audit-logs');
-            setDisclosure($('.program-toggle'), module !== 'gis' && module !== 'audit-logs');
+            const operations = ['projects', 'trainings', 'monitoring', 'program-activities'].includes(module);
+            $('.program-toggle').classList.toggle('active', operations);
+            setDisclosure($('.program-toggle'), operations);
             $('#current-context').textContent = title;
             document.title = `${title} · AssocMap`;
             setDrawer(false, false);

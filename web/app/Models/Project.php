@@ -17,6 +17,8 @@ class Project extends Model
 
     public $incrementing = false;
 
+    protected $hidden = ['closure_remarks'];
+
     protected $fillable = [
         'association_id',
         'saad_activity_id',
@@ -42,6 +44,7 @@ class Project extends Model
             'implementation_start_date' => 'date',
             'implementation_end_date' => 'date',
             'archived_at' => 'datetime',
+            'closed_at' => 'datetime',
         ];
     }
 
@@ -116,7 +119,17 @@ class Project extends Model
         );
     }
 
-        public function monitoringRecords(): HasMany
+    public function closedBy(): BelongsTo
+    {
+        return $this->belongsTo(UserProfile::class, 'closed_by');
+    }
+
+    public function isFinalized(): bool
+    {
+        return in_array($this->status, ['completed', 'terminated'], true) || $this->closed_at !== null;
+    }
+
+    public function monitoringRecords(): HasMany
     {
         return $this->hasMany(
             MonitoringRecord::class,

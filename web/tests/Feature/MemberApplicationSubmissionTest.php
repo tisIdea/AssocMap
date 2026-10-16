@@ -74,7 +74,8 @@ class MemberApplicationSubmissionTest extends TestCase
             $table->timestamp('accepted_at')->nullable(); $table->timestamp('last_attempt_at')->nullable(); $table->timestamps();
         });
         Schema::create('associations', function (Blueprint $table) {
-            $table->uuid('id')->primary(); $table->string('name'); $table->string('status'); $table->timestamps();
+            $table->uuid('id')->primary(); $table->string('name'); $table->string('status');
+            $table->timestamp('archived_at')->nullable(); $table->timestamps();
         });
         Schema::create('association_accounts', function (Blueprint $table) {
             $table->uuid('id')->primary(); $table->uuid('association_id');
@@ -133,6 +134,25 @@ class MemberApplicationSubmissionTest extends TestCase
     {
         return ['first_name' => 'Synthetic', 'last_name' => 'Applicant', 'birth_date' => '2000-01-01',
             'sex_id' => 1, 'position_id' => 2, 'classification_ids' => [1], 'endorsement_letter' => 'Private synthetic letter'];
+    }
+
+    public static function readOnlyAssociations(): array
+    {
+        return ['inactive' => ['inactive', null], 'archived' => ['active', '2026-01-01'],
+            'inactive and archived' => ['inactive', '2026-01-01']];
+    }
+
+    #[DataProvider('readOnlyAssociations')]
+    public function test_read_only_association_rejects_submission_before_storing_photo(string $status, ?string $archivedAt): void
+    {
+        DB::table('associations')->where('id', self::ASSOCIATION)
+            ->update(['status' => $status, 'archived_at' => $archivedAt]);
+        $this->postJson(self::URL, $this->applicationData() + [
+            'applicant_photo' => UploadedFile::fake()->image('portrait.png', 32, 48),
+        ])->assertUnprocessable()->assertJsonValidationErrors('association_id');
+        $this->assertDatabaseCount('member_applications', 0);
+        $this->assertDatabaseCount('member_application_classifications', 0);
+        $this->assertSame([], Storage::disk('member_application_photos')->allFiles());
     }
 
     public static function omittedPhotos(): array

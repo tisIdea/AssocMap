@@ -21,7 +21,11 @@ class TrainingService
         'PM_CD',
     ];
 
-    public function __construct(private MemberPositionIntegrityService $positions) {}
+    public function __construct(
+        private MemberPositionIntegrityService $positions,
+        private AssociationLifecycleService $lifecycle,
+        private ProjectLifecycleService $projects,
+    ) {}
 
     public function create(
         array $data,
@@ -56,6 +60,11 @@ class TrainingService
             $relatedProject,
             $participants
         ) {
+            $this->lifecycle->lockOperational([$association->id]);
+            $this->projects->lockNotFinalized([$relatedProject?->id]);
+            $association = $this->resolveAssociationForUser($association->id, $currentUser);
+            $relatedProject = $this->resolveRelatedProject($relatedProject?->id, $association);
+            $this->validateParticipants($participants, $association);
             $training = Training::create([
                 'association_id' =>
                     $association->id,
@@ -123,7 +132,7 @@ class TrainingService
             abort_unless(in_array($currentUser->role?->code, ['system_admin', 'field_officer'], true), 403);
             $actor = $this->positions->lockActor($currentUser, $currentUser->role->code);
             $associationIds = array_unique([$training->association_id, strtolower($data['association_id'])]);
-            Association::whereIn('id', $associationIds)->orderBy('id')->lockForUpdate()->get();
+            $this->lifecycle->lockOperational($associationIds);
             $locked = Training::whereKey($training->id)->lockForUpdate()->firstOrFail();
             $this->ensureUserCanManageTraining($locked, $actor);
             if ($locked->association_id !== $training->association_id
@@ -132,6 +141,7 @@ class TrainingService
                     'training' => 'This training changed after the form was opened. Refresh and review it before saving.',
                 ])->status(409);
             }
+            $this->projects->lockNotFinalized([$locked->related_project_id, $data['related_project_id'] ?? null]);
             if ($locked->archived_at !== null) {
                 throw ValidationException::withMessages(['training' => 'Archived trainings cannot be edited.']);
             }
@@ -213,50 +223,43 @@ class TrainingService
         Training $training,
         UserProfile $currentUser
     ): void {
-        $this->ensureUserCanManageTraining(
-            $training,
-            $currentUser
-        );
-
-        if ($training->archived_at !== null) {
-            return;
-        }
-
-        $training->update([
-            'archived_at' =>
-                now(),
-
-            'archived_by' =>
-                $currentUser->id,
-
-            'updated_by' =>
-                $currentUser->id,
-        ]);
+        DB::transaction(function () use ($training, $currentUser) {
+            $training = $this->lockForMutation($training, $currentUser);
+            if ($training->archived_at !== null) return;
+            $training->update([
+                'archived_at' => now(),
+                'archived_by' => $currentUser->id,
+                'updated_by' => $currentUser->id,
+            ]);
+        }, 3);
     }
 
     public function unarchive(
         Training $training,
         UserProfile $currentUser
     ): void {
-        $this->ensureUserCanManageTraining(
-            $training,
-            $currentUser
-        );
+        DB::transaction(function () use ($training, $currentUser) {
+            $training = $this->lockForMutation($training, $currentUser);
+            if ($training->archived_at === null) return;
+            $training->update([
+                'archived_at' => null,
+                'archived_by' => null,
+                'updated_by' => $currentUser->id,
+            ]);
+        }, 3);
+    }
 
-        if ($training->archived_at === null) {
-            return;
+    private function lockForMutation(Training $training, UserProfile $actor): Training
+    {
+        $this->lifecycle->lockOperational([$training->association_id]);
+        $locked = Training::whereKey($training->id)->lockForUpdate()->firstOrFail();
+        if ($locked->association_id !== $training->association_id) {
+            throw ValidationException::withMessages(['training' => 'The training association changed. Refresh before saving.'])->status(409);
         }
+        $this->ensureUserCanManageTraining($locked, $actor);
+        $this->projects->lockNotFinalized([$locked->related_project_id]);
 
-        $training->update([
-            'archived_at' =>
-                null,
-
-            'archived_by' =>
-                null,
-
-            'updated_by' =>
-                $currentUser->id,
-        ]);
+        return $locked;
     }
 
     private function resolveAssociationForUser(
@@ -380,6 +383,8 @@ class TrainingService
                     'The selected project does not belong to the selected association or is archived.',
             ]);
         }
+
+        $this->projects->assertNotFinalized($project, 'related_project_id');
 
         return $project;
     }

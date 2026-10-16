@@ -11,6 +11,7 @@ use App\Models\Project;
 use App\Models\Quarter;
 use App\Models\UserProfile;
 use App\Services\MonitoringService;
+use App\Services\ProductionMonitoringService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -181,7 +182,9 @@ class MonitoringController extends Controller
     protected function mapMonitoringRecord(
         MonitoringRecord $record
     ): array {
+        foreach ($record->production as $production) $production->setRelation('monitoringRecord', $record);
         return [
+            'production_revision' => app(ProductionMonitoringService::class)->revision($record),
             'id' =>
                 $record->id,
 
@@ -272,6 +275,7 @@ class MonitoringController extends Controller
                                 $production->remarks,
 
                             'monthly_details' => $production->monthlyDetails->toArray(),
+                            'can_edit_monthly' => app(ProductionMonitoringService::class)->canEditMonthly($production),
                             'monthly_subtotal' => $production->monthlySubtotal(),
                             'income' =>
                                 $production->income

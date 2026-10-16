@@ -4,6 +4,7 @@ namespace App\Http\Requests;
 
 use App\Models\ProjectProduct;
 use App\Models\Quarter;
+use App\Services\ProductionMonitoringService;
 use Illuminate\Support\Str;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -27,12 +28,12 @@ class StoreMonitoringRequest extends FormRequest
                     continue;
                 }
 
-                if (isset($productionItem['unit'])) {
+                if (isset($productionItem['unit']) && is_string($productionItem['unit'])) {
                     $production[$productionIndex]['unit'] =
                         trim((string) $productionItem['unit']);
                 }
 
-                if (array_key_exists('remarks', $productionItem)) {
+                if (array_key_exists('remarks', $productionItem) && is_string($productionItem['remarks'])) {
                     $production[$productionIndex]['remarks'] =
                         $productionItem['remarks'] !== null
                         && $productionItem['remarks'] !== ''
@@ -194,14 +195,15 @@ class StoreMonitoringRequest extends FormRequest
 
             'conducted_by_user_id' => ['nullable', 'uuid'],
             'conducted_by' => ['nullable', 'string', 'max:255'],
-            'production.*.monthly_details' => ['sometimes', 'nullable', 'array', 'max:3'],
+            'production_revision' => [$record !== null && ($this->route('section') === 'production' || ($this->route('section') === null && $this->exists('production'))) ? 'required' : 'nullable', 'string', 'size:64'],
+            'production.*.monthly_details' => ['sometimes', 'array', 'size:3'],
             'production.*.monthly_details.*' => ['array:id,month,activity_count,total_quantity,remarks'],
             'production.*.monthly_details.*.id' => ['nullable', 'uuid'],
             'production.*.monthly_details.*.month' => ['required', 'integer', 'between:1,12'],
-            'production.*.monthly_details.*.activity_count' => ['required', 'integer', 'min:1', 'max:2147483647'],
-            'production.*.monthly_details.*.total_quantity' => ['required', 'numeric', 'decimal:0,2', 'min:0', 'max:999999999999.99'],
+            'production.*.monthly_details.*.activity_count' => ['required', 'integer', 'min:0', 'max:2147483647'],
+            'production.*.monthly_details.*.total_quantity' => ['required', 'regex:/\A\d{1,12}(?:\.\d{1,2})?\z/D'],
             'production.*.monthly_details.*.remarks' => ['nullable', 'string'],
-            'production.*.deleted_monthly_ids' => ['sometimes', 'array', 'max:3'],
+            'production.*.deleted_monthly_ids' => ['prohibited'],
             'production.*.deleted_monthly_ids.*' => ['required', 'uuid', 'distinct'],
             'production' => [
                 'nullable',
@@ -222,21 +224,19 @@ class StoreMonitoringRequest extends FormRequest
             ],
 
             'production.*.target_output' => [
-                'required_with:production',
+                'sometimes',
                 'numeric',
+                'decimal:0,2',
                 'min:0',
                 'max:999999999999.99',
             ],
 
             'production.*.actual_output' => [
-                'required_with:production',
-                'numeric',
-                'min:0',
-                'max:999999999999.99',
+                'exclude',
             ],
 
             'production.*.unit' => [
-                'required_with:production',
+                'sometimes',
                 'string',
                 'max:50',
             ],
@@ -351,6 +351,11 @@ class StoreMonitoringRequest extends FormRequest
                 }
 
                 $prefix = "{$collection}.{$index}.{$payload}";
+                if ($collection === 'production' && (empty($row['id']) || array_key_exists('monthly_details', $row))) {
+                    $rules["production.{$index}.target_output"] = ['required', 'regex:/\A\d{1,12}(?:\.\d{1,2})?\z/D'];
+                    $rules["production.{$index}.unit"] = ['required', 'string', 'max:50'];
+                    $rules["production.{$index}.monthly_details"] = ['required', 'array', 'size:3'];
+                }
                 $new = array_key_exists($payload, $row) && $row[$payload] !== null;
                 $rules[$prefix] = $record !== null ? ['prohibited'] : ['nullable', $payload === 'new_product'
                     ? 'array:product_name,product_type,default_unit,description,is_active'
@@ -407,6 +412,16 @@ class StoreMonitoringRequest extends FormRequest
             'year.in' => 'Year cannot be changed after the Monitoring record has been created.',
             'quarter_id.in' => 'Quarter cannot be changed after the Monitoring record has been created.',
             'production.*.unit.max' => 'Production unit must not exceed 50 characters.',
+            'production.*.monthly_details.required' => 'Record all three months of the selected quarter. Enter zero explicitly for months without production.',
+            'production.*.monthly_details.size' => 'Production requires exactly three monthly entries for the selected quarter.',
+            'production.*.monthly_details.*.activity_count.required' => 'Enter the monthly activity count, including zero when confirmed.',
+            'production.*.monthly_details.*.activity_count.min' => 'Production activity counts cannot be negative.',
+            'production.*.monthly_details.*.total_quantity.required' => 'Enter the monthly production quantity, including zero when confirmed.',
+            'production.*.monthly_details.*.total_quantity.regex' => 'Use a nonnegative quantity with at most 12 whole digits and 2 decimal places.',
+            'production.*.target_output.regex' => 'Use a nonnegative Target Output with at most 12 whole digits and 2 decimal places.',
+            'production.*.deleted_monthly_ids.prohibited' => 'Saved monthly Production must be retained.',
+            'production_revision.required' => 'Reload Production before saving this outdated form.',
+            'production_revision.size' => 'Reload Production before saving this outdated form.',
             'materials.*.condition.max' => 'Material condition must not exceed 50 characters.',
             'production.*.project_product_id.exists' => 'Select a product belonging to the selected project.',
             'materials.*.project_material_id.exists' => 'Select a material belonging to the selected project.',
@@ -420,6 +435,7 @@ class StoreMonitoringRequest extends FormRequest
         return [
             function (Validator $validator): void {
                 $this->validateResourceSelections($validator);
+                $this->validateMonthlyProduction($validator);
 
                 $this->validateIncomePeriods(
                     $validator
@@ -434,6 +450,26 @@ class StoreMonitoringRequest extends FormRequest
                 );
             },
         ];
+    }
+
+    private function validateMonthlyProduction(Validator $validator): void
+    {
+        if ($this->route('section') === 'income' || $this->route('section') === 'materials'
+            || $validator->errors()->has('quarter_id') || $validator->errors()->has('year')
+            || ! is_array($this->input('production'))) return;
+        $quarter = Quarter::find($this->input('quarter_id'));
+        if (! $quarter) return;
+        foreach ($this->input('production') as $index => $row) {
+            if (! is_array($row) || (! empty($row['id']) && ! array_key_exists('monthly_details', $row))) continue;
+            try {
+                app(ProductionMonitoringService::class)->calculateActualOutput((int) $this->input('year'),
+                    $quarter->quarter_number, $row['monthly_details'] ?? [], "production.{$index}");
+            } catch (\Illuminate\Validation\ValidationException $exception) {
+                foreach ($exception->errors() as $field => $messages) {
+                    foreach ($messages as $message) $validator->errors()->add($field, $message);
+                }
+            }
+        }
     }
 
     private function validateResourceSelections(Validator $validator): void

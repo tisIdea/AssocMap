@@ -15,7 +15,8 @@ use Illuminate\Validation\ValidationException;
 
 class GisLocationService
 {
-    public function __construct(private GisGeometry $geometry, private GisQueryService $queries) {}
+    public function __construct(private GisGeometry $geometry, private GisQueryService $queries,
+        private ProjectLifecycleService $projects) {}
 
     public function store(array $data, UserProfile $user, Request $request): array
     {
@@ -61,12 +62,17 @@ class GisLocationService
         $data = $this->payload($data);
 
         return DB::transaction(function () use ($id, $data, $user, $request) {
+            $this->lockIdentity($id);
             $actor = $this->actor($user);
             $location = $this->locked($id);
-            $this->lockParent($location->getAttributes(), $actor);
+            $source = $this->lockParent($location->getAttributes(), $actor);
             $this->assertVersion($location, $data['version']);
             abort_if($location->archived_at !== null, 409, 'Archived locations cannot be edited.');
-            $this->lockParent($data, $actor);
+            $destination = $this->lockParent($data, $actor);
+            if (($source->isFinalized() || $destination->isFinalized())
+                && ($location->project_id !== $data['project_id'] || $location->association_id !== $data['association_id'])) {
+                throw ValidationException::withMessages(['project_id' => 'A finalized project location must retain its existing project and association ownership.']);
+            }
             $this->geometry->validateSpatial($data['geometry']);
             if ($location->is_published) $this->requirePublicTitle($data['public_title']);
             $old = $this->snapshot($location);
@@ -89,6 +95,7 @@ class GisLocationService
         abort_unless(in_array($action, ['publish', 'unpublish', 'archive'], true), 404);
 
         return DB::transaction(function () use ($id, $action, $version, $user, $request) {
+            $this->lockIdentity($id);
             $actor = $this->actor($user);
             $location = $this->locked($id);
             $this->lockParent($location->getAttributes(), $actor);
@@ -133,7 +140,8 @@ class GisLocationService
                 $location = GisLocation::whereKey($id)->select(['id', 'association_id', 'project_id', 'location_type'])
                     ->selectRaw('updated_at::text AS version')->lockForUpdate()->first();
                 abort_unless($location, 404);
-                $this->lockParent($location->getAttributes(), $actor);
+                $project = $this->lockParent($location->getAttributes(), $actor);
+                $this->projects->assertNotFinalized($project, 'deletion');
                 $this->assertVersion($location, $version);
                 $this->assertDeletionSchema();
                 $deleted = DB::table('gis_locations')->where('id', $location->id)->delete();
@@ -191,13 +199,42 @@ class GisLocationService
             throw ValidationException::withMessages(['deletion' => 'Deletion requires schema review: incoming foreign key '
                 .$foreignKey->conname.' on '.$foreignKey->nspname.'.'.$foreignKey->relname.'. No dependent records were changed.']);
         }
-        $trigger = DB::selectOne("SELECT tgname FROM pg_catalog.pg_trigger
-            WHERE tgrelid = pg_catalog.to_regclass('public.gis_locations') AND NOT tgisinternal
-                AND tgenabled <> 'D' AND (tgtype::integer & 8) <> 0 ORDER BY tgname LIMIT 1");
-        if ($trigger) {
-            throw ValidationException::withMessages(['deletion' => 'Deletion requires schema review: DELETE trigger '
-                .$trigger->tgname.' is enabled on gis_locations. No location was deleted.']);
+        $triggers = DB::select("SELECT t.tgname, t.tgtype, t.tgenabled, t.tgnargs, t.tgconstraint,
+                t.tgattr::text AS columns, t.tgqual::text AS condition, t.tgoldtable, t.tgnewtable,
+                p.oid::text AS function_oid,
+                pg_catalog.to_regprocedure('public.protect_finalized_project_history()')::oid::text AS expected_oid,
+                l.lanname, p.prosecdef, p.pronargs, p.prorettype::regtype::text AS return_type,
+                p.proconfig::text[] AS function_config,
+                (p.proowner = g.relowner AND p.proowner = j.relowner) AS trusted_owner
+            FROM pg_catalog.pg_trigger t
+            JOIN pg_catalog.pg_proc p ON p.oid = t.tgfoid
+            JOIN pg_catalog.pg_language l ON l.oid = p.prolang
+            JOIN pg_catalog.pg_class g ON g.oid = t.tgrelid
+            JOIN pg_catalog.pg_class j ON j.oid = pg_catalog.to_regclass('public.projects')
+            WHERE t.tgrelid = pg_catalog.to_regclass('public.gis_locations') AND NOT t.tgisinternal
+                AND t.tgenabled <> 'D' AND (t.tgtype::integer & 8) <> 0 ORDER BY t.tgname");
+        foreach ($triggers as $trigger) {
+            if (! $this->approvedHistoryTrigger($trigger)) {
+                throw ValidationException::withMessages(['deletion' => 'Deletion requires schema review: DELETE trigger '
+                    .$trigger->tgname.' has an unapproved definition on gis_locations. No location was deleted.']);
+            }
         }
+    }
+
+    private function approvedHistoryTrigger(object $trigger): bool
+    {
+        // Migration 014: AFTER ROW INSERT/UPDATE/DELETE, no arguments or filters.
+        return $trigger->tgname === 'trg_protect_finalized_project_history'
+            && (int) $trigger->tgtype === 29 && $trigger->tgenabled === 'O'
+            && (int) $trigger->tgnargs === 0 && (int) $trigger->tgconstraint === 0
+            && $trigger->columns === '' && $trigger->condition === null
+            && $trigger->tgoldtable === null && $trigger->tgnewtable === null
+            && $trigger->expected_oid !== null && $trigger->function_oid === $trigger->expected_oid
+            && $trigger->lanname === 'plpgsql' && (int) $trigger->pronargs === 0
+            && $trigger->return_type === 'trigger'
+            && in_array($trigger->prosecdef, [true, 1, '1', 't', 'true'], true)
+            && in_array($trigger->trusted_owner, [true, 1, '1', 't', 'true'], true)
+            && $trigger->function_config === '{"search_path=pg_catalog, public, pg_temp",row_security=off}';
     }
 
     private function actor(UserProfile $user): UserProfile
@@ -211,21 +248,24 @@ class GisLocationService
         return $actor;
     }
 
-    private function lockParent(array $data, UserProfile $user): Association
+    private function lockParent(array $data, UserProfile $user): Project
     {
         abort_unless(in_array($data['location_type'], GisLocation::TYPES, true), 404);
         $projectId = $data['project_id'] ?? null;
         abort_unless($projectId !== null && ($data['association_id'] ?? null) === null, 422, 'Select a valid project parent.');
-        $project = Project::whereKey($projectId)->lockForUpdate()->first();
+        $project = Project::whereKey($projectId)->first();
         abort_unless($project && $project->archived_at === null, 404);
         $association = Association::whereKey($project->association_id)->lockForUpdate()->first();
         abort_unless($association && $association->status === 'active' && $association->archived_at === null, 404);
         abort_unless($user->role->code === 'system_admin' || $association->primary_field_officer_id === $user->id, 404);
+        $project = Project::whereKey($projectId)->lockForUpdate()->first();
+        abort_unless($project && $project->association_id === $association->id, 409, 'The project association changed. Reload before saving.');
+        abort_unless($project->archived_at === null, 404);
         if (isset($data['parent_association_id'])) {
             abort_unless($project->association_id === $data['parent_association_id'], 422, 'The project must belong to the selected association.');
         }
 
-        return $association;
+        return $project;
     }
 
     private function locked(string $id): GisLocation

@@ -13,6 +13,8 @@ use Illuminate\Validation\ValidationException;
 
 class AssociationService
 {
+    public function __construct(private AssociationLifecycleService $lifecycle) {}
+
     public function create(
         array $data,
         UserProfile $currentUser
@@ -47,75 +49,71 @@ class AssociationService
         array $data,
         UserProfile $currentUser
     ): Association {
-        if ($association->archived_at !== null) {
-            throw ValidationException::withMessages([
-                'association' => 'Archived associations cannot be edited.',
+        return DB::transaction(function () use ($association, $data, $currentUser) {
+            $association = Association::whereKey($association->id)->lockForUpdate()->firstOrFail();
+            if ($association->archived_at !== null) {
+                throw ValidationException::withMessages(['association' => 'Archived associations cannot be edited.']);
+            }
+            // The existing administrative status form remains the reactivation workflow.
+            if ($data['status'] !== 'active') $this->lifecycle->assertOperational($association, 'association');
+
+            $name = trim($data['name']);
+            $this->ensureUniqueName($name, $association);
+            $this->ensureValidFieldOfficer($data['primary_field_officer_id']);
+            $primary = $association->registrations()->where('is_primary', true)->first();
+            if ($primary) $this->ensurePrimaryRegistrationDate([
+                'is_primary' => true, 'registration_date' => $primary->registration_date->format('Y-m-d'),
+            ], $data['saad_phase2_join_date']);
+
+            $association->fill([
+                'name' => $name,
+                'acronym' => $data['acronym'] ?? null,
+                'area_id' => $data['area_id'],
+                'saad_phase2_join_date' => $data['saad_phase2_join_date'],
+                'primary_field_officer_id' => $data['primary_field_officer_id'],
+                'status' => $data['status'],
             ]);
-        }
+            $association->updated_by = $currentUser->id;
+            $association->save();
 
-        $name = trim($data['name']);
-
-        $this->ensureUniqueName($name, $association);
-        $this->ensureValidFieldOfficer(
-            $data['primary_field_officer_id']
-        );
-
-        $primary = $association->registrations()->where('is_primary', true)->first();
-        if ($primary) $this->ensurePrimaryRegistrationDate([
-            'is_primary' => true, 'registration_date' => $primary->registration_date->format('Y-m-d'),
-        ], $data['saad_phase2_join_date']);
-
-        $association->fill([
-            'name' => $name,
-            'acronym' => $data['acronym'] ?? null,
-            'area_id' => $data['area_id'],
-            'saad_phase2_join_date' => $data['saad_phase2_join_date'],
-            'primary_field_officer_id' => $data['primary_field_officer_id'],
-            'status' => $data['status'],
-        ]);
-
-        $association->updated_by = $currentUser->id;
-
-        $association->save();
-
-        return $association;
+            return $association;
+        });
     }
 
     public function archive(
         Association $association,
         UserProfile $currentUser
     ): Association {
-        if ($association->archived_at !== null) {
-            throw ValidationException::withMessages([
-                'association' => 'This association has already been archived.',
-            ]);
-        }
+        return DB::transaction(function () use ($association, $currentUser) {
+            $association = Association::whereKey($association->id)->lockForUpdate()->firstOrFail();
+            if ($association->archived_at !== null) {
+                throw ValidationException::withMessages(['association' => 'This association has already been archived.']);
+            }
+            $association->archived_at = Carbon::now();
+            $association->archived_by = $currentUser->id;
+            $association->updated_by = $currentUser->id;
+            $association->save();
 
-        $association->archived_at = Carbon::now();
-        $association->archived_by = $currentUser->id;
-        $association->updated_by = $currentUser->id;
-
-        $association->save();
-
-        return $association;
+            return $association;
+        });
     }
 
     public function unarchive(
         Association $association,
         UserProfile $currentUser
     ): Association {
-        if ($association->archived_at === null) {
-            throw ValidationException::withMessages([
-                'association' => 'This association is not archived.',
-            ]);
-        }
+        return DB::transaction(function () use ($association, $currentUser) {
+            $association = Association::whereKey($association->id)->lockForUpdate()->firstOrFail();
+            if ($association->archived_at === null) {
+                throw ValidationException::withMessages(['association' => 'This association is not archived.']);
+            }
+            $association->archived_at = null;
+            $association->archived_by = null;
+            $association->updated_by = $currentUser->id;
+            $association->save();
 
-        $association->archived_at = null;
-        $association->archived_by = null;
-        $association->updated_by = $currentUser->id;
-        $association->save();
-
-        return $association;
+            return $association;
+        });
     }
 
     private function ensureUniqueName(
@@ -145,6 +143,7 @@ class AssociationService
 
     private function recordRegistration(Association $association, array $registration): void
     {
+        $this->lifecycle->assertOperational($association);
         $agency = RegistrationAgency::whereKey($registration['agency_id'])->sharedLock()->first();
         if (! $agency?->is_active) {
             throw ValidationException::withMessages(['registration.agency_id' => 'Select an active registration agency.']);

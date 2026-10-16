@@ -5,7 +5,8 @@
     $rows = collect($activityRows);
     $statuses = ['planned' => 'Planned', 'ongoing' => 'Ongoing', 'completed' => 'Completed', 'cancelled' => 'Cancelled'];
     $restore = $errors->any() && old('program_activity_form') === 'editor';
-    $editing = $restore ? $rows->first(fn ($row) => (string) $row['id'] === (string) old('program_activity_record_id') && !$row['archived']) : null;
+    $editing = $restore ? $rows->first(fn ($row) => (string) $row['id'] === (string) old('program_activity_record_id') && !$row['archived'] && !$row['project_finalized']) : null;
+    $restore = $restore && (!old('program_activity_record_id') || $editing);
     $recordModels = $records->keyBy('id');
     $projectOptions = $projects->map(fn ($project) => ['value' => $project->id, 'label' => $project->title, 'association_id' => $project->association_id])->values();
     $columns = ['title' => 'Title', 'activity' => 'SAAD Activity', 'association' => 'Association', 'municipality' => 'Municipality', 'related_project' => 'Related Project', 'program_year' => 'Program Year', 'activity_date' => 'Activity Date', 'venue' => 'Venue', 'conducted_by' => 'Conducted By'];
@@ -60,8 +61,10 @@
                         <td><span class="badge badge-{{ $row['archived'] ? 'neutral' : ($row['status_value'] === 'completed' ? 'success' : ($row['status_value'] === 'cancelled' ? 'danger' : 'warning')) }}">{{ $row['archived'] ? 'Archived' : $row['status'] }}</span></td>
                         <td><div class="row-actions">
                             <button type="button" class="text-button" data-dialog="program-activity-view-{{ $row['id'] }}" aria-label="View {{ $row['title'] }}">View</button>
+                            @if(!$row['project_finalized'])
                             @if(!$row['archived'])<button type="button" class="text-button" data-program-activity-edit="{{ $row['id'] }}" data-dialog="program-activity-editor" aria-label="Edit {{ $row['title'] }}">Edit</button>@endif
                             <button type="button" class="text-button {{ !$row['archived'] ? 'text-danger' : '' }}" data-dialog="program-activity-action-{{ $row['id'] }}" aria-label="{{ $row['archived'] ? 'Unarchive' : 'Archive' }} {{ $row['title'] }}">{{ $row['archived'] ? 'Unarchive' : 'Archive' }}</button>
+                            @else<span>Read-only: project finalized</span>@endif
                         </div></td>
                     </tr>
                 @endforeach
@@ -84,9 +87,11 @@
             <div><dt>Archived</dt><dd>{{ $row['archived'] ? 'Yes' : 'No' }}</dd></div>
             @if($record?->archived_at)<div><dt>Archived At</dt><dd>{{ $record->archived_at->format('M j, Y g:i A') }}</dd></div>@endif
         </dl>
-        @if($row['archived'])<p class="notice">This activity is archived and read-only. Unarchive it before editing.</p>@endif
+        @if($row['project_finalized'])<p class="notice">The linked project is completed or terminated. This activity is permanently read-only.</p>@endif
+        @if(!$row['project_finalized'] && $row['archived'])<p class="notice">This activity is archived and read-only. Unarchive it before editing.</p>@endif
         <div class="modal-actions"><button type="button" class="button" data-close-dialog>Close</button></div>
     </x-modal>
+    @if(!$row['project_finalized'])
     <x-modal :id="'program-activity-action-'.$row['id']" :title="$row['archived'] ? 'Unarchive Program Activity' : 'Archive Program Activity'">
         <p>{{ $row['archived'] ? 'Restore' : 'Archive' }} <strong>{{ $row['title'] }}</strong>? {{ $row['archived'] ? 'The activity will return to the current list.' : 'Its details will remain available for viewing.' }}</p>
         <form method="POST" action="{{ $row['archived'] ? $row['unarchive_url'] : $row['archive_url'] }}">
@@ -94,6 +99,7 @@
             <div class="modal-actions"><button type="button" class="button" data-close-dialog>Cancel</button><button type="submit" class="button {{ $row['archived'] ? 'button-primary' : 'button-danger' }}">{{ $row['archived'] ? 'Unarchive Activity' : 'Archive Activity' }}</button></div>
         </form>
     </x-modal>
+    @endif
 @endforeach
 <x-modal id="program-activity-editor" :title="$editing ? 'Edit Program Activity' : 'Add Program Activity'">
     <form method="POST" action="{{ $editing['update_url'] ?? route($activityPrefix.'.store') }}" id="program-activity-form">
@@ -184,7 +190,7 @@
     document.addEventListener('click', event => {
         const button = event.target.closest('[data-program-activity-create], [data-program-activity-edit]');
         if (!button) return;
-        const record = button.hasAttribute('data-program-activity-edit') ? rows.find(row => String(row.id) === button.dataset.programActivityEdit && !row.archived) : null;
+        const record = button.hasAttribute('data-program-activity-edit') ? rows.find(row => String(row.id) === button.dataset.programActivityEdit && !row.archived && !row.project_finalized) : null;
         if (button.hasAttribute('data-program-activity-edit') && !record) return;
         populate(record ? {...record, status: record.status_value} : {}, record);
         form.querySelector('[data-program-activity-errors]')?.remove();

@@ -257,6 +257,7 @@ class GisQueryService
                 ->selectRaw('g.updated_at::text AS version');
         }
         if (! $public && $manager) {
+            $query->addSelect(['p.status as project_status', 'p.closed_at as project_closed_at']);
             foreach (['created', 'updated', 'published', 'archived'] as $action) {
                 $alias = $action.'_actor';
                 $query->leftJoin('user_profiles as '.$alias, $alias.'.id', '=', 'g.'.$action.'_by')

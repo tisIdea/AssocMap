@@ -5,6 +5,7 @@
         <header class="page-header"><div><h1>{{ $editing ? 'Edit GIS location' : 'Add GIS location' }}</h1><p>Select the correct parent and provide actual geographic coordinates or a project boundary.</p></div><a class="button" href="{{ $gisBaseUrl }}">Back to GIS</a></header>
         <p class="notice" data-gis-editor-status role="status">Loading the geometry editor…</p>
         @if($record['is_published'] ?? false)<p class="notice">This location is published. Saving updates its geometry and approved public details in the public viewer.</p>@endif
+        @if($record['project_finalized'] ?? false)<p class="notice">This project is finalized. GIS details and publication may be maintained. Its project and association ownership cannot change, and this location cannot be deleted.</p>@endif
         <form data-gis-editor-form method="POST" action="{{ $editing ? $gisBaseUrl.'/'.$gisFeature['id'] : $gisBaseUrl }}">
             @csrf
             @if($editing)<input type="hidden" name="_method" value="PATCH"><input type="hidden" name="version" value="{{ $record['version'] }}">

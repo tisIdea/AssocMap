@@ -4,6 +4,8 @@ import '../core/widgets/feedback_panel.dart';
 import '../core/authentication/auth_controller.dart';
 import '../core/authentication/association_guard.dart';
 import '../data/repositories/auth_repository.dart';
+import '../data/repositories/analytics_repository.dart';
+import '../data/repositories/dashboard_repository.dart';
 import '../data/repositories/repository_factory.dart';
 import '../data/repositories/public_projects_repository.dart';
 import '../features/public_map/public_map_screen.dart';
@@ -18,11 +20,15 @@ class AssocMapApp extends StatefulWidget {
     required this.config,
     required this.publicProjects,
     this.authentication,
+    this.analytics = const UnavailableAnalyticsRepository(),
+    this.dashboard = const UnavailableDashboardRepository(),
   });
 
   final AppConfig config;
   final PublicProjectsRepository publicProjects;
   final AuthRepository? authentication;
+  final AnalyticsRepository analytics;
+  final DashboardRepository dashboard;
 
   @override
   State<AssocMapApp> createState() => _AssocMapAppState();
@@ -68,9 +74,9 @@ class _AssocMapAppState extends State<AssocMapApp> with WidgetsBindingObserver {
         repository: widget.publicProjects,
       ),
       AppRoutes.associationAccess: (_) =>
-          AssociationGuard(config: widget.config, controller: _auth),
+          AssociationGuard(config: widget.config, controller: _auth, analytics: widget.analytics, dashboard: widget.dashboard),
       AppRoutes.associationHome: (_) =>
-          AssociationGuard(config: widget.config, controller: _auth),
+          AssociationGuard(config: widget.config, controller: _auth, analytics: widget.analytics, dashboard: widget.dashboard),
     },
     onUnknownRoute: (_) => MaterialPageRoute<void>(
       builder: (context) => Scaffold(

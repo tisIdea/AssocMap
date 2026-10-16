@@ -14,7 +14,7 @@ class UpdateMonitoringSectionRequest extends StoreMonitoringRequest
             if (in_array($key, ['project_id', 'year', 'quarter_id'], true)) {
                 return true;
             }
-            if ($section === 'production' && $key === 'project_status') {
+            if ($section === 'production' && in_array($key, ['project_status', 'production_revision'], true)) {
                 return true;
             }
             if ($section === 'income') {

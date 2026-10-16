@@ -197,6 +197,41 @@ class AssociationOfficerTest extends TestCase
         $this->assertSame('2025-01-01', $approved->fresh()->date_registered->format('Y-m-d'));
     }
 
+    public static function readOnlyOfficerChanges(): array
+    {
+        $cases = [];
+        foreach (['inactive' => ['inactive', null], 'archived' => ['active', '2026-01-01'],
+            'both' => ['inactive', '2026-01-01']] as $state => [$status, $archivedAt]) {
+            foreach (['assign', 'replace', 'remove'] as $action) {
+                foreach ([self::ADMIN, self::OFFICER] as $actor) {
+                    $cases[$state.' '.$action.' '.$actor] = [$status, $archivedAt, $action, $actor];
+                }
+            }
+        }
+        return $cases;
+    }
+
+    #[DataProvider('readOnlyOfficerChanges')]
+    public function test_read_only_association_preserves_officers_for_both_manager_roles(
+        string $status, ?string $archivedAt, string $action, string $actor): void
+    {
+        $member = $this->member($action === 'remove' ? 2 : 1);
+        $former = $action === 'replace' ? $this->member(2) : null;
+        $data = $former ? $this->replacement($member, $former) : array_replace($this->data($member), ['action' => $action]);
+        DB::table('associations')->where('id', self::ASSOCIATION)
+            ->update(['status' => $status, 'archived_at' => $archivedAt]);
+        try {
+            $this->change($data, $actor);
+            $this->fail('Read-only associations must reject officer changes.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('association', $exception->errors());
+            $this->assertSame(422, $exception->status);
+        }
+        $this->assertSame($action === 'remove' ? 2 : 1, $member->fresh()->position_id);
+        if ($former) $this->assertSame(2, $former->fresh()->position_id);
+        $this->assertDatabaseCount('audit_logs', 0);
+    }
+
     #[DataProvider('ineligibleCases')]
     public function test_ineligible_members_cannot_be_appointed(string $case): void
     {
