@@ -117,8 +117,8 @@ class StoreMonitoringRequest extends FormRequest
                     )
                     : null,
 
-            'materials' => $materials,
-        ] + ($this->exists('production') ? ['production' => $production] : []));
+        ] + ($this->exists('materials') ? ['materials' => $materials] : [])
+            + ($this->exists('production') ? ['production' => $production] : []));
     }
 
     public function rules(): array
@@ -306,10 +306,16 @@ class StoreMonitoringRequest extends FormRequest
                 'array',
             ],
 
+            'materials_revision' => [$record !== null && ($this->route('section') === 'materials'
+                || ($this->route('section') === null && app(\App\Services\MaterialsMonitoringService::class)->includesEdits($this->all())))
+                ? 'required' : 'nullable', 'string', 'regex:/\A[a-f0-9]{64}\z/D'],
+            'deleted_material_ids' => [$record === null ? 'prohibited' : 'sometimes', 'array'],
+            'deleted_material_ids.*' => ['required', 'uuid', 'distinct'],
+
             'materials.*.id' => [
                 'nullable',
                 'uuid',
-                Rule::exists('monitoring_materials', 'id')->where('monitoring_record_id', $record?->getKey()),
+                'distinct',
                 Rule::prohibitedIf($record === null),
             ],
 

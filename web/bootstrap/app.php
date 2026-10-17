@@ -32,6 +32,24 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
+        $exceptions->render(function (\App\Exceptions\MonitoringMaterialsConflictException $exception, Request $request) {
+            $headers = ['Cache-Control' => 'private, no-store', 'X-Content-Type-Options' => 'nosniff'];
+            $prefix = $request->routeIs('admin.monitoring.*') ? 'admin.monitoring'
+                : ($request->routeIs('field-officer.monitoring.*') ? 'field-officer.monitoring' : null);
+            $record = $request->route('monitoringRecord');
+            $latestMaterialsUrl = $prefix && $record instanceof \App\Models\MonitoringRecord
+                ? route($prefix.'.section.edit', [$record, 'materials']) : null;
+            if ($request->expectsJson()) {
+                return response()->json(['message' => $exception->getMessage(),
+                    'code' => 'monitoring_materials_conflict', 'latest_saved_url' => $latestMaterialsUrl,
+                    'errors' => ['materials_revision' => [$exception->getMessage()]]], 409, $headers);
+            }
+            $draft = $request->only(['project_id', 'year', 'quarter_id', 'project_status', 'monitoring_date', 'site_validated',
+                'issues_encountered', 'actions_taken', 'overall_remarks', 'production_revision', 'income_revision',
+                'production', 'materials_revision', 'materials', 'deleted_material_ids']);
+            return response()->view('monitoring.materials-conflict', ['message' => $exception->getMessage(), 'draft' => $draft,
+                'latestMaterialsUrl' => $latestMaterialsUrl], 409, $headers);
+        });
         $exceptions->render(function (\App\Exceptions\MonitoringIncomeConflictException $exception, Request $request) {
             $headers = ['Cache-Control' => 'private, no-store', 'X-Content-Type-Options' => 'nosniff'];
             $prefix = $request->routeIs('admin.monitoring.*') ? 'admin.monitoring'

@@ -23,6 +23,9 @@ class UpdateMonitoringSectionRequest extends StoreMonitoringRequest
                     || str_starts_with($key, 'production.*.income')
                     || preg_match('/^production\.\d+\.income\./', $key);
             }
+            if ($section === 'materials' && in_array($key, ['deleted_material_ids', 'deleted_material_ids.*'], true)) {
+                return true;
+            }
             return str_starts_with($key, $section === 'materials' ? 'materials' : 'production')
                 && ! str_contains($key, '.income');
         }, ARRAY_FILTER_USE_KEY);

@@ -38,6 +38,7 @@ class MonitoringRecord extends Model
             'year' => 'integer',
             'quarter_id' => 'integer',
             'income_version' => 'integer',
+            'materials_version' => 'integer',
             'monitoring_date' => 'date',
             'site_validated' => 'boolean',
         ];

@@ -12,6 +12,7 @@ use App\Models\Quarter;
 use App\Models\UserProfile;
 use App\Services\AssociationLifecycleService;
 use App\Services\IncomeMonitoringService;
+use App\Services\MaterialsMonitoringService;
 use App\Services\MonitoringService;
 use App\Services\ProjectLifecycleService;
 use Illuminate\Database\Eloquent\Builder;
@@ -167,6 +168,7 @@ class MonitoringWorkspaceController extends MonitoringController
         }
         $mapped = $record ? $this->mapMonitoringRecord($record) : null;
         if ($record && $section === 'income') $mapped['income_revision'] = app(IncomeMonitoringService::class)->revision($record);
+        if ($record && $section === 'materials') $mapped['materials_revision'] = app(MaterialsMonitoringService::class)->revision($record);
         $monitoringRows = $mapped ? collect([$mapped]) : collect();
         $projectRows = $projects->map(fn ($project) => $this->mapProject($project));
         $occupiedPeriods = $record ? collect() : MonitoringRecord::query()
@@ -180,8 +182,8 @@ class MonitoringWorkspaceController extends MonitoringController
         $record = $this->accessibleRecord($request, $monitoringRecord, true);
         $service->updateSection($record, $section, $request->validated(), $request->attributes->get('current_user'));
         $destination = route($this->context($request)['monitoringPrefix'].'.workspace', [$record, $section]);
-        if ($section === 'income' && $request->expectsJson()) {
-            $request->session()->flash('success', 'Income updated.');
+        if (in_array($section, ['income', 'materials'], true) && $request->expectsJson()) {
+            $request->session()->flash('success', ucfirst($section).' updated.');
             return response()->json(['redirect' => $destination]);
         }
         return redirect()->to($destination)

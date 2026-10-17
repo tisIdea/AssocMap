@@ -4,7 +4,6 @@ namespace App\Services;
 
 use App\Models\Association;
 use App\Models\MonitoringIncome;
-use App\Models\MonitoringMaterial;
 use App\Models\MonitoringProduction;
 use App\Models\MonitoringRecord;
 use App\Models\MonitoringVisitReport;
@@ -25,7 +24,8 @@ use Carbon\CarbonImmutable;
 class MonitoringService
 {
     public function __construct(private AssociationLifecycleService $lifecycle, private ProjectLifecycleService $projects,
-        private ProductionMonitoringService $production, private IncomeMonitoringService $income) {}
+        private ProductionMonitoringService $production, private IncomeMonitoringService $income,
+        private MaterialsMonitoringService $materials) {}
 
     public function updateOverview(MonitoringRecord $record, array $data, UserProfile $currentUser): void
     {
@@ -64,7 +64,9 @@ class MonitoringService
                     unset($row);
                     $this->syncProduction($record, $project, $rows);
                 } elseif ($section === 'materials') {
-                    $this->syncMaterials($record, $project, $data['materials'] ?? []);
+                    $this->materials->assertRevision($record, $data);
+                    $this->syncMaterials($record, $project, $data['materials'] ?? [], $data['deleted_material_ids'] ?? []);
+                    $record->increment('materials_version');
                 } elseif ($section === 'income') {
                     $this->income->assertRevision($record, $data);
                     $submitted = [];
@@ -88,6 +90,7 @@ class MonitoringService
                     + ($section === 'production' ? ['project_status' => $data['project_status']] : []));
             }, 3);
         } catch (QueryException $exception) {
+            if ($section === 'materials') $this->materialsWriteFailure($exception);
             if ($section === 'income') $this->incomeWriteFailure($exception);
             if ($section === 'production') $this->productionWriteFailure($exception);
             throw $exception;
@@ -446,6 +449,8 @@ class MonitoringService
                 $record = $this->lockRecordForMutation($record, $currentUser);
                 $this->ensureUserCanManageMonitoring($record, $currentUser);
                 $this->resolveProjectForUser($record->project_id, $currentUser);
+                $changesMaterials = $this->materials->includesEdits($data);
+                if ($changesMaterials) $this->materials->assertRevision($record, $data);
                 $changesIncome = $this->income->includesEdits($data['production'] ?? []);
                 if ($changesIncome) $this->income->assertRevision($record, $data);
                 if (array_key_exists('production', $data)) $this->production->assertRevision($record, $data);
@@ -471,17 +476,14 @@ class MonitoringService
                     if ($changesIncome) $record->increment('income_version');
                 }
 
-                if (
-                    array_key_exists(
-                        'materials',
-                        $data
-                    )
-                ) {
+                if ($changesMaterials) {
                     $this->syncMaterials(
                         $record,
                         $project,
-                        $data['materials'] ?? []
+                        $data['materials'] ?? [],
+                        $data['deleted_material_ids'] ?? []
                     );
+                    $record->increment('materials_version');
                 }
 
                 return $this->loadMonitoringRecord(
@@ -489,10 +491,17 @@ class MonitoringService
                 );
             }, 3);
         } catch (QueryException $exception) {
+            if ($this->materials->includesEdits($data)) $this->materialsWriteFailure($exception);
             if ($this->income->includesEdits($data['production'] ?? [])) $this->incomeWriteFailure($exception);
             if (array_key_exists('production', $data)) $this->productionWriteFailure($exception);
             throw $exception;
         }
+    }
+
+    private function materialsWriteFailure(QueryException $exception): never
+    {
+        Log::warning('Monitoring Materials write failed.', ['code' => 'materials_write_failed', 'sqlstate' => $exception->errorInfo[0] ?? null]);
+        throw ValidationException::withMessages(['materials' => 'Materials could not be confirmed as saved. Keep your draft and review the latest saved Materials before retrying.'])->status(503);
     }
 
     private function incomeWriteFailure(QueryException $exception): never
@@ -1032,139 +1041,48 @@ class MonitoringService
     private function syncMaterials(
         MonitoringRecord $record,
         Project $project,
-        array $materials
+        array $materials,
+        array $removedIds = []
     ): void {
-        $submittedIds = [];
+        Validator::make(['materials' => $materials, 'deleted_material_ids' => $removedIds], [
+            'materials.*' => ['array'],
+            'materials.*.id' => ['nullable', 'uuid', 'distinct'],
+            'materials.*.project_material_id' => ['required', 'uuid'],
+            'materials.*.condition' => ['required', 'string', 'max:50'],
+            'materials.*.scheduled_maintenance' => ['nullable', 'date'],
+            'materials.*.actual_maintenance' => ['nullable', 'date'],
+            'materials.*.remarks' => ['nullable', 'string'],
+            'deleted_material_ids.*' => ['required', 'uuid', 'distinct'],
+        ])->validate();
 
-        foreach ($materials as $material) {
-            $projectMaterial =
-                $this->resolveProjectMaterial(
-                    $project,
-                    $material[
-                        'project_material_id'
-                    ]
-                );
-
-            $monitoringMaterialId =
-                $material['id']
-                    ?? null;
-
-            if ($monitoringMaterialId) {
-                if (
-                    in_array(
-                        $monitoringMaterialId,
-                        $submittedIds,
-                        true
-                    )
-                ) {
-                    throw ValidationException::withMessages([
-                        'materials' =>
-                            'The same monitoring material cannot be submitted more than once.',
-                    ]);
-                }
-
-                $existing =
-                    MonitoringMaterial::query()
-                        ->where(
-                            'id',
-                            $monitoringMaterialId
-                        )
-                        ->where(
-                            'monitoring_record_id',
-                            $record->id
-                        )
-                        ->first();
-
-                if (! $existing) {
-                    throw ValidationException::withMessages([
-                        'materials' =>
-                            'One of the submitted monitoring materials does not belong to this monitoring record.',
-                    ]);
-                }
-
-                $existing->update([
-                    'project_material_id' =>
-                        $projectMaterial->id,
-
-                    'condition' =>
-                        trim(
-                            $material[
-                                'condition'
-                            ]
-                        ),
-
-                    'scheduled_maintenance' =>
-                        $material[
-                            'scheduled_maintenance'
-                        ] ?? null,
-
-                    'actual_maintenance' =>
-                        $material[
-                            'actual_maintenance'
-                        ] ?? null,
-
-                    'remarks' =>
-                        $material[
-                            'remarks'
-                        ] ?? null,
-                ]);
-
-                $submittedIds[] =
-                    $existing->id;
-
-                continue;
+        $saved = $record->materials()->orderBy('id')->lockForUpdate()->get()->keyBy('id');
+        if (array_diff($removedIds, $saved->modelKeys())) {
+            throw ValidationException::withMessages(['deleted_material_ids' => 'Remove only saved observations belonging to this Monitoring record.']);
+        }
+        $final = $saved->toBase()->except($removedIds)->map(fn ($row) => $row->project_material_id)->all();
+        foreach ($materials as $index => $material) {
+            $id = $material['id'] ?? null;
+            if ($id && (! $saved->has($id) || in_array($id, $removedIds, true))) {
+                throw ValidationException::withMessages(["materials.{$index}.id" => 'The observation is unavailable or is also selected for removal.']);
             }
-
-            $created =
-                $record->materials()->create([
-                    'project_material_id' =>
-                        $projectMaterial->id,
-
-                    'condition' =>
-                        trim(
-                            $material[
-                                'condition'
-                            ]
-                        ),
-
-                    'scheduled_maintenance' =>
-                        $material[
-                            'scheduled_maintenance'
-                        ] ?? null,
-
-                    'actual_maintenance' =>
-                        $material[
-                            'actual_maintenance'
-                        ] ?? null,
-
-                    'remarks' =>
-                        $material[
-                            'remarks'
-                        ] ?? null,
-                ]);
-
-            $submittedIds[] =
-                $created->id;
+            $this->resolveProjectMaterial($project, $material['project_material_id']);
+            $final[$id ?: 'new-'.$index] = $material['project_material_id'];
+        }
+        if (count($final) !== count(array_unique($final))) {
+            throw ValidationException::withMessages(['materials' => 'Each project material may have only one observation, including retained observations.']);
         }
 
-        $removed =
-            MonitoringMaterial::query()
-                ->where(
-                    'monitoring_record_id',
-                    $record->id
-                )
-                ->when(
-                    ! empty($submittedIds),
-                    fn ($query) =>
-                        $query->whereNotIn(
-                            'id',
-                            $submittedIds
-                        )
-                )
-                ->get();
-
-        foreach ($removed as $material) {
-            $material->delete();
+        foreach ($removedIds as $id) $saved->get($id)->delete();
+        foreach ($materials as $material) {
+            $payload = [
+                'project_material_id' => $material['project_material_id'],
+                'condition' => trim($material['condition']),
+                'scheduled_maintenance' => $material['scheduled_maintenance'] ?? null,
+                'actual_maintenance' => $material['actual_maintenance'] ?? null,
+                'remarks' => $material['remarks'] ?? null,
+            ];
+            if (! empty($material['id'])) $saved->get($material['id'])->update($payload);
+            else $record->materials()->create($payload);
         }
     }
 

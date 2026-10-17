@@ -19,6 +19,7 @@ function initializeMonitoringEditor() {
         document.querySelector('.topbar-context > span').textContent = 'Monitoring';
     }
     const incomeConflict = initIncomeConflictDialog();
+    const materialsConflict = initMaterialsConflictDialog();
     const removalDialog = document.getElementById('monitoring-removal-modal');
     const removalConfirm = removalDialog.querySelector('[data-removal-confirm]');
     let pendingRemoval = null;
@@ -531,6 +532,8 @@ function initializeMonitoringEditor() {
             if (kind === 'production' && record) record.production.filter(row => !Object.values(values.production ?? {}).some(item => item.id === row.id)).forEach(row => addRow(kind, row));
             refreshUnique(kind);
         }
+        form.querySelectorAll('[data-materials-removal]').forEach(input => input.remove());
+        Object.values(values.deleted_material_ids ?? {}).forEach(markMaterialsRemoval);
         selectedProjectValue = projectSelect.value;
         periodValues = {year: form.elements.year.value, quarter_id: form.elements.quarter_id.value};
         updateContext();
@@ -608,6 +611,7 @@ function initializeMonitoringEditor() {
                 if (!row.isConnected || (kind === 'production' && row.querySelector('[data-key="id"]').value)) return;
                 const parent = kind === 'income' ? row.closest('[data-production-income]').productionRow : null;
                 if (parent && saved) markIncomeRemoval(parent, row.querySelector('[data-key="id"]').value);
+                if (kind === 'materials' && saved) markMaterialsRemoval(row.querySelector('[data-key="id"]').value);
                 if (kind === 'production') row.incomeGroup.remove();
                 row.remove();
                 if (parent) { refreshIncome(parent); parent.incomeGroup.querySelector('[data-add-income]').focus(); }
@@ -663,6 +667,13 @@ function initializeMonitoringEditor() {
         input.type = 'hidden'; input.name = `${production.dataset.prefix}[deleted_income_ids][]`;
         input.value = id; input.dataset.incomeRemoval = '';
         production.incomeGroup.append(input);
+    }
+    function markMaterialsRemoval(id) {
+        if (Array.from(form.querySelectorAll('[data-materials-removal]')).some(input => input.value === id)) return;
+        const input = document.createElement('input');
+        input.type = 'hidden'; input.name = 'deleted_material_ids[]';
+        input.value = id; input.dataset.materialsRemoval = '';
+        form.append(input);
     }
     function safeIncomeDestination(value) {
         if (typeof value !== 'string' || !value.trim()) return null;
@@ -771,6 +782,116 @@ function initializeMonitoringEditor() {
         feedback.hidden = false;
         feedback.focus();
     }
+    function safeMaterialsDestination(value) {
+        if (typeof value !== 'string' || !value.trim()) return null;
+        try {
+            const url = new URL(value, window.location.href);
+            return ['http:', 'https:'].includes(url.protocol) && url.origin === window.location.origin
+                && !url.username && !url.password ? url.href : null;
+        } catch { return null; }
+    }
+    function initMaterialsConflictDialog() {
+        const dialog = document.getElementById('monitoring-materials-conflict-modal');
+        if (!dialog || typeof dialog.showModal !== 'function') return null;
+        if (dialog.materialsConflictController) return dialog.materialsConflictController;
+        dialog.addEventListener('click', event => {
+            if (event.target === dialog) { event.preventDefault(); event.stopImmediatePropagation(); }
+        }, true);
+        const actions = dialog.querySelector('[data-materials-conflict-actions]');
+        const confirmation = dialog.querySelector('[data-materials-refresh-confirmation]');
+        const keepEditing = dialog.querySelector('[data-materials-conflict-cancel]');
+        const refresh = dialog.querySelector('[data-materials-refresh]');
+        let opener = null;
+        let confirmingRefresh = false;
+        function resetRefresh() {
+            confirmingRefresh = false;
+            actions.hidden = false;
+            confirmation.hidden = true;
+        }
+        keepEditing.addEventListener('click', () => dialog.close());
+        refresh.addEventListener('click', () => {
+            confirmingRefresh = true;
+            actions.hidden = true;
+            confirmation.hidden = false;
+            dialog.querySelector('[data-materials-refresh-cancel]').focus();
+        });
+        dialog.querySelector('[data-materials-refresh-cancel]').addEventListener('click', () => {
+            resetRefresh();
+            refresh.focus();
+        });
+        dialog.querySelector('[data-materials-refresh-confirm]').addEventListener('click', () => {
+            if (!dialog.open || !confirmingRefresh) return;
+            confirmingRefresh = false;
+            window.location.reload();
+        });
+        dialog.addEventListener('close', () => {
+            resetRefresh();
+            if (opener?.isConnected) opener.focus();
+            opener = null;
+        });
+        dialog.setAttribute('aria-describedby', 'monitoring-materials-conflict-message');
+        const controller = { open(result) {
+            const destination = safeMaterialsDestination(result.latest_saved_url);
+            const latest = dialog.querySelector('[data-materials-latest]');
+            latest.hidden = !destination;
+            if (destination) latest.href = destination;
+            else latest.removeAttribute('href');
+            if (typeof result.message === 'string') dialog.querySelector('[data-materials-conflict-message]').textContent = result.message;
+            opener = form.querySelector('[type="submit"]');
+            resetRefresh();
+            if (!dialog.open) dialog.showModal();
+            keepEditing.focus();
+        }};
+        dialog.materialsConflictController = controller;
+        return controller;
+    }
+    async function saveMaterials() {
+        const feedback = form.querySelector('[data-materials-feedback]');
+        feedback.hidden = true;
+        let failureStatus = 0;
+        let fieldErrors = {};
+        const errors = feedback.querySelector('[data-materials-errors]');
+        errors.replaceChildren();
+        try {
+            const response = await fetch(form.action, {method: 'POST', body: new FormData(form), credentials: 'same-origin',
+                headers: {'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest'}});
+            failureStatus = response.status;
+            if (response.redirected && new URL(response.url, window.location.href).pathname === '/login') failureStatus = 419;
+            const result = await response.json();
+            const destination = safeMaterialsDestination(result.redirect);
+            if (response.ok && destination) {
+                window.location.assign(destination);
+                return;
+            }
+            if (response.status === 409 && result.code === 'monitoring_materials_conflict' && materialsConflict) {
+                materialsConflict.open(result);
+                return;
+            }
+            feedback.querySelector('[data-materials-message]').textContent = response.status === 422 ? 'Review the Materials entries below. Your draft is still here.'
+                : 'Materials could not be confirmed as saved. Check the latest saved Materials in a new tab before trying again. Your draft is still here.';
+            if ([409, 422].includes(response.status) && result.errors && typeof result.errors === 'object') {
+                fieldErrors = result.errors;
+                Object.values(result.errors).flat().filter(message => typeof message === 'string').forEach(message => {
+                    const item = document.createElement('li'); item.textContent = message; errors.append(item);
+                });
+            }
+        } catch {
+            feedback.querySelector('[data-materials-message]').textContent = 'The save result could not be confirmed. Check the latest saved Materials in a new tab before trying again. Your draft is still here.';
+        } finally {
+            submitting = false; form.removeAttribute('aria-busy');
+            form.querySelector('[type="submit"]').disabled = false;
+            form.querySelector('[data-monitoring-submit-status]').textContent = '';
+        }
+        if (window.AssocMapFeedback) {
+            window.AssocMapFeedback.fields(form, fieldErrors);
+            feedback.querySelector('[data-materials-message]').hidden = true;
+            feedback.hidden = errors.children.length === 0;
+            void window.AssocMapFeedback.error(failureStatus, { network: !failureStatus, returnFocus: form.querySelector('[type="submit"]') });
+            return;
+        }
+        feedback.hidden = false;
+        feedback.focus();
+    }
     let submitting = false;
     form.addEventListener('submit', event => {
         if (submitting) { event.preventDefault(); return; }
@@ -801,6 +922,9 @@ function initializeMonitoringEditor() {
         if (activeSection === 'income') {
             event.preventDefault();
             void saveIncome();
+        } else if (activeSection === 'materials') {
+            event.preventDefault();
+            void saveMaterials();
         }
     });
     window.addEventListener('pageshow', () => {

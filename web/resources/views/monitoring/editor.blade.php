@@ -132,6 +132,15 @@
                     <p>Your unsaved entries remain in this form. Review and copy them before choosing to leave or reload.</p>
                 </div>
             @endif
+            @if($section === 'materials')
+                @php($materialsRevision = $restore ? old('materials_revision') : $rows->first()['materials_revision'])
+                <input type="hidden" name="materials_revision" value="{{ is_string($materialsRevision) ? $materialsRevision : '' }}">
+                <div class="notice notice-error" data-materials-feedback role="alert" tabindex="-1" hidden>
+                    <p data-materials-message></p><ul data-materials-errors></ul>
+                    <a href="{{ route($monitoringPrefix.'.section.edit', [$record, 'materials']) }}" target="_blank" rel="noopener noreferrer">Open latest saved Materials in a new tab</a>
+                    <p>Your entries and removal selections remain in this form. Copy anything you need before leaving or refreshing.</p>
+                </div>
+            @endif
         @endif
         <input type="hidden" name="production" value=""><input type="hidden" name="materials" value="">
         <p class="field-hint">Fields marked * are required. {{ $section ? 'Only this section is saved. Save or cancel before navigating to another section.' : 'All creation tabs are saved together.' }}</p>
@@ -198,6 +207,9 @@
 @include('monitoring.partials.removal-modal')
 @if($record && $section === 'income')
     @include('monitoring.partials.income-conflict-modal')
+@endif
+@if($record && $section === 'materials')
+    @include('monitoring.partials.materials-conflict-modal')
 @endif
 @include('monitoring.partials.editor-script')
 @endsection
