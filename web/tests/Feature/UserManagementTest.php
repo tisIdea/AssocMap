@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Association;
 use App\Services\ProfileAuthIdentityService;
 use App\Services\MemberApplicationPhotoService;
+use App\Services\UserManagementQueryService;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Http\Client\Factory;
@@ -360,5 +361,305 @@ class UserManagementTest extends TestCase
         $this->assertSame(self::OFFICER_B, DB::table('member_applications')->value('reviewed_by'));
         $this->assertSame(self::ACCOUNT, DB::table('association_accounts')->value('user_id'));
         $this->assertSame(self::ASSOCIATION, DB::table('association_accounts')->value('association_id'));
+    }
+
+    private function realIdentityLookup(): void
+    {
+        DB::statement("ATTACH DATABASE ':memory:' AS auth");
+        Schema::create('auth.users', function (Blueprint $table) {
+            $table->uuid('id')->primary();
+            $table->string('email');
+        });
+        DB::table('auth.users')->insert($this->authIdentities->map(fn ($identity) => (array) $identity)->values()->all());
+        $this->app->instance(ProfileAuthIdentityService::class, new ProfileAuthIdentityService);
+    }
+
+    private function registerUrl(array $filters): string
+    {
+        return '/admin/users?'.http_build_query($filters);
+    }
+
+    private function registerDom(string $html): \DOMXPath
+    {
+        $document = new \DOMDocument;
+        $previous = libxml_use_internal_errors(true);
+        $document->loadHTML('<?xml encoding="UTF-8">'.$html);
+        libxml_clear_errors();
+        libxml_use_internal_errors($previous);
+
+        return new \DOMXPath($document);
+    }
+
+    public function test_summary_cards_filter_profiles_and_match_global_counts(): void
+    {
+        DB::table('user_profiles')->where('id', self::OFFICER_B)->update(['is_active' => false]);
+        $expected = [
+            'total' => [4, [self::ADMIN, self::ACCOUNT, self::OFFICER_A, self::OFFICER_B]],
+            'system_admin' => [1, [self::ADMIN]],
+            'field_officer' => [2, [self::OFFICER_A, self::OFFICER_B]],
+            'association_account' => [1, [self::ACCOUNT]],
+            'inactive' => [1, [self::OFFICER_B]],
+        ];
+        $response = $this->withSession($this->actorSessionData())->get('/admin/users')->assertOk();
+        $this->assertSame(array_map(fn ($entry) => $entry[0], $expected), $response->viewData('summary'));
+        $dom = $this->registerDom($response->getContent());
+        foreach ($expected as $key => [$count, $ids]) {
+            $card = $dom->query('//a[@data-user-summary="'.$key.'"]')->item(0);
+            $this->assertNotNull($card);
+            $filtered = $this->get($card->getAttribute('href'))->assertOk();
+            $this->assertSame($count, $filtered->viewData('users')->total());
+            $this->assertSame($ids, $filtered->viewData('users')->getCollection()->pluck('id')->all());
+            $selected = $this->registerDom($filtered->getContent())->query('//a[@data-user-summary and @aria-current="page"]');
+            $this->assertSame(1, $selected->length);
+            $this->assertSame($key, $selected->item(0)->getAttribute('data-user-summary'));
+        }
+        $manual = $this->get('/admin/users?role=field_officer&status=inactive')->assertOk();
+        $this->assertSame([self::OFFICER_B], $manual->viewData('users')->getCollection()->pluck('id')->all());
+        $this->assertSame(0, $this->registerDom($manual->getContent())->query('//a[@data-user-summary and @aria-current]')->length);
+    }
+
+    public function test_name_and_current_email_search_are_case_insensitive_and_do_not_list_auth_only_records(): void
+    {
+        $this->realIdentityLookup();
+        DB::table('auth.users')->insert(['id' => 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', 'email' => 'auth-only@example.test']);
+        DB::table('user_invitations')->insert(['id' => self::INVITATION, 'auth_user_id' => self::ACCOUNT,
+            'email' => 'historical@example.test', 'status' => 'accepted', 'accepted_at' => now(),
+            'created_at' => now(), 'updated_at' => now()]);
+        foreach ([
+            '  OFFICER A  ' => [self::OFFICER_A],
+            'OFFICER-B@EXAMPLE.TEST' => [self::OFFICER_B],
+            'auth-only@example.test' => [],
+            'historical@example.test' => [],
+            "' OR 1=1 --" => [],
+        ] as $term => $ids) {
+            $response = $this->withSession($this->actorSessionData())->get($this->registerUrl(['q' => $term]))->assertOk();
+            $this->assertSame($ids, $response->viewData('users')->getCollection()->pluck('id')->all());
+            $this->assertSame(4, $response->viewData('summary')['total']);
+        }
+        $response = $this->get('/admin/users?q=officer&role=field_officer&status=active')->assertOk();
+        $this->assertSame(2, $response->viewData('users')->total());
+        $this->assertSame(4, DB::table('user_profiles')->count());
+        $this->assertSame(0, DB::table('audit_logs')->count());
+    }
+
+    public function test_search_treats_like_wildcards_literally_and_escapes_rendered_names(): void
+    {
+        $this->realIdentityLookup();
+        DB::table('user_profiles')->where('id', self::OFFICER_A)->update(['display_name' => 'Rate 50%_! <script>alert(1)</script>']);
+        foreach (['%', '_', '!', '50%_!'] as $term) {
+            $response = $this->withSession($this->actorSessionData())->get($this->registerUrl(['q' => $term]))->assertOk();
+            $this->assertSame([self::OFFICER_A], $response->viewData('users')->getCollection()->pluck('id')->all());
+            $response->assertDontSee('<script>alert(1)</script>', false)->assertSee('&lt;script&gt;alert(1)&lt;/script&gt;', false);
+        }
+    }
+
+    public function test_all_sort_options_use_stable_server_ordering(): void
+    {
+        foreach ([self::ADMIN => '2020-01-01', self::OFFICER_A => '2022-01-01',
+            self::OFFICER_B => '2022-01-01', self::ACCOUNT => '2023-01-01'] as $id => $created) {
+            DB::table('user_profiles')->where('id', $id)->update(['created_at' => $created]);
+        }
+        foreach ([
+            'name' => [self::ADMIN, self::ACCOUNT, self::OFFICER_A, self::OFFICER_B],
+            'name_desc' => [self::OFFICER_B, self::OFFICER_A, self::ACCOUNT, self::ADMIN],
+            'newest' => [self::ACCOUNT, self::OFFICER_A, self::OFFICER_B, self::ADMIN],
+            'oldest' => [self::ADMIN, self::OFFICER_A, self::OFFICER_B, self::ACCOUNT],
+        ] as $sort => $ids) {
+            $response = $this->withSession($this->actorSessionData())->get('/admin/users?sort='.$sort)->assertOk();
+            $this->assertSame($ids, $response->viewData('users')->getCollection()->pluck('id')->all());
+        }
+    }
+
+    public function test_pagination_retains_filters_and_cards_reset_page_without_losing_search_or_sort(): void
+    {
+        $this->realIdentityLookup();
+        for ($number = 1; $number <= 27; $number++) {
+            DB::table('user_profiles')->insert(['id' => sprintf('eeeeeeee-eeee-4eee-8eee-%012d', $number),
+                'role_id' => 2, 'display_name' => sprintf('Officer extra %02d', $number), 'is_active' => true,
+                'created_at' => now(), 'updated_at' => now()]);
+        }
+        $filters = ['q' => 'officer', 'role' => 'field_officer', 'status' => 'active', 'sort' => 'name_desc'];
+        $response = $this->withSession($this->actorSessionData())->get($this->registerUrl($filters))->assertOk();
+        $users = $response->viewData('users');
+        $this->assertSame(29, $users->total());
+        $this->assertCount(25, $users);
+        $next = $this->get($users->nextPageUrl())->assertOk();
+        $this->assertSame($filters, $next->viewData('filters'));
+        $this->assertCount(4, $next->viewData('users'));
+        $dom = $this->registerDom($next->getContent());
+        foreach ($dom->query('//a[@data-user-summary]') as $card) {
+            parse_str(parse_url($card->getAttribute('href'), PHP_URL_QUERY) ?? '', $query);
+            $this->assertArrayNotHasKey('page', $query);
+            $this->assertSame('officer', $query['q']);
+            $this->assertSame('name_desc', $query['sort']);
+        }
+        $detailLink = $dom->query('//a[normalize-space(.)="View Account Details"]')->item(0);
+        $details = $this->get($detailLink->getAttribute('href'))->assertOk();
+        parse_str(parse_url($details->viewData('backUrl'), PHP_URL_QUERY), $backQuery);
+        $this->assertSame($filters + ['page' => '2'], $backQuery);
+        $this->assertSame(31, $next->viewData('summary')['total']);
+    }
+
+    #[DataProvider('invalidRegisterFilters')]
+    public function test_malformed_filters_are_rejected_before_queries(array $filters): void
+    {
+        $reader = Mockery::mock(ProfileAuthIdentityService::class);
+        $reader->shouldNotReceive('read');
+        $reader->shouldNotReceive('matchingEmails');
+        $this->app->instance(ProfileAuthIdentityService::class, $reader);
+        $this->withSession($this->actorSessionData())->getJson($this->registerUrl($filters))->assertUnprocessable();
+        $this->getJson('/admin/users/'.self::OFFICER_A.'?'.http_build_query($filters))->assertUnprocessable();
+        $this->assertSame(0, DB::table('audit_logs')->count());
+    }
+
+    public static function invalidRegisterFilters(): array
+    {
+        return [
+            'role array' => [['role' => ['system_admin']]],
+            'unsupported role' => [['role' => 'public']],
+            'status array' => [['status' => ['active']]],
+            'unsupported status' => [['status' => 'deleted']],
+            'sort injection' => [['sort' => 'name DESC; DROP TABLE user_profiles']],
+            'sort array' => [['sort' => ['name']]],
+            'search array' => [['q' => ['officer']]],
+            'long search' => [['q' => str_repeat('x', 121)]],
+            'invalid page' => [['page' => 0]],
+            'invalid assignment page' => [['assigned_page' => -1]],
+        ];
+    }
+
+    public function test_invalid_html_filter_redirects_to_a_renderable_register(): void
+    {
+        $this->withSession($this->actorSessionData())->get('/admin/users?role=invalid')->assertRedirect(route('admin.users.index'))
+            ->assertSessionHasErrors('role');
+        $this->get('/admin/users')->assertOk()->assertSee('id="user-filter-errors"', false);
+    }
+
+    public function test_dedicated_details_show_only_actual_assignments_and_preserve_records(): void
+    {
+        DB::table('user_profiles')->where('id', self::OFFICER_A)->update(['activated_at' => '2025-01-01 00:00:00']);
+        $before = DB::table('associations')->orderBy('id')->get()->toJson();
+        $response = $this->withSession($this->actorSessionData())->get('/admin/users/'.self::OFFICER_A)->assertOk()
+            ->assertViewIs('admin.users.details')->assertSee('Synthetic Officer A')->assertSee('officer-a@example.test')
+            ->assertSee('First Synthetic Association')->assertSee('Second Synthetic Association')->assertSee('Archived Synthetic Association')
+            ->assertDontSee('Other Synthetic Association')->assertSee('Jan 01, 2025 8:00 AM')->assertSee('Manage assignments')
+            ->assertDontSee('synthetic_actor_access');
+        $this->assertSame(3, $response->viewData('assigned')->total());
+        $this->assertStringContainsString('no-store', $response->headers->get('Cache-Control'));
+        $this->assertSame('no-referrer', $response->headers->get('Referrer-Policy'));
+        $this->assertSame($before, DB::table('associations')->orderBy('id')->get()->toJson());
+        $this->assertSame(0, DB::table('audit_logs')->count());
+        $this->get('/admin/users/'.self::ACCOUNT)->assertOk()->assertSee('First Synthetic Association')
+            ->assertSee('Linked association')->assertDontSee('Manage assignments');
+        $this->get('/admin/users/'.self::OFFICER_B)->assertOk()->assertSee('Other Synthetic Association')
+            ->assertDontSee('First Synthetic Association');
+    }
+
+    public function test_assignment_details_paginate_with_a_stable_return_link(): void
+    {
+        for ($number = 1; $number <= 27; $number++) {
+            DB::table('associations')->insert(['id' => sprintf('dddddddd-dddd-4ddd-8ddd-%012d', $number),
+                'primary_field_officer_id' => self::OFFICER_A, 'name' => sprintf('Extra association %02d', $number),
+                'status' => 'active', 'created_at' => now(), 'updated_at' => now()]);
+        }
+        $response = $this->withSession($this->actorSessionData())->get('/admin/users/'.self::OFFICER_A.'?role=field_officer&page=2')->assertOk();
+        $assigned = $response->viewData('assigned');
+        $this->assertSame(30, $assigned->total());
+        $this->assertCount(25, $assigned);
+        $next = $this->get($assigned->nextPageUrl())->assertOk();
+        $this->assertCount(5, $next->viewData('assigned'));
+        $this->assertSame($response->viewData('backUrl'), $next->viewData('backUrl'));
+    }
+
+    #[DataProvider('otherActors')]
+    public function test_nonadministrators_cannot_access_details_even_with_filter_parameters(string $actor): void
+    {
+        $this->actor = $actor;
+        $reader = Mockery::mock(ProfileAuthIdentityService::class);
+        $reader->shouldNotReceive('read');
+        $this->app->instance(ProfileAuthIdentityService::class, $reader);
+        $this->withSession($this->actorSessionData())->get('/admin/users/'.self::OFFICER_A.'?role=system_admin')->assertForbidden();
+        $this->get('/admin/users?role=system_admin&status=active')->assertForbidden();
+        $this->assertSame(0, DB::table('audit_logs')->count());
+    }
+
+    public function test_details_reject_guests_revoked_administrators_and_missing_records(): void
+    {
+        $url = '/admin/users/'.self::OFFICER_A;
+        $this->get($url)->assertRedirect(route('login'));
+        $this->withSession($this->actorSessionData())->get('/admin/users/not-a-uuid')->assertNotFound();
+        $this->get('/admin/users/cccccccc-cccc-4ccc-8ccc-cccccccccccc')->assertNotFound();
+        DB::table('roles')->where('id', 1)->update(['is_active' => false]);
+        $this->get($url)->assertRedirect(route('login'));
+        DB::table('roles')->where('id', 1)->update(['is_active' => true]);
+        DB::table('user_profiles')->where('id', self::ADMIN)->update(['is_active' => false]);
+        $this->withSession($this->actorSessionData())->get($url)->assertRedirect(route('login'));
+    }
+
+    public function test_details_do_not_activate_pending_or_inactive_accounts_and_report_unavailable_metadata(): void
+    {
+        DB::table('user_profiles')->where('id', self::OFFICER_B)->update(['is_active' => false]);
+        DB::table('user_invitations')->insert(['id' => self::INVITATION, 'auth_user_id' => self::OFFICER_B,
+            'email' => 'officer-b@example.test', 'status' => 'sent', 'created_at' => now(), 'updated_at' => now()]);
+        $this->authIdentities = null;
+        $this->withSession($this->actorSessionData())->get('/admin/users/'.self::OFFICER_B)->assertOk()
+            ->assertSee('Inactive')->assertSee('Sent')->assertSee('Auth metadata lookup unavailable')
+            ->assertDontSee('Matching Auth identity not found')->assertDontSee('Manage assignments');
+        $this->assertFalse((bool) DB::table('user_profiles')->where('id', self::OFFICER_B)->value('is_active'));
+        $this->assertSame('sent', DB::table('user_invitations')->value('status'));
+        $this->assertSame(0, DB::table('audit_logs')->count());
+    }
+
+    public function test_read_failures_return_generic_unavailable_states_without_partial_search_results(): void
+    {
+        $this->realIdentityLookup();
+        Schema::drop('auth.users');
+        $this->withSession($this->actorSessionData())->get('/admin/users?q=Synthetic')->assertStatus(503)
+            ->assertSee('User records are unavailable')->assertDontSee('SQLSTATE')->assertDontSee('no such table');
+        Schema::drop('associations');
+        $this->get('/admin/users/'.self::OFFICER_A)->assertStatus(503)
+            ->assertSee('Account details are unavailable')->assertDontSee('SQLSTATE')->assertDontSee('no such table');
+    }
+
+    public function test_actions_have_accessible_native_disclosure_and_disabled_mutation_controls(): void
+    {
+        $response = $this->withSession($this->actorSessionData())->get('/admin/users')->assertOk();
+        $dom = $this->registerDom($response->getContent());
+        $this->assertSame(4, $dom->query('//details[@data-user-actions]/summary[@aria-label]')->length);
+        $this->assertSame(4, $dom->query('//details[@data-user-actions]//a[normalize-space(.)="View Account Details"]')->length);
+        foreach (['Reset Password', 'Deactivate User'] as $action) {
+            $this->assertSame(4, $dom->query('//details[@data-user-actions]//button[@type="button" and @disabled and contains(.,"'.$action.'")]')->length);
+        }
+        $this->assertSame(0, $dom->query('//details[@data-user-actions]//form')->length);
+        $this->assertSame(1, $dom->query('//a[@href="'.route('admin.user-invitations.create').'" and contains(.,"Invite User")]')->length);
+        $this->assertSame(0, DB::table('user_invitations')->count());
+        $this->assertSame(0, DB::table('audit_logs')->count());
+        Http::assertSentCount(1);
+    }
+
+    public function test_register_query_count_is_constant_as_page_size_grows_and_identity_reads_stay_batched(): void
+    {
+        $this->realIdentityLookup();
+        $query = $this->app->make(UserManagementQueryService::class);
+        DB::enableQueryLog();
+        $query->users();
+        $before = DB::getQueryLog();
+        DB::disableQueryLog();
+        for ($number = 1; $number <= 21; $number++) {
+            DB::table('user_profiles')->insert(['id' => sprintf('eeeeeeee-eeee-4eee-8eee-%012d', $number),
+                'role_id' => 2, 'display_name' => 'Extra Officer '.$number, 'is_active' => true,
+                'created_at' => now(), 'updated_at' => now()]);
+        }
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+        $users = $query->users();
+        $after = DB::getQueryLog();
+        DB::disableQueryLog();
+        $this->assertCount(25, $users);
+        $this->assertSame(count($before), count($after));
+        $identityReads = array_values(array_filter($after, fn ($entry) => str_contains($entry['query'], '"auth"."users"')));
+        $this->assertCount(1, $identityReads);
+        $this->assertCount(25, $identityReads[0]['bindings']);
+        $this->assertLessThanOrEqual(8, count($after));
     }
 }

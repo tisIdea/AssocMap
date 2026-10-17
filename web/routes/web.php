@@ -118,6 +118,9 @@ Route::middleware([
     Route::patch('/admin/users/{userProfile}/associations', [FieldOfficerAssignmentController::class, 'update'])
         ->whereUuid('userProfile')->name('admin.users.assignments.update');
 
+    Route::get('/admin/users/{userProfile}', [UserManagementController::class, 'show'])
+        ->whereUuid('userProfile')->name('admin.users.show');
+
     Route::get('/admin/user-invitations/create', [UserInvitationController::class, 'create'])
         ->name('admin.user-invitations.create');
 
