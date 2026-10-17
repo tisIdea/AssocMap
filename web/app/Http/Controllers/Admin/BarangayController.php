@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreBarangayRequest;
+use App\Http\Requests\AreaIndexRequest;
+use App\Services\AreaManagementQueryService;
 use App\Services\BarangayService;
 use Illuminate\Http\RedirectResponse;
 use App\Models\Barangay;
@@ -11,6 +13,18 @@ use Illuminate\Database\QueryException;
 
 class BarangayController extends Controller
 {
+    public function show(AreaIndexRequest $request, Barangay $barangay, AreaManagementQueryService $query): \Illuminate\Http\Response
+    {
+        $details = $query->barangayDetails($barangay, $request->validated());
+        $catalog = $query->editorCatalog($details['record']);
+        $areaCreateTypes = ['Barangay', 'Specific Area'];
+        $editorRecord = $query->editorRecord($details['record']);
+        $backUrl = route('admin.areas.index', array_replace($request->filters(), ['tab' => 'barangays', 'page' => $request->validated('page')]));
+
+        return response()->view('admin.areas.barangay', $details + compact('catalog', 'areaCreateTypes', 'editorRecord', 'backUrl'))
+            ->header('Cache-Control', 'no-store, private');
+    }
+
     public function update(StoreBarangayRequest $request, Barangay $barangay, BarangayService $service): RedirectResponse
     {
         try {

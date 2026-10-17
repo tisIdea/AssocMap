@@ -1,8 +1,10 @@
 @php
     $hasAreaErrors = $errors->any() && old('area_form') === 'editor';
     $areaOld = fn ($key, $default = null) => $hasAreaErrors ? old($key, $default) : $default;
+    $areaCreateTypes = $areaCreateTypes ?? ['Municipality', 'Barangay', 'Specific Area'];
     $areaType = $areaOld('area_type', $areaOld('barangay_id') ? 'Specific Area' : ($areaOld('municipality_id') ? 'Barangay' : 'Municipality'));
     $areaType = in_array($areaType, ['Municipality', 'Barangay', 'Specific Area']) ? $areaType : 'Municipality';
+    if (!in_array($areaType, $areaCreateTypes)) $areaCreateTypes[] = $areaType;
     $editingArea = collect($catalog['modules']['areas']['rows'] ?? [])->first(fn ($row) =>
         $areaType !== 'Specific Area' && $row['id'] === $areaOld('area_record_id') &&
         ($row['area_type'] === 'Barangay') === ($areaType === 'Barangay'));
@@ -54,7 +56,7 @@
         <div class="form-grid">
             <div class="field-wide">
                 <x-field
-                    :field="['name' => 'area_type', 'label' => 'Area Type', 'type' => 'select', 'choices' => ['Municipality', 'Barangay', 'Specific Area'], 'required' => true]"
+                    :field="['name' => 'area_type', 'label' => 'Area Type', 'type' => 'select', 'choices' => $areaCreateTypes, 'required' => true]"
                     prefix="area-editor"
                     :value="$areaType"
                 />
@@ -89,7 +91,7 @@
                     <label for="area-editor-specific-municipality">Municipality / City <span class="field-hint">*</span></label>
                     <select id="area-editor-specific-municipality" data-specific-municipality required>
                         <option value="">Select…</option>
-                        @foreach($catalog['options']['municipality_records'] ?? [] as $choice)
+                        @foreach($catalog['options']['specific_municipality_records'] ?? $catalog['options']['municipality_records'] ?? [] as $choice)
                             <option value="{{ $choice['value'] }}" @selected($specificMunicipality === $choice['value'])>{{ $choice['label'] }}</option>
                         @endforeach
                     </select>

@@ -37,12 +37,14 @@ export function initDialogs() {
             form.dataset.mode = editing ? 'edit' : 'create';
             form.dataset.updateAction = record?.update_url || '';
             $('#area-editor-title').textContent = editing ? `Edit ${record.area_type}` : 'Add Area';
-            $('select[name=area_type]', form).value = record?.area_type === 'Barangay' ? 'Barangay' : 'Municipality';
+            $('select[name=area_type]', form).value = record
+                ? (record.area_type === 'Barangay' ? 'Barangay' : 'Municipality')
+                : (button.dataset.areaCreateType || 'Municipality');
             $('[name=area_record_id]', form).value = record?.id || '';
             $$('[name=name]', form).forEach(input => { input.value = record?.name || ''; });
             $('[name=psgc_code]', form).value = record?.psgc_code || '';
-            $('[data-specific-municipality]', form).value = '';
-            $('[name=barangay_id]', form).value = '';
+            $('[data-specific-municipality]', form).value = editing ? '' : (button.dataset.areaParent || '');
+            $('[name=barangay_id]', form).value = editing ? '' : (button.dataset.areaBarangay || '');
             $('[name=address]', form).value = '';
             const parent = $('[name=municipality_id]', form);
             $$('[data-current-parent]', parent).forEach(option => option.remove());
@@ -51,7 +53,7 @@ export function initDialogs() {
                 option.dataset.currentParent = '';
                 parent.add(option);
             }
-            parent.value = record?.municipality_id || '';
+            parent.value = record?.municipality_id || button.dataset.areaParent || '';
             $$('[data-area-editor-detail]', form).forEach(element => {
                 const defaults = { province: 'Cebu', region: 'Region VII', source: 'Manual', status: 'Active' };
                 element.textContent = record ? (record[element.dataset.areaEditorDetail] ?? '—') : defaults[element.dataset.areaEditorDetail];

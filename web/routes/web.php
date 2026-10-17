@@ -140,6 +140,11 @@ Route::middleware([
         [MunicipalityController::class, 'index']
     )->name('admin.areas.index');
 
+    Route::get('/admin/municipalities/{municipality}', [MunicipalityController::class, 'show'])
+        ->whereUuid('municipality')->name('admin.municipalities.show');
+    Route::get('/admin/barangays/{barangay}', [BarangayController::class, 'show'])
+        ->whereUuid('barangay')->name('admin.barangays.show');
+
     Route::post(
         '/admin/municipalities',
         [MunicipalityController::class, 'store']
