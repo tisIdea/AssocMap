@@ -23,6 +23,7 @@ function editor(periods = [], editingRecord = null) {
         querySelector: () => button };
     const context = {
         document: { getElementById: () => status },
+        submitting: false,
         form, occupiedPeriods: periods, editingRecord, periodValues: { quarter_id: '' },
         selectedProject: () => ['project-a', 'project-b'].includes(project.value) ? { id: project.value } : null,
     };

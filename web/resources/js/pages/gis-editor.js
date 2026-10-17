@@ -1,5 +1,6 @@
 import { L, createGisMap, fitLayer } from './gis-map.js';
 import { debounce, fillOptions, gisRequest, queryUrl, showStatus } from '../core/gis-api.js';
+import { applyFormErrors, showFeedback, showOperationError } from '../core/feedback.js';
 
 function validateGeometry(geometry, boundary) {
     if (!geometry || typeof geometry !== 'object' || Array.isArray(geometry)
@@ -32,6 +33,8 @@ function validateGeometry(geometry, boundary) {
 }
 
 export async function initGis(root) {
+    if (root.dataset.gisInitialized === 'true') return;
+    root.dataset.gisInitialized = 'true';
     window.L = L;
     await import('@geoman-io/leaflet-geoman-free');
     await import('@geoman-io/leaflet-geoman-free/dist/leaflet-geoman.css');
@@ -327,13 +330,25 @@ export async function initGis(root) {
             associationController?.abort(); projectController?.abort();
             stopGeometryModes();
             saving = true; save.disabled = true; form.inert = true; showStatus(status, 'Saving GIS location…');
-            await gisRequest(form.action, { method: seed ? 'PATCH' : 'POST', body: payload, csrf: form.elements._token.value });
-            dirty = false; window.location.assign(base);
+            const result = await gisRequest(form.action, { method: seed ? 'PATCH' : 'POST', body: payload, csrf: form.elements._token.value });
+            if (result?.type !== 'Feature' || typeof result.id !== 'string' || !result.id || (seed && result.id !== seed.id)) {
+                const error = new Error('Save could not be confirmed. Review the saved register before retrying.');
+                error.status = 503; throw error;
+            }
+            dirty = false;
+            await showFeedback({ type: 'success', title: seed ? 'GIS Location Updated' : 'GIS Location Saved',
+                message: 'The GIS location has been saved successfully.', returnFocus: save });
+            window.location.assign(base);
         } catch (error) {
             Object.keys(error.fields || {}).forEach(field => form.elements.namedItem(field)?.setAttribute('aria-invalid', 'true'));
+            applyFormErrors(form, error.fields);
             showStatus(status, error instanceof SyntaxError ? 'Provide valid GeoJSON text.'
                 : (error instanceof TypeError && !error.status ? 'Save could not be confirmed. Retry without reloading this form.'
                     : (error.message || 'Save could not be confirmed. Retry without reloading this form.')), true);
+            if (saving) void showOperationError(error, { returnFocus: save });
+            else void showFeedback({ type: 'error', title: 'Review GIS Location',
+                message: 'Provide valid geometry and review the location fields before saving.', returnFocus: save });
+            if (document.querySelector('[data-feedback-root]')) status.dataset.feedbackFallback = '';
         } finally { saving = false; updateSaveState(); form.inert = false; }
     });
 

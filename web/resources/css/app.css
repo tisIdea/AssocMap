@@ -6,6 +6,7 @@
 @import './pages/admin-dashboard.css';
 @import './components/tables.css';
 @import './components/forms.css';
+@import './components/feedback.css';
 @import './pages/field-officer-members.css';
 @import './pages/admin-gis.css';
 @import './pages/admin-reports.css';

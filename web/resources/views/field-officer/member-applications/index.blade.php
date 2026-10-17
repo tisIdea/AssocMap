@@ -78,7 +78,7 @@
                                 </x-modal>
                                 <x-modal :id="'reject-'.$application->id" title="Reject Application">
                                     <p>Reject the application for <strong>{{ $fullName }}</strong>? Provide a reason for this decision.</p>
-                                    <form method="POST" action="{{ route('field-officer.member-applications.reject', $application) }}" onsubmit="this.elements.rejection_reason.value = this.elements.rejection_reason.value.trim(); return this.reportValidity();">
+                                    <form method="POST" action="{{ route('field-officer.member-applications.reject', $application) }}" @if($restoreRejection) data-feedback-error-bag="default" @endif onsubmit="this.elements.rejection_reason.value = this.elements.rejection_reason.value.trim(); return this.reportValidity();">
                                         @csrf
                                         @method('PATCH')
                                         <input type="hidden" name="review_application_id" value="{{ $application->id }}">
@@ -93,7 +93,7 @@
                                 </x-modal>
                                 @if($restoreRejection && $errors->has('rejection_reason'))
                                     @push('scripts')
-                                        document.getElementById(@json('reject-'.$application->id)).showModal();
+                                        document.getElementById(@json('reject-'.$application->id)).dataset.feedbackRestore = 'true';
                                     @endpush
                                 @endif
                             @endif

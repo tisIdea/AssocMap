@@ -46,16 +46,12 @@
             </div>
         </header>
         <main id="main-content" tabindex="-1">
-            @if(session('success'))<div class="notice notice-success" role="status"><x-icon name="check" /><span>{{ session('success') }}</span></div>@endif
-            @if(session('error'))<div class="notice notice-error" role="alert"><x-icon name="info" /><span>{{ session('error') }}</span></div>@endif
-            @if($errors->any())
-                <div class="notice notice-error" role="alert"><x-icon name="info" /><div>@foreach($errors->all() as $error)<p>{{ $error }}</p>@endforeach</div></div>
-            @endif
             @yield('content')
         </main>
         <footer class="app-footer"><span>AssocMap · GIS-Based Program Monitoring Information System</span><span>BFAR Region VII / SAAD Phase II</span></footer>
     </div>
     @stack('dialogs')
+    <x-global-feedback :notification="$globalFeedbackNotification ?? null" />
     <noscript><div class="notice">Enable JavaScript to open application details and review dialogs.</div></noscript>
     <script type="module">
         const sidebar = document.getElementById('field-officer-sidebar');

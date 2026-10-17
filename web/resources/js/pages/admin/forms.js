@@ -295,6 +295,8 @@ export function initForms() {
     initRecordList('associations');
     initRecordList('members');
     $$('[data-form]').forEach(form => {
+        if (form.dataset.formInitialized === 'true') return;
+        form.dataset.formInitialized = 'true';
         syncForm(form);
         form.addEventListener('submit', event => {
             if (form.matches('[data-area-form]')) {
@@ -307,8 +309,7 @@ export function initForms() {
         form.addEventListener('change', () => syncForm(form));
         form.addEventListener('reset', () => setTimeout(() => syncForm(form), 0));
         if (form.matches('[data-area-form], [data-association-form]') && form.dataset.hasErrors === 'true') {
-            if (form.matches('[data-area-form]') && ($('[data-association-form]') || $('[data-member-validation]'))) return;
-            form.closest('dialog').showModal();
+            form.closest('dialog').dataset.feedbackRestore = 'true';
         }
     });
     $$('[data-repeater]').forEach(repeater => { repeater.dataset.nextIndex = $$('[data-repeat-row]', repeater).length; });

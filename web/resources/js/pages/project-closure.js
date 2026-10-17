@@ -1,5 +1,7 @@
 export function initProjectClosure() {
     document.querySelectorAll('[data-project-finalization-form]').forEach(form => {
+        if (form.dataset.finalizationInitialized === 'true') return;
+        form.dataset.finalizationInitialized = 'true';
         const dialog = form.closest('dialog');
         const remarks = form.elements.namedItem('closure_remarks');
         const confirmation = form.elements.namedItem(form.dataset.confirmationField);
@@ -43,6 +45,6 @@ export function initProjectClosure() {
             sync();
         });
         sync();
-        if (form.dataset.openFinalization === 'true') { dialog.showModal(); remarks.focus(); }
+        if (form.dataset.openFinalization === 'true') { dialog.dataset.feedbackRestore = 'true'; dialog.feedbackFocusTarget = remarks; }
     });
 }

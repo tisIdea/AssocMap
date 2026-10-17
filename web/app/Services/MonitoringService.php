@@ -25,7 +25,7 @@ use Carbon\CarbonImmutable;
 class MonitoringService
 {
     public function __construct(private AssociationLifecycleService $lifecycle, private ProjectLifecycleService $projects,
-        private ProductionMonitoringService $production) {}
+        private ProductionMonitoringService $production, private IncomeMonitoringService $income) {}
 
     public function updateOverview(MonitoringRecord $record, array $data, UserProfile $currentUser): void
     {
@@ -59,13 +59,14 @@ class MonitoringService
                     $this->production->assertRevision($record, $data);
                     $rows = $data['production'] ?? [];
                     foreach ($rows as &$row) {
-                        unset($row['income']);
+                        unset($row['income'], $row['deleted_income_ids']);
                     }
                     unset($row);
                     $this->syncProduction($record, $project, $rows);
                 } elseif ($section === 'materials') {
                     $this->syncMaterials($record, $project, $data['materials'] ?? []);
                 } elseif ($section === 'income') {
+                    $this->income->assertRevision($record, $data);
                     $submitted = [];
                     foreach ($data['production'] ?? [] as $index => $row) {
                         $id = $row['id'] ?? null;
@@ -77,8 +78,9 @@ class MonitoringService
                             throw ValidationException::withMessages(["production.{$index}.id" => 'This Production record is unavailable.']);
                         }
                         $submitted[] = $id;
-                        $this->syncIncome($production, $row['income'] ?? []);
+                        $this->syncIncome($production, $row['income'] ?? [], $row['deleted_income_ids'] ?? []);
                     }
+                    $record->increment('income_version');
                 } else {
                     abort(404);
                 }
@@ -86,6 +88,7 @@ class MonitoringService
                     + ($section === 'production' ? ['project_status' => $data['project_status']] : []));
             }, 3);
         } catch (QueryException $exception) {
+            if ($section === 'income') $this->incomeWriteFailure($exception);
             if ($section === 'production') $this->productionWriteFailure($exception);
             throw $exception;
         }
@@ -443,6 +446,8 @@ class MonitoringService
                 $record = $this->lockRecordForMutation($record, $currentUser);
                 $this->ensureUserCanManageMonitoring($record, $currentUser);
                 $this->resolveProjectForUser($record->project_id, $currentUser);
+                $changesIncome = $this->income->includesEdits($data['production'] ?? []);
+                if ($changesIncome) $this->income->assertRevision($record, $data);
                 if (array_key_exists('production', $data)) $this->production->assertRevision($record, $data);
                 $record->update([
                     'project_status' =>
@@ -463,6 +468,7 @@ class MonitoringService
                         $project,
                         $data['production'] ?? []
                     );
+                    if ($changesIncome) $record->increment('income_version');
                 }
 
                 if (
@@ -483,9 +489,16 @@ class MonitoringService
                 );
             }, 3);
         } catch (QueryException $exception) {
+            if ($this->income->includesEdits($data['production'] ?? [])) $this->incomeWriteFailure($exception);
             if (array_key_exists('production', $data)) $this->productionWriteFailure($exception);
             throw $exception;
         }
+    }
+
+    private function incomeWriteFailure(QueryException $exception): never
+    {
+        Log::warning('Monitoring Income write failed.', ['code' => 'income_write_failed', 'sqlstate' => $exception->errorInfo[0] ?? null]);
+        throw ValidationException::withMessages(['income' => 'Income could not be confirmed as saved. Keep your draft and review the latest saved Income before retrying.'])->status(503);
     }
 
     private function productionWriteFailure(QueryException $exception): never
@@ -737,10 +750,12 @@ class MonitoringService
                     throw ValidationException::withMessages([$prefix.'.id' => 'This Production record or product is unavailable.']);
                 }
                 if (! $this->production->canEditMonthly($existing)) {
-                    if (array_diff(array_keys($row), ['id', 'project_product_id', 'income'])) {
+                    if (array_diff(array_keys($row), ['id', 'project_product_id', 'income', 'deleted_income_ids'])) {
                         throw ValidationException::withMessages([$prefix => 'Legacy quarterly-only or unreconciled Production is preserved read-only. A separate conversion decision is required.']);
                     }
-                    if (array_key_exists('income', $row)) $this->syncIncome($existing, $row['income'] ?? []);
+                    if (array_key_exists('income', $row) || array_key_exists('deleted_income_ids', $row)) {
+                        $this->syncIncome($existing, $row['income'] ?? [], $row['deleted_income_ids'] ?? []);
+                    }
                     continue;
                 }
             } elseif ($record->production()->where('project_product_id', $product->id)->exists()) {
@@ -768,9 +783,12 @@ class MonitoringService
             if ($existing) $existing->update($payload);
             else $existing = $record->production()->create(['project_product_id' => $product->id] + $payload);
             $this->syncMonthlyDetails($existing, $row, $prefix);
-            if (array_key_exists('income', $row)) {
+            if (array_key_exists('income', $row) || array_key_exists('deleted_income_ids', $row)) {
+                if ($isNew && ! empty($row['deleted_income_ids'])) {
+                    throw ValidationException::withMessages([$prefix.'.deleted_income_ids' => 'New Production has no saved Income to remove.']);
+                }
                 if ($isNew) $this->createIncome($existing, $row['income'] ?? []);
-                else $this->syncIncome($existing, $row['income'] ?? []);
+                else $this->syncIncome($existing, $row['income'] ?? [], $row['deleted_income_ids'] ?? []);
             }
         }
         // Omitted products retain their Production, monthly and Income history.
@@ -823,8 +841,24 @@ class MonitoringService
 
     private function syncIncome(
         MonitoringProduction $production,
-        array $incomeRows
+        array $incomeRows,
+        array $removedIds = []
     ): void {
+        $saved = $production->income()->lockForUpdate()->get()->keyBy('id');
+        $validator = Validator::make(['removed' => $removedIds], [
+            'removed' => ['array'], 'removed.*' => ['required', 'uuid', 'distinct'],
+        ]);
+        if ($validator->fails() || array_diff($removedIds, $saved->keys()->all())) {
+            throw ValidationException::withMessages(['income' => 'Remove only saved Income entries belonging to this Production record.']);
+        }
+        $this->validateIncomeState($production, $saved, $incomeRows, $removedIds);
+        foreach ($incomeRows as $income) {
+            if (isset($income['id']) && in_array($income['id'], $removedIds, true)) {
+                throw ValidationException::withMessages(['income' => 'An Income entry cannot be edited and removed in the same submission.']);
+            }
+        }
+        // Omission preserves saved entries; only explicit scoped identifiers request deletion.
+        foreach ($removedIds as $id) $saved[$id]->delete();
         $submittedIds = [];
 
         foreach ($incomeRows as $income) {
@@ -888,24 +922,39 @@ class MonitoringService
                 $created->id;
         }
 
-        $removed =
-            MonitoringIncome::query()
-                ->where(
-                    'monitoring_production_id',
-                    $production->id
-                )
-                ->when(
-                    ! empty($submittedIds),
-                    fn ($query) =>
-                        $query->whereNotIn(
-                            'id',
-                            $submittedIds
-                        )
-                )
-                ->get();
+    }
 
-        foreach ($removed as $income) {
-            $income->delete();
+    private function validateIncomeState(MonitoringProduction $production, Collection $saved, array $rows, array $removedIds): void
+    {
+        $validator = Validator::make(['income' => $rows], [
+            'income.*' => ['array'], 'income.*.id' => ['nullable', 'uuid', 'distinct'],
+            'income.*.period_type' => ['required', \Illuminate\Validation\Rule::in(['monthly', 'quarterly'])],
+            'income.*.month' => ['nullable', 'integer', 'between:1,12'],
+            'income.*.gross_income' => ['required', 'numeric', 'min:0', 'max:999999999999.99'],
+            'income.*.remarks' => ['nullable', 'string'],
+        ]);
+        if ($validator->fails()) throw new ValidationException($validator);
+        $final = $saved->toBase()->except($removedIds)->map(fn ($income) => $income->only(['period_type', 'month', 'gross_income', 'remarks']))->all();
+        foreach ($rows as $index => $income) {
+            $id = $income['id'] ?? null;
+            if ($id && ! $saved->has($id)) {
+                throw ValidationException::withMessages(['income' => 'One of the submitted Income records does not belong to this Production record.']);
+            }
+            $final[$id ?: 'new-'.$index] = $income;
+        }
+        $months = $this->production->monthsForQuarter($production->monitoringRecord->quarter->quarter_number);
+        $periods = []; $slots = [];
+        foreach ($final as $income) {
+            $period = $income['period_type'];
+            $month = $income['month'] ?? null;
+            $slot = $period === 'quarterly' ? 'quarter' : 'month-'.(int) $month;
+            $periods[$period] = true;
+            if (count($periods) > 1 || isset($slots[$slot])
+                || ($period === 'quarterly' && $month !== null && $month !== '')
+                || ($period === 'monthly' && ! in_array((int) $month, $months, true))) {
+                throw ValidationException::withMessages(['income' => 'Retained and submitted Income must use one frequency, with one quarterly entry or distinct months within the Monitoring quarter. Remove entries explicitly when necessary.']);
+            }
+            $slots[$slot] = true;
         }
     }
 

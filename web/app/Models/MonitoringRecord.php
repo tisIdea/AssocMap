@@ -37,6 +37,7 @@ class MonitoringRecord extends Model
         return [
             'year' => 'integer',
             'quarter_id' => 'integer',
+            'income_version' => 'integer',
             'monitoring_date' => 'date',
             'site_validated' => 'boolean',
         ];

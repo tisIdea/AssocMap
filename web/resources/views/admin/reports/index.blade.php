@@ -59,7 +59,7 @@
     <div class="report-preview">
         <section class="card report-document">
             <div class="report-document-header"><span class="brand-symbol"><x-icon name="map" /></span><div><strong>ASSOCMAP</strong><small>BFAR Region VII · SAAD Phase II</small></div><span class="badge badge-neutral">Authorized report</span></div>
-            <p data-report-status role="status" aria-live="polite" @class(['notice-error' => $unavailable])>{{ $unavailable ? 'Reporting is temporarily unavailable. The administrator must check the reporting runtime configuration.' : 'Report loaded from authorized records.' }}</p>
+            <p data-report-status role="status" aria-live="polite" @if($unavailable) data-feedback-fallback @endif @class(['notice-error' => $unavailable])>{{ $unavailable ? 'Reporting is temporarily unavailable. Please try again later.' : 'Report loaded from authorized records.' }}</p>
             <div data-report-result>
                 @if($result)
                     <h2>{{ $result['title'] }}</h2>

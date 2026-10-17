@@ -17,6 +17,9 @@ class StoreMonitoringVisitReportRequest extends FormRequest
 
     protected function prepareForValidation(): void
     {
+        if ($this->routeIs('*.monitoring.visit.store', '*.monitoring.visit.update')) {
+            $this->errorBag = 'monitoringVisit';
+        }
         foreach (['issues_encountered', 'actions_taken', 'overall_remarks', 'conducted_by'] as $field) {
             $value = $this->input($field);
             if (is_string($value)) {

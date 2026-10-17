@@ -1,13 +1,14 @@
 @php
-    $hasAreaErrors = $errors->any() && old('monitoring_form') !== 'editor';
-    $areaType = old('area_type', old('barangay_id') ? 'Specific Area' : (old('municipality_id') ? 'Barangay' : 'Municipality'));
+    $hasAreaErrors = $errors->any() && old('area_form') === 'editor';
+    $areaOld = fn ($key, $default = null) => $hasAreaErrors ? old($key, $default) : $default;
+    $areaType = $areaOld('area_type', $areaOld('barangay_id') ? 'Specific Area' : ($areaOld('municipality_id') ? 'Barangay' : 'Municipality'));
     $areaType = in_array($areaType, ['Municipality', 'Barangay', 'Specific Area']) ? $areaType : 'Municipality';
     $editingArea = collect($catalog['modules']['areas']['rows'] ?? [])->first(fn ($row) =>
-        $areaType !== 'Specific Area' && $row['id'] === old('area_record_id') &&
+        $areaType !== 'Specific Area' && $row['id'] === $areaOld('area_record_id') &&
         ($row['area_type'] === 'Barangay') === ($areaType === 'Barangay'));
     $municipalityChoices = $catalog['options']['municipality_records'] ?? [];
     $barangayChoices = $catalog['options']['barangay_records'] ?? [];
-    $specificMunicipality = collect($barangayChoices)->firstWhere('value', old('barangay_id'))['municipality_id'] ?? '';
+    $specificMunicipality = collect($barangayChoices)->firstWhere('value', $areaOld('barangay_id'))['municipality_id'] ?? '';
     if ($editingArea && $areaType === 'Barangay' && !in_array($editingArea['municipality_id'], array_column($municipalityChoices, 'value'))) {
         $municipalityChoices[] = ['value' => $editingArea['municipality_id'], 'label' => $editingArea['municipality']];
     }
@@ -25,8 +26,10 @@
         data-mode="{{ $editingArea ? 'edit' : 'create' }}"
         data-update-action="{{ $editingArea['update_url'] ?? '' }}"
         data-has-errors="{{ $hasAreaErrors ? 'true' : 'false' }}"
+        @if($hasAreaErrors) data-feedback-error-bag="default" @endif
     >
         @csrf
+        <input type="hidden" name="area_form" value="editor">
         <input type="hidden" name="_method" value="PATCH" data-area-method @disabled(!$editingArea)>
         <input type="hidden" name="area_record_id" value="{{ $editingArea['id'] ?? '' }}" @disabled(!$editingArea)>
         <input type="hidden" name="area_type" value="{{ $areaType }}" data-area-edit-type @disabled(!$editingArea)>
@@ -64,7 +67,7 @@
                         'required' => true
                     ]"
                     prefix="area-editor-municipality"
-                    :value="old('name')"
+                    :value="$areaOld('name')"
                 />
             </div>
 
@@ -72,12 +75,12 @@
                 <x-field
                     :field="['name' => 'municipality_id', 'label' => 'Municipality / City', 'type' => 'select', 'choices' => $municipalityChoices, 'required' => true]"
                     prefix="area-editor-barangay"
-                    :value="old('municipality_id')"
+                    :value="$areaOld('municipality_id')"
                 />
                 <x-field
                     :field="['name' => 'name', 'label' => 'Barangay Name', 'required' => true]"
                     prefix="area-editor-barangay"
-                    :value="old('name')"
+                    :value="$areaOld('name')"
                 />
             </div>
 
@@ -94,12 +97,12 @@
                 <x-field
                     :field="['name' => 'barangay_id', 'label' => 'Barangay', 'type' => 'select', 'choices' => array_values(array_filter($barangayChoices, fn ($choice) => $choice['municipality_id'] === $specificMunicipality)), 'required' => true]"
                     prefix="area-editor-specific"
-                    :value="old('barangay_id')"
+                    :value="$areaOld('barangay_id')"
                 />
                 <x-field
                     :field="['name' => 'address', 'label' => 'Address / Sitio / Location', 'type' => 'textarea', 'required' => true]"
                     prefix="area-editor-specific"
-                    :value="old('address')"
+                    :value="$areaOld('address')"
                 />
             </div>
 
@@ -125,7 +128,7 @@
                     'required' => false
                 ]"
                 prefix="area-editor"
-                :value="old('psgc_code')"
+                :value="$areaOld('psgc_code')"
             />
 
             <div>

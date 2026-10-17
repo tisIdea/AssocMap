@@ -3,7 +3,6 @@
 @include('monitoring.partials.styles')
 <div data-workspace-module="monitoring" data-workspace-title="Monitoring">
 @include('monitoring.partials.context')
-@if(session('success'))<p class="notice notice-success" role="status">{{ session('success') }}</p>@endif
 <section class="card" style="padding:20px"><h2>Visit Reports</h2>
 @if($canManage)<a class="button button-primary" href="{{ route($monitoringPrefix.'.visit.create', $record) }}">Add Visit Report</a>@endif
 @forelse($reports as $report)

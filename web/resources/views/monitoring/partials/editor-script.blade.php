@@ -1,4 +1,8 @@
 <script type="module">
+function initializeMonitoringEditor() {
+    const form = document.getElementById('monitoring-form');
+    if (!form || form.dataset.monitoringInitialized === 'true') return;
+    form.dataset.monitoringInitialized = 'true';
     const records = {{ Illuminate\Support\Js::from($rows->values()) }};
     const quarters = {{ Illuminate\Support\Js::from($quarters->map(fn ($quarter) => ['id' => $quarter->id, 'quarter_number' => $quarter->quarter_number, 'months' => app(\App\Services\ProductionMonitoringService::class)->monthsForQuarter($quarter->quarter_number)])->values()) }};
     const monthNames = {{ Illuminate\Support\Js::from($months) }};
@@ -14,7 +18,7 @@
         document.title = 'Monitoring · AssocMap';
         document.querySelector('.topbar-context > span').textContent = 'Monitoring';
     }
-    const form = document.getElementById('monitoring-form');
+    const incomeConflict = initIncomeConflictDialog();
     const removalDialog = document.getElementById('monitoring-removal-modal');
     const removalConfirm = removalDialog.querySelector('[data-removal-confirm]');
     let pendingRemoval = null;
@@ -456,6 +460,7 @@
                 document.getElementById('monitoring-income-groups').append(group);
                 updateProductHeading(row);
                 row.incomeGroup.querySelector('[data-income-empty]').name = `${prefix}[income]`;
+                Object.values(values.deleted_income_ids ?? {}).forEach(id => markIncomeRemoval(row, id));
                 Object.entries(values.income ?? {}).forEach(([incomeIndex, income]) => addRow('income', income, incomeIndex, row));
                 refreshIncome(row);
             }
@@ -602,6 +607,7 @@
             confirmRemoval(`Remove ${label}?`, warning + ' Cancel keeps the entry unchanged.', remove, () => {
                 if (!row.isConnected || (kind === 'production' && row.querySelector('[data-key="id"]').value)) return;
                 const parent = kind === 'income' ? row.closest('[data-production-income]').productionRow : null;
+                if (parent && saved) markIncomeRemoval(parent, row.querySelector('[data-key="id"]').value);
                 if (kind === 'production') row.incomeGroup.remove();
                 row.remove();
                 if (parent) { refreshIncome(parent); parent.incomeGroup.querySelector('[data-add-income]').focus(); }
@@ -650,6 +656,121 @@
         if (row.dataset.kind === 'production') { updateProductHeading(row); refreshProductNames(); }
         else updateMaterialHeading(row);
     });
+    function markIncomeRemoval(production, id) {
+        const existing = Array.from(production.incomeGroup.querySelectorAll('[data-income-removal]'));
+        if (existing.some(input => input.value === id)) return;
+        const input = document.createElement('input');
+        input.type = 'hidden'; input.name = `${production.dataset.prefix}[deleted_income_ids][]`;
+        input.value = id; input.dataset.incomeRemoval = '';
+        production.incomeGroup.append(input);
+    }
+    function safeIncomeDestination(value) {
+        if (typeof value !== 'string' || !value.trim()) return null;
+        try {
+            const url = new URL(value, window.location.href);
+            return ['http:', 'https:'].includes(url.protocol) && url.origin === window.location.origin
+                && !url.username && !url.password ? url.href : null;
+        } catch { return null; }
+    }
+    function initIncomeConflictDialog() {
+        const dialog = document.getElementById('monitoring-income-conflict-modal');
+        if (!dialog || typeof dialog.showModal !== 'function') return null;
+        if (dialog.incomeConflictController) return dialog.incomeConflictController;
+        const actions = dialog.querySelector('[data-income-conflict-actions]');
+        const confirmation = dialog.querySelector('[data-income-refresh-confirmation]');
+        const keepEditing = dialog.querySelector('[data-income-conflict-cancel]');
+        const refresh = dialog.querySelector('[data-income-refresh]');
+        let opener = null;
+        let confirmingRefresh = false;
+        function resetRefresh() {
+            confirmingRefresh = false;
+            actions.hidden = false;
+            confirmation.hidden = true;
+        }
+        keepEditing.addEventListener('click', () => dialog.close());
+        refresh.addEventListener('click', () => {
+            confirmingRefresh = true;
+            actions.hidden = true;
+            confirmation.hidden = false;
+            dialog.querySelector('[data-income-refresh-cancel]').focus();
+        });
+        dialog.querySelector('[data-income-refresh-cancel]').addEventListener('click', () => {
+            resetRefresh();
+            refresh.focus();
+        });
+        dialog.querySelector('[data-income-refresh-confirm]').addEventListener('click', () => {
+            if (!dialog.open || !confirmingRefresh) return;
+            confirmingRefresh = false;
+            window.location.reload();
+        });
+        dialog.addEventListener('close', () => {
+            resetRefresh();
+            if (opener?.isConnected) opener.focus();
+            opener = null;
+        });
+        dialog.setAttribute('aria-describedby', 'monitoring-income-conflict-message');
+        const controller = { open(result) {
+            const destination = safeIncomeDestination(result.latest_saved_url);
+            const latest = dialog.querySelector('[data-income-latest]');
+            latest.hidden = !destination;
+            if (destination) latest.href = destination;
+            else latest.removeAttribute('href');
+            if (typeof result.message === 'string') dialog.querySelector('[data-income-conflict-message]').textContent = result.message;
+            opener = form.querySelector('[type="submit"]');
+            resetRefresh();
+            if (!dialog.open) dialog.showModal();
+            keepEditing.focus();
+        }};
+        dialog.incomeConflictController = controller;
+        return controller;
+    }
+    async function saveIncome() {
+        const feedback = form.querySelector('[data-income-feedback]');
+        feedback.hidden = true;
+        let failureStatus = 0;
+        let fieldErrors = {};
+        const errors = feedback.querySelector('[data-income-errors]');
+        errors.replaceChildren();
+        try {
+            const response = await fetch(form.action, {method: 'POST', body: new FormData(form), credentials: 'same-origin',
+                headers: {'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest'}});
+            failureStatus = response.status;
+            if (response.redirected && new URL(response.url, window.location.href).pathname === '/login') failureStatus = 419;
+            const result = await response.json();
+            const destination = safeIncomeDestination(result.redirect);
+            if (response.ok && destination) {
+                window.location.assign(destination);
+                return;
+            }
+            if (response.status === 409 && result.code === 'monitoring_income_conflict' && incomeConflict) {
+                incomeConflict.open(result);
+                return;
+            }
+            feedback.querySelector('[data-income-message]').textContent = response.status === 422 ? 'Review the Income entries below. Your draft is still here.'
+                : 'Income could not be confirmed as saved. Check the latest saved Income in a new tab before trying again. Your draft is still here.';
+            if ([409, 422].includes(response.status) && result.errors && typeof result.errors === 'object') {
+                fieldErrors = result.errors;
+                Object.values(result.errors).flat().filter(message => typeof message === 'string').forEach(message => {
+                    const item = document.createElement('li'); item.textContent = message; errors.append(item);
+                });
+            }
+        } catch {
+            feedback.querySelector('[data-income-message]').textContent = 'The save result could not be confirmed. Check the latest saved Income in a new tab before trying again. Your draft is still here.';
+        } finally {
+            submitting = false; form.removeAttribute('aria-busy');
+            form.querySelector('[type="submit"]').disabled = false;
+            form.querySelector('[data-monitoring-submit-status]').textContent = '';
+        }
+        if (window.AssocMapFeedback) {
+            window.AssocMapFeedback.fields(form, fieldErrors);
+            feedback.querySelector('[data-income-message]').hidden = true;
+            feedback.hidden = errors.children.length === 0;
+            void window.AssocMapFeedback.error(failureStatus, { network: !failureStatus, returnFocus: form.querySelector('[type="submit"]') });
+            return;
+        }
+        feedback.hidden = false;
+        feedback.focus();
+    }
     let submitting = false;
     form.addEventListener('submit', event => {
         if (submitting) { event.preventDefault(); return; }
@@ -677,6 +798,10 @@
         form.querySelector('[type="submit"]').disabled = true;
         form.setAttribute('aria-busy', 'true');
         form.querySelector('[data-monitoring-submit-status]').textContent = 'Saving Monitoring. Please wait.';
+        if (activeSection === 'income') {
+            event.preventDefault();
+            void saveIncome();
+        }
     });
     window.addEventListener('pageshow', () => {
         submitting = false; form.removeAttribute('aria-busy');
@@ -744,4 +869,6 @@
         if (activeSection) activateTab(form, activeSection);
         (firstError ?? form.querySelector('[data-monitoring-errors]'))?.focus();
     }
+}
+initializeMonitoringEditor();
 </script>

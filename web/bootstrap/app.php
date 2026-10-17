@@ -32,6 +32,22 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
+        $exceptions->render(function (\App\Exceptions\MonitoringIncomeConflictException $exception, Request $request) {
+            $headers = ['Cache-Control' => 'private, no-store', 'X-Content-Type-Options' => 'nosniff'];
+            $prefix = $request->routeIs('admin.monitoring.*') ? 'admin.monitoring'
+                : ($request->routeIs('field-officer.monitoring.*') ? 'field-officer.monitoring' : null);
+            $record = $request->route('monitoringRecord');
+            $latestIncomeUrl = $prefix && $record instanceof \App\Models\MonitoringRecord
+                ? route($prefix.'.section.edit', [$record, 'income']) : null;
+            if ($request->expectsJson()) {
+                return response()->json(['message' => $exception->getMessage(),
+                    'code' => 'monitoring_income_conflict', 'latest_saved_url' => $latestIncomeUrl,
+                    'errors' => ['income_revision' => [$exception->getMessage()]]], 409, $headers);
+            }
+            $draft = $request->only(['project_id', 'year', 'quarter_id', 'income_revision', 'production']);
+            return response()->view('monitoring.income-conflict', ['message' => $exception->getMessage(), 'draft' => $draft,
+                'latestIncomeUrl' => $latestIncomeUrl], 409, $headers);
+        });
         $exceptions->dontReportWhen(fn (\Throwable $exception) => \App\Http\Middleware\ReportingRequestGuard::applies(request()));
         $exceptions->render(function (\Throwable $exception, Request $request) {
             if (! \App\Http\Middleware\ReportingRequestGuard::applies($request)) return null;
@@ -64,6 +80,17 @@ return Application::configure(basePath: dirname(__DIR__))
             return \App\Http\Middleware\ProtectInvitationActivation::secure(
                 response()->view('auth.invitation-result', ['succeeded' => false], $status), $request
             );
+        });
+        $exceptions->render(function (\Throwable $exception, Request $request) {
+            if ($request->expectsJson() || ! $request->is('admin/*', 'dashboard', 'field-officer/*', 'association/*', 'login')
+                || $exception instanceof \Illuminate\Validation\ValidationException
+                || $exception instanceof \Illuminate\Auth\AuthenticationException
+                || $exception instanceof \Illuminate\Http\Exceptions\HttpResponseException) return null;
+            $status = $exception instanceof \Symfony\Component\HttpKernel\Exception\HttpExceptionInterface
+                ? $exception->getStatusCode() : 500;
+            $headers = $exception instanceof \Symfony\Component\HttpKernel\Exception\HttpExceptionInterface ? $exception->getHeaders() : [];
+            return response()->view('errors.feedback', compact('status'), $status,
+                array_merge($headers, ['Cache-Control' => 'private, no-store', 'X-Content-Type-Options' => 'nosniff']));
         });
     })
     ->create();

@@ -101,6 +101,7 @@ export function initDialogs() {
         if (event.currentTarget.dataset.areaAction !== 'true' && event.currentTarget.dataset.associationAction !== 'true' && event.currentTarget.dataset.memberAction !== 'true') event.preventDefault();
     });
     $$('dialog').forEach(dialog => {
+        if (dialog.hasAttribute('data-global-feedback')) return;
         dialog.addEventListener('close', () => openers.get(dialog)?.focus());
         dialog.addEventListener('click', event => {
             const rect = dialog.getBoundingClientRect();

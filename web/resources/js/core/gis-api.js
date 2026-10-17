@@ -4,18 +4,23 @@ export async function gisRequest(url, { method = 'GET', body, csrf, signal } = {
     const headers = { Accept: 'application/json' };
     if (body !== undefined) headers['Content-Type'] = 'application/json';
     if (csrf) headers['X-CSRF-TOKEN'] = csrf;
-    const response = await fetch(target, { method, headers, credentials: 'same-origin', signal,
+    const response = await fetch(target, { method, headers, credentials: 'same-origin', redirect: 'error', signal,
         body: body === undefined ? undefined : JSON.stringify(body) });
     if (!response.headers.get('Content-Type')?.includes('application/json')) {
         const error = new Error('Your session may have expired. Reload and sign in again.');
-        error.status = 401;
+        error.status = response.ok ? 503 : response.status;
         throw error;
     }
     let data;
     try { data = await response.json(); }
     catch {
         const error = new Error('The server response could not be read. Refresh records before retrying an action.');
-        error.status = response.status;
+        error.status = response.ok ? 503 : response.status;
+        throw error;
+    }
+    if (!data || typeof data !== 'object') {
+        const error = new Error('The GIS response could not be confirmed. Refresh records before retrying.');
+        error.status = response.ok ? 503 : response.status;
         throw error;
     }
     if (!response.ok) {
@@ -44,6 +49,7 @@ export function fillOptions(select, data, selected = select.value) {
 }
 
 export function showStatus(element, message, error = false) {
+    delete element.dataset.feedbackFallback;
     element.textContent = message;
     element.classList.toggle('notice-error', error);
     element.setAttribute('role', error ? 'alert' : 'status');

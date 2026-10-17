@@ -7,7 +7,7 @@
     $modalErrors = $terminating ? $terminationErrors : $closureErrors;
 @endphp
 <x-modal :id="$dialogId" :title="$actionLabel">
-    <form method="POST" action="{{ route($prefix.($terminating ? '.projects.terminate' : '.projects.close'), $project) }}" data-project-finalization-form data-confirmation-word="{{ $word }}" data-confirmation-field="{{ $confirmationField }}" data-open-finalization="{{ $modalErrors->any() || (request()->query('finalize') === $outcome && !$closureErrors->any() && !$terminationErrors->any()) ? 'true' : 'false' }}">
+    <form method="POST" action="{{ route($prefix.($terminating ? '.projects.terminate' : '.projects.close'), $project) }}" data-project-finalization-form data-feedback-error-bag="{{ $terminating ? 'projectTermination' : 'projectClosure' }}" data-confirmation-word="{{ $word }}" data-confirmation-field="{{ $confirmationField }}" data-open-finalization="{{ $modalErrors->any() || (request()->query('finalize') === $outcome && !$closureErrors->any() && !$terminationErrors->any()) ? 'true' : 'false' }}">
         @csrf
         <input type="hidden" name="expected_updated_at" value="{{ $project->updated_at?->format('Y-m-d\TH:i:s.uP') }}">
         <p><strong>{{ $project->title }}</strong></p>

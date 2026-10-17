@@ -23,8 +23,8 @@
 
     @if(session('invitation_result'))
         @php($result = session('invitation_result'))
-        <div class="notice {{ $result['code'] === 'provider_accepted' ? '' : 'notice-error' }}" role="status" aria-live="polite">
-            <div><p>{{ $result['message'] }}</p>
+        <div class="notice" role="status">
+            <div>
                 @if($result['invitation_id'])<p>Operation reference: {{ $result['invitation_id'] }}. Status: {{ $result['status'] }}.</p>@endif
             </div>
         </div>
@@ -33,7 +33,7 @@
         <div class="notice notice-error" role="alert"><div>@foreach($errors->all() as $error)<p>{{ $error }}</p>@endforeach</div></div>
     @endif
 
-    <form class="record-form" method="POST" action="{{ route('admin.user-invitations.store', [], false) }}" data-user-invitation-form>
+    <form class="record-form" method="POST" action="{{ route('admin.user-invitations.store', [], false) }}" data-user-invitation-form data-feedback-error-bag="default">
         @csrf
         <div class="form-main">
             <x-form-section title="Invitation details" number="1">

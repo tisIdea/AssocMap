@@ -3,7 +3,6 @@
 @include('monitoring.partials.styles')
 <div data-workspace-module="monitoring" data-workspace-title="Monitoring">
 <header class="page-header"><div><div class="eyebrow">Program Operations</div><h1>Monitoring</h1><p>Quarterly records for your accessible associations and projects.</p></div></header>
-@if(session('success'))<p class="notice notice-success" role="status">{{ session('success') }}</p>@endif
 @if($errors->any())<div class="notice notice-error" role="alert">@foreach($errors->all() as $error)<p>{{ $error }}</p>@endforeach</div>@endif
 <section class="card list-card" style="padding:20px">
     <div class="table-toolbar">

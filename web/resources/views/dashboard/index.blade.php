@@ -13,20 +13,6 @@
 @extends('layouts.admin')
 
 @section('content')
-    @if(session('success'))
-        <div class="notice notice-success" role="status">
-            <x-icon name="check" />
-            <span>{{ session('success') }}</span>
-        </div>
-    @endif
-
-    @if(session('error'))
-        <div class="notice notice-error" role="alert">
-            <x-icon name="info" />
-            <span>{{ session('error') }}</span>
-        </div>
-    @endif
-
     <section
         class="page-view"
         data-page="dashboard"

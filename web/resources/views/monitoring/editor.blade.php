@@ -117,12 +117,21 @@
     <a class="button" href="{{ route($monitoringPrefix.'.index') }}">Dashboard</a>
 @endif
 <section class="card" id="monitoring-editor" style="padding:20px"><h2 id="monitoring-editor-title" tabindex="-1">Monitoring</h2>
-    <form method="POST" action="{{ route($monitoringPrefix.'.store') }}" id="monitoring-form" class="monitoring-workspace" data-monitoring-workspace novalidate>
+    <form method="POST" action="{{ route($monitoringPrefix.'.store') }}" id="monitoring-form" class="monitoring-workspace" data-monitoring-workspace @if($restore) data-feedback-error-bag="default" @endif novalidate>
         @csrf
         <input type="hidden" name="monitoring_form" value="editor"><input type="hidden" name="monitoring_record_id"><input type="hidden" name="_method" value="PATCH" disabled>
         @if($record)
             @php($productionRevision = $restore ? old('production_revision') : $rows->first()['production_revision'])
             <input type="hidden" name="production_revision" value="{{ is_string($productionRevision) ? $productionRevision : '' }}">
+            @if($section === 'income')
+                @php($incomeRevision = $restore ? old('income_revision') : $rows->first()['income_revision'])
+                <input type="hidden" name="income_revision" value="{{ is_string($incomeRevision) ? $incomeRevision : '' }}">
+                <div class="notice notice-error" data-income-feedback role="alert" tabindex="-1" hidden>
+                    <p data-income-message></p><ul data-income-errors></ul>
+                    <a href="{{ route($monitoringPrefix.'.section.edit', [$record, 'income']) }}" target="_blank" rel="noopener">Open latest saved Income in a new tab</a>
+                    <p>Your unsaved entries remain in this form. Review and copy them before choosing to leave or reload.</p>
+                </div>
+            @endif
         @endif
         <input type="hidden" name="production" value=""><input type="hidden" name="materials" value="">
         <p class="field-hint">Fields marked * are required. {{ $section ? 'Only this section is saved. Save or cancel before navigating to another section.' : 'All creation tabs are saved together.' }}</p>
@@ -187,5 +196,8 @@
 </div>
 @include('monitoring.partials.editor-templates')
 @include('monitoring.partials.removal-modal')
+@if($record && $section === 'income')
+    @include('monitoring.partials.income-conflict-modal')
+@endif
 @include('monitoring.partials.editor-script')
 @endsection

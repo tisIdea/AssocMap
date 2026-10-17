@@ -11,6 +11,7 @@ use App\Models\Project;
 use App\Models\Quarter;
 use App\Models\UserProfile;
 use App\Services\AssociationLifecycleService;
+use App\Services\IncomeMonitoringService;
 use App\Services\MonitoringService;
 use App\Services\ProjectLifecycleService;
 use Illuminate\Database\Eloquent\Builder;
@@ -164,7 +165,9 @@ class MonitoringWorkspaceController extends MonitoringController
                 }
             }
         }
-        $monitoringRows = $record ? collect([$this->mapMonitoringRecord($record)]) : collect();
+        $mapped = $record ? $this->mapMonitoringRecord($record) : null;
+        if ($record && $section === 'income') $mapped['income_revision'] = app(IncomeMonitoringService::class)->revision($record);
+        $monitoringRows = $mapped ? collect([$mapped]) : collect();
         $projectRows = $projects->map(fn ($project) => $this->mapProject($project));
         $occupiedPeriods = $record ? collect() : MonitoringRecord::query()
             ->whereIn('project_id', $projects->modelKeys())->get(['project_id', 'year', 'quarter_id']);
@@ -172,11 +175,16 @@ class MonitoringWorkspaceController extends MonitoringController
         return view('monitoring.editor', $this->context($request, $record) + compact('projects', 'projectRows', 'quarters', 'monitoringRows', 'occupiedPeriods', 'section', 'record'));
     }
 
-    public function saveSection(UpdateMonitoringSectionRequest $request, MonitoringRecord $monitoringRecord, string $section, MonitoringService $service): RedirectResponse
+    public function saveSection(UpdateMonitoringSectionRequest $request, MonitoringRecord $monitoringRecord, string $section, MonitoringService $service): RedirectResponse|\Illuminate\Http\JsonResponse
     {
         $record = $this->accessibleRecord($request, $monitoringRecord, true);
         $service->updateSection($record, $section, $request->validated(), $request->attributes->get('current_user'));
-        return redirect()->route($this->context($request)['monitoringPrefix'].'.workspace', [$record, $section])
+        $destination = route($this->context($request)['monitoringPrefix'].'.workspace', [$record, $section]);
+        if ($section === 'income' && $request->expectsJson()) {
+            $request->session()->flash('success', 'Income updated.');
+            return response()->json(['redirect' => $destination]);
+        }
+        return redirect()->to($destination)
             ->with('success', ucfirst($section).' updated.');
     }
 
@@ -209,12 +217,16 @@ class MonitoringWorkspaceController extends MonitoringController
 
     public function saveVisit(StoreMonitoringVisitReportRequest $request, MonitoringRecord $monitoringRecord, MonitoringService $service, ?string $reportId = null): RedirectResponse
     {
-        $record = $this->accessibleRecord($request, $monitoringRecord, true);
-        if ($reportId) {
-            $record->visitReports()->whereKey($reportId)->firstOrFail();
-            $service->updateVisitReport($record, $reportId, $request->validated(), $request->attributes->get('current_user'));
-        } else {
-            $service->createVisitReport($record, $request->validated(), $request->attributes->get('current_user'));
+        try {
+            $record = $this->accessibleRecord($request, $monitoringRecord, true);
+            if ($reportId) {
+                $record->visitReports()->whereKey($reportId)->firstOrFail();
+                $service->updateVisitReport($record, $reportId, $request->validated(), $request->attributes->get('current_user'));
+            } else {
+                $service->createVisitReport($record, $request->validated(), $request->attributes->get('current_user'));
+            }
+        } catch (ValidationException $exception) {
+            throw $exception->errorBag('monitoringVisit');
         }
         return redirect()->route($this->context($request)['monitoringPrefix'].'.visits', $record)
             ->with('success', 'Visit Report saved.');

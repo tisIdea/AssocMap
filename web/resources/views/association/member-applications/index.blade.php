@@ -86,7 +86,7 @@
         @if($errors->any())
             <div class="notice notice-error" role="alert"><div>@foreach($errors->all() as $error)<p>{{ $error }}</p>@endforeach</div></div>
         @endif
-        <form method="POST" action="{{ route('association.member-applications.store') }}" id="member-application-form" enctype="multipart/form-data">
+        <form method="POST" action="{{ route('association.member-applications.store') }}" id="member-application-form" data-feedback-error-bag="default" enctype="multipart/form-data">
             @csrf
             <div class="form-grid">
                 @foreach([
@@ -192,6 +192,6 @@
     position.addEventListener('change', () => syncOtherPosition(true));
     syncOtherPosition();
     @if($errors->any())
-        document.getElementById('submit-member-application').showModal();
+        document.getElementById('submit-member-application').dataset.feedbackRestore = 'true';
     @endif
 @endpush

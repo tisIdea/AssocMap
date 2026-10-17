@@ -3,7 +3,6 @@
 @include('monitoring.partials.styles')
 <div data-workspace-module="monitoring" data-workspace-title="Monitoring">
 @include('monitoring.partials.context')
-@if(session('success'))<p class="notice notice-success" role="status">{{ session('success') }}</p>@endif
 <section class="card" style="padding:20px"><h2>{{ $section === 'overview' ? 'Quarterly Notes' : ucfirst($section) }}</h2>
 @include('monitoring.partials.project-shortcuts')
 @if($canManage && $section !== 'overview')<div class="monitoring-actions"><a class="button" href="{{ route($monitoringPrefix.'.section.edit', [$record, $section]) }}">Manage {{ ucfirst($section) }}</a></div>@endif

@@ -39,6 +39,7 @@ class MonitoringPeriodTest extends TestCase
         $this->assertInstanceOf(IsolatedDatabaseManager::class, DB::getFacadeRoot());
         $this->assertSame('sqlite', DB::connection()->getDriverName());
         $this->assertSame(':memory:', DB::connection()->getConfig('database'));
+        config(['app.key' => 'base64:'.base64_encode(str_repeat('a', 32))]);
         Http::preventStrayRequests();
         Http::fake();
         $this->withoutVite();
@@ -265,6 +266,7 @@ class MonitoringPeriodTest extends TestCase
     #[DataProvider('constraintErrors')]
     public function test_only_the_postgresql_period_constraint_is_a_controlled_duplicate(string $state, string $constraint, bool $duplicate): void
     {
+        $this->app->make('validator');
         $actor = $this->actor();
         $cause = new \PDOException('Synthetic constraint error.');
         $cause->errorInfo = [$state, 7, 'ERROR:  duplicate key value violates unique constraint "'.$constraint."\"\nDETAIL: Synthetic detail."];
@@ -313,7 +315,7 @@ class MonitoringPeriodTest extends TestCase
     public function test_area_validation_still_restores_its_own_modal(): void
     {
         $errors = (new ViewErrorBag)->put('default', new MessageBag(['name' => 'Synthetic area name error.']));
-        $this->withSession(['_old_input' => ['area_type' => 'Municipality'], 'errors' => $errors])
+        $this->withSession(['_old_input' => ['area_form' => 'editor', 'area_type' => 'Municipality'], 'errors' => $errors])
             ->get('/_test/monitoring-area-errors')->assertOk()->assertSee('data-has-errors="true"', false)
             ->assertSee('data-area-validation', false)->assertSee('Synthetic area name error.');
         Http::assertNothingSent();

@@ -1,4 +1,5 @@
 @extends('layouts.admin')
+@php($globalFeedbackNotification = ($unavailable ?? false) || ($invalidFilters ?? false) ? ['type' => 'error', 'title' => 'Audit Logs Unavailable', 'message' => ($invalidFilters ?? false) ? 'Review the audit filter messages and try again.' : 'Audit logs are temporarily unavailable. No audit history was changed.'] : null)
 
 @section('content')
     @php
@@ -15,7 +16,7 @@
             <div class="notice notice-error" role="alert"><div><strong>Correct the filter parameters.</strong><ul>@foreach($filterErrors ?? [] as $error)<li>{{ $error }}</li>@endforeach</ul></div></div>
         @endif
         @if($unavailable ?? false)
-            <div class="notice notice-error" role="alert">Audit logs are temporarily unavailable. No audit history was changed.</div>
+            <div class="notice notice-error" role="alert" data-feedback-fallback>Audit logs are temporarily unavailable. No audit history was changed.</div>
             <p><a class="button" href="{{ route('admin.audit-logs.index') }}">Retry audit logs</a></p>
         @endif
         <section class="card list-card">

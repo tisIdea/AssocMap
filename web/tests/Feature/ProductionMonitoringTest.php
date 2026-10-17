@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\MonitoringRecord;
 use App\Models\UserProfile;
 use App\Services\MonitoringService;
+use App\Services\IncomeMonitoringService;
 use App\Services\ProductionMonitoringService;
 use App\Services\SupabaseAuthService;
 use Illuminate\Database\Schema\Blueprint;
@@ -37,6 +38,7 @@ class ProductionMonitoringTest extends TestCase
         $this->assertInstanceOf(IsolatedDatabaseManager::class, DB::getFacadeRoot());
         $this->assertSame('sqlite', DB::connection()->getDriverName());
         $this->assertSame(':memory:', DB::connection()->getConfig('database'));
+        config(['app.key' => 'base64:'.base64_encode(str_repeat('a', 32))]);
         Http::swap((new Factory)->preventStrayRequests());
         $this->withoutVite();
         $this->schema();
@@ -85,6 +87,7 @@ class ProductionMonitoringTest extends TestCase
         Schema::create('project_materials', function (Blueprint $table) { $table->uuid('id')->primary(); $table->uuid('project_id'); });
         Schema::create('quarters', function (Blueprint $table) { $table->smallInteger('id')->primary(); $table->integer('quarter_number'); $table->string('name'); });
         Schema::create('monitoring_records', function (Blueprint $table) {
+            $table->bigInteger('income_version')->default(0);
             $table->uuid('id')->primary(); $table->uuid('project_id'); $table->integer('year'); $table->smallInteger('quarter_id');
             $table->date('monitoring_date'); $table->uuid('monitored_by'); $table->boolean('site_validated');
             $table->string('project_status'); $table->text('issues_encountered')->nullable(); $table->text('actions_taken')->nullable();
@@ -241,7 +244,7 @@ class ProductionMonitoringTest extends TestCase
     {
         $record = $this->create(); $production = $record->production()->first();
         $income = [['period_type' => 'quarterly', 'gross_income' => '1200.50']];
-        app(MonitoringService::class)->updateSection($record, 'income', ['production' => [[
+        app(MonitoringService::class)->updateSection($record, 'income', ['income_revision' => app(IncomeMonitoringService::class)->revision($record->fresh()), 'production' => [[
             'id' => $production->id, 'project_product_id' => self::PRODUCT, 'income' => $income]]], $this->actor());
         $before = DB::table('monitoring_income')->get()->toArray();
         app(MonitoringService::class)->updateSection($record, 'production', [

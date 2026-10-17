@@ -37,8 +37,6 @@
         <div><div class="eyebrow">{{ $isFieldOfficer ? 'Field Officer' : 'Program Operations' }}</div><h1 tabindex="-1">Program Activities</h1><p>{{ $isFieldOfficer ? 'Manage program activities for your assigned associations.' : 'Manage association-specific and program-wide activities.' }}</p></div>
     </header>
     @if(!$isFieldOfficer)
-        @if(session('success'))<div class="notice notice-success" role="status">{{ session('success') }}</div>@endif
-        @if(session('error'))<div class="notice notice-error" role="alert">{{ session('error') }}</div>@endif
         @if($errors->any() && !$restore)<div class="notice notice-error" role="alert">@foreach($errors->all() as $error)<p>{{ $error }}</p>@endforeach</div>@endif
     @endif
     <section class="card list-card" aria-label="Program activities">
@@ -102,7 +100,7 @@
     @endif
 @endforeach
 <x-modal id="program-activity-editor" :title="$editing ? 'Edit Program Activity' : 'Add Program Activity'">
-    <form method="POST" action="{{ $editing['update_url'] ?? route($activityPrefix.'.store') }}" id="program-activity-form">
+    <form method="POST" action="{{ $editing['update_url'] ?? route($activityPrefix.'.store') }}" id="program-activity-form" @if($restore) data-feedback-error-bag="default" @endif>
         @csrf
         <input type="hidden" name="program_activity_form" value="editor">
         <input type="hidden" name="program_activity_record_id" value="{{ $editing['id'] ?? '' }}">
@@ -199,6 +197,6 @@
         form.elements.saad_activity_id.focus();
     });
     populate(initial, restore ? rows.find(row => String(row.id) === String(initial.program_activity_record_id) && !row.archived) : null);
-    if (restore) document.getElementById('program-activity-editor').showModal();
+    if (restore) document.getElementById('program-activity-editor').dataset.feedbackRestore = 'true';
 </script>
 @endsection

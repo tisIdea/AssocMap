@@ -18,7 +18,8 @@ class UpdateMonitoringSectionRequest extends StoreMonitoringRequest
                 return true;
             }
             if ($section === 'income') {
-                return in_array($key, ['production', 'production.*', 'production.*.id', 'production.*.project_product_id'], true)
+                return in_array($key, ['income_revision', 'production', 'production.*', 'production.*.id', 'production.*.project_product_id'], true)
+                    || str_contains($key, '.deleted_income_ids')
                     || str_starts_with($key, 'production.*.income')
                     || preg_match('/^production\.\d+\.income\./', $key);
             }

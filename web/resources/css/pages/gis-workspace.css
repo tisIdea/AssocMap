@@ -6,11 +6,6 @@
 .gis-module .area-list-switch { flex-wrap: wrap; }
 .gis-module .area-list-switch .button { flex: 0 0 auto; white-space: nowrap; }
 .gis-module .button { max-width: 100%; }
-.gis-notification { position: fixed; right: 16px; bottom: 16px; z-index: 80; width: min(430px, calc(100% - 32px)); pointer-events: none; }
-.gis-notification-content { display: flex; align-items: flex-start; gap: 12px; padding: 16px; border: 1px solid #cee2d6; border-left: 4px solid #398665; border-radius: 8px; background: white; color: #355847; box-shadow: 0 9px 35px #17395126; pointer-events: auto; }
-.gis-notification-content[hidden] { display: none; }
-.gis-notification-content p { flex: 1; min-width: 0; margin: 0; overflow-wrap: anywhere; }
-.gis-notification-content .button { flex-shrink: 0; }
 .gis-filters { padding: 18px; margin-bottom: 18px; }
 .gis-filters summary { cursor: pointer; font-weight: 650; }
 .gis-filter-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-top: 16px; }

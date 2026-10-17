@@ -1,3 +1,6 @@
+import { applyFormErrors, errorFeedback, showFeedback, showOperationError } from '../../core/feedback.js';
+import { initReportDownloads } from '../report-download.js';
+
 function element(tag, text, className) {
     const node = document.createElement(tag);
     if (text !== undefined) node.textContent = text;
@@ -12,6 +15,7 @@ export function initReports() {
     const preview = root.querySelector('[data-report-result]');
     const status = root.querySelector('[data-report-status]');
     const exportForm = root.querySelector('[data-report-export]');
+    initReportDownloads(exportForm);
     const initial = JSON.parse(root.querySelector('[data-report-initial]').textContent);
     root.dataset.reportsInitialized = 'true';
     const field = name => form.elements.namedItem(name);
@@ -25,10 +29,12 @@ export function initReports() {
     }
 
     function exportsEnabled(enabled) {
-        exportForm?.querySelectorAll('button').forEach(button => { button.disabled = !enabled; });
+        if (exportForm) exportForm.dataset.exportReady = String(enabled);
+        exportForm?.querySelectorAll('button').forEach(button => { button.disabled = !enabled || exportForm.dataset.downloadPending === 'true'; });
     }
 
     function showStatus(message, error = false) {
+        delete status.dataset.feedbackFallback;
         status.textContent = message;
         status.setAttribute('role', error ? 'alert' : 'status');
         status.classList.toggle('notice-error', error);
@@ -76,14 +82,17 @@ export function initReports() {
             throw new Error('Unable to load the report. Check your connection or sign in again, then retry.');
         }
         const contentType = response.headers.get('content-type') || '';
-        if (!contentType.includes('application/json')) throw new Error('Your session may have expired. Sign in again.');
+        const failure = new Error(errorFeedback(response.ok ? 503 : response.status, { context: 'Report' }).message);
+        failure.status = response.ok ? 503 : response.status;
+        if (!contentType.includes('application/json')) throw failure;
         let body;
         try { body = await response.json(); }
-        catch { throw new Error('The reporting response could not be read. Reload the page and retry.'); }
+        catch { throw failure; }
         if (!response.ok) {
-            const details = Object.values(body.errors || {}).flat().join(' ');
-            throw new Error(details || body.message || 'Reporting is temporarily unavailable.');
+            failure.fields = response.status === 422 ? body?.errors || {} : {};
+            throw failure;
         }
+        if (!body?.data || typeof body.data !== 'object') throw failure;
         return body.data;
     }
 
@@ -272,9 +281,18 @@ export function initReports() {
             if (current !== request || started !== revision || current.signal.aborted) return;
             render(result);
             showStatus(result.empty ? 'Report loaded. No matching observations.' : 'Report loaded from authorized records.');
+            void showFeedback({ type: 'success', title: 'Report Loaded', message: result.empty
+                ? 'The report was loaded. No recorded observations match these filters.' : 'The report was loaded from your authorized records.',
+                returnFocus: form.querySelector('[data-report-submit]') });
+            status.dataset.feedbackFallback = '';
             history.replaceState(null, '', `${form.action}?${query}`);
         } catch (error) {
-            if (current === request && started === revision && error.name !== 'AbortError') showStatus(error.message, true);
+            if (current === request && started === revision && error.name !== 'AbortError') {
+                showStatus(error.message, true);
+                applyFormErrors(form, error.fields);
+                void showOperationError(error, { context: 'Report', returnFocus: form.querySelector('[data-report-submit]') });
+                status.dataset.feedbackFallback = '';
+            }
         } finally {
             if (current === request) {
                 request = undefined;

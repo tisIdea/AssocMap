@@ -14,7 +14,7 @@
 </head>
 
 <body class="public-page staff-login-page">
-    <main class="staff-login-main" aria-labelledby="staff-login-title">
+    <main id="main-content" tabindex="-1" class="staff-login-main" aria-labelledby="staff-login-title">
         <div class="staff-login-wrap">
 
             <div class="staff-login-brand">
@@ -49,6 +49,7 @@
                 <form
                     method="POST"
                     action="{{ route('login.store') }}"
+                    data-feedback-error-bag="default"
                     aria-describedby="staff-login-note"
                 >
                     @csrf
@@ -155,5 +156,6 @@
 
         </div>
     </main>
+    <x-global-feedback />
 </body>
 </html>

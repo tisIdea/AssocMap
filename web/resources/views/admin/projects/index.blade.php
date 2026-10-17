@@ -41,8 +41,6 @@
     @if(!$navigationProject)<p class="notice notice-error" role="alert">The requested project is unavailable or is outside your current project permissions.</p>@endif
 @endif
 @if($prefix === 'admin.projects')
-    @if(session('success'))<div class="notice notice-success" role="status">{{ session('success') }}</div>@endif
-    @if(session('error'))<div class="notice notice-error" role="alert">{{ session('error') }}</div>@endif
     @if($errors->any() && !$restore)<div class="notice notice-error" role="alert">@foreach($errors->all() as $error)<p>{{ $error }}</p>@endforeach</div>@endif
 @endif
 <section class="card list-card" aria-label="Projects">
@@ -91,7 +89,7 @@
     @endif
 @endforeach
 <x-modal id="project-editor" :title="$editing ? 'Edit Project' : 'Add Project'">
-    <form method="POST" action="{{ $editing['update_url'] ?? route($prefix.'.store') }}" id="project-form">
+    <form method="POST" action="{{ $editing['update_url'] ?? route($prefix.'.store') }}" id="project-form" @if($restore) data-feedback-error-bag="default" @endif>
         @csrf
         <input type="hidden" name="project_form" value="editor"><input type="hidden" name="project_record_id" value="{{ $editing['id'] ?? '' }}"><input type="hidden" name="_method" value="PATCH" @disabled(!$editing)>
         <p>Fields marked * are required.</p>
@@ -258,15 +256,14 @@
         form.elements.association_id.focus();
     });
     populate(initial, restore ? records.find(row => String(row.id) === String(initial.project_record_id) && !row.archived_at && row.can_mutate) : null);
-    if (restore) document.getElementById('project-editor').showModal();
+    if (restore) document.getElementById('project-editor').dataset.feedbackRestore = 'true';
     else if (navigationProject) {
         const record = records.find(row => String(row.id) === navigationProject && !row.archived_at && row.can_mutate);
         if (record) {
             populate({...record, status: record.status_value}, record);
-            document.getElementById('project-editor').showModal();
+            document.getElementById('project-editor').dataset.feedbackRestore = 'true';
             const heading = document.getElementById('project-' + resourceSection + '-heading');
-            heading.scrollIntoView({block: 'start'});
-            heading.focus({preventScroll: true});
+            document.getElementById('project-editor').feedbackFocusTarget = heading;
         }
     }
     document.querySelectorAll('[data-return-monitoring]').forEach(link => link.addEventListener('click', event => {

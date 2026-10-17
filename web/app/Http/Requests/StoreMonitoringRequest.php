@@ -4,6 +4,7 @@ namespace App\Http\Requests;
 
 use App\Models\ProjectProduct;
 use App\Models\Quarter;
+use App\Services\IncomeMonitoringService;
 use App\Services\ProductionMonitoringService;
 use Illuminate\Support\Str;
 use Illuminate\Foundation\Http\FormRequest;
@@ -50,7 +51,7 @@ class StoreMonitoringRequest extends FormRequest
                             continue;
                         }
 
-                        if (array_key_exists('remarks', $incomeItem)) {
+                        if (array_key_exists('remarks', $incomeItem) && is_string($incomeItem['remarks'])) {
                             $production[$productionIndex]
                                 ['income'][$incomeIndex]['remarks'] =
                                     $incomeItem['remarks'] !== null
@@ -196,6 +197,12 @@ class StoreMonitoringRequest extends FormRequest
             'conducted_by_user_id' => ['nullable', 'uuid'],
             'conducted_by' => ['nullable', 'string', 'max:255'],
             'production_revision' => [$record !== null && ($this->route('section') === 'production' || ($this->route('section') === null && $this->exists('production'))) ? 'required' : 'nullable', 'string', 'size:64'],
+            'income_revision' => [$record !== null && ($this->route('section') === 'income'
+                || ($this->route('section') === null && is_array($this->input('production'))
+                    && app(IncomeMonitoringService::class)->includesEdits($this->input('production'))))
+                ? 'required' : 'nullable', 'string', 'regex:/\A[a-f0-9]{64}\z/D'],
+            'production.*.deleted_income_ids' => [$record === null ? 'prohibited' : 'sometimes', 'array'],
+            'production.*.deleted_income_ids.*' => ['required', 'uuid', 'distinct'],
             'production.*.monthly_details' => ['sometimes', 'array', 'size:3'],
             'production.*.monthly_details.*' => ['array:id,month,activity_count,total_quantity,remarks'],
             'production.*.monthly_details.*.id' => ['nullable', 'uuid'],
@@ -260,7 +267,6 @@ class StoreMonitoringRequest extends FormRequest
             'production.*.income.*.id' => [
                 'nullable',
                 'uuid',
-                'exists:monitoring_income,id',
             ],
 
             'production.*.income.*.period_type' => [
@@ -389,9 +395,11 @@ class StoreMonitoringRequest extends FormRequest
                     foreach ($row['income'] as $incomeIndex => $income) {
                         $rules["production.{$index}.income.{$incomeIndex}.id"] = [
                             'nullable', 'uuid', Rule::prohibitedIf($record === null || $parentId === null),
-                            Rule::exists('monitoring_income', 'id')->where('monitoring_production_id', $parentId),
                         ];
                     }
+                }
+                if ($collection === 'production' && ($record === null || empty($row['id']))) {
+                    $rules["production.{$index}.deleted_income_ids"] = ['prohibited'];
                 }
             }
         }

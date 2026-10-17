@@ -37,8 +37,6 @@
 <div data-workspace-module="trainings" data-workspace-title="Trainings">
     <header class="page-header"><div><div class="eyebrow">{{ $trainingPrefix === 'admin.trainings' ? 'Program Operations' : 'Field Officer' }}</div><h1 tabindex="-1">Trainings</h1><p>{{ $trainingPrefix === 'admin.trainings' ? 'Manage training activities, participants, and attendance.' : 'Manage training activities and attendance for your assigned associations.' }}</p></div></header>
     @if($trainingPrefix === 'admin.trainings')
-        @if(session('success'))<div class="notice notice-success" role="status">{{ session('success') }}</div>@endif
-        @if(session('error'))<div class="notice notice-error" role="alert">{{ session('error') }}</div>@endif
         @if($errors->any() && !$restore)<div class="notice notice-error" role="alert">@foreach($errors->all() as $error)<p>{{ $error }}</p>@endforeach</div>@endif
     @endif
     <section class="card list-card" aria-label="Trainings">
@@ -78,7 +76,7 @@
     @endif
 @endforeach
 <x-modal id="training-editor" :title="$editing ? 'Edit Training' : 'Add Training'">
-    <form method="POST" action="{{ $editing['update_url'] ?? route($trainingPrefix.'.store') }}" id="training-form">
+    <form method="POST" action="{{ $editing['update_url'] ?? route($trainingPrefix.'.store') }}" id="training-form" @if($restore) data-feedback-error-bag="default" @endif>
         @csrf
         <input type="hidden" name="training_form" value="editor"><input type="hidden" name="training_record_id" value="{{ $editing['id'] ?? '' }}"><input type="hidden" name="_method" value="PATCH" @disabled(!$editing)>
         <p>Fields marked * are required.</p>
@@ -260,6 +258,6 @@
         association.focus();
     });
     populate(initial, restore ? records.find(row => String(row.id) === String(initial.training_record_id) && !row.archived) : null);
-    if (restore) document.getElementById('training-editor').showModal();
+    if (restore) document.getElementById('training-editor').dataset.feedbackRestore = 'true';
 </script>
 @endsection

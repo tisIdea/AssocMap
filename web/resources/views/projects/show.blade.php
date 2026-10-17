@@ -4,7 +4,6 @@
 <section data-workspace-module="projects" data-workspace-title="Project Details">
     <a class="back-link" href="{{ route($prefix.'.projects.index') }}"><x-icon name="back" />Back to Projects</a>
     @include('partials.page-header', ['title' => 'Project Details', 'description' => $project->title, 'eyebrow' => 'Project Management'])
-    @if(session('success'))<div class="notice notice-success" role="status">{{ session('success') }}</div>@endif
     @php($closureErrors = $errors->getBag('projectClosure'))
     @php($terminationErrors = $errors->getBag('projectTermination'))
     @if(!$canClose && $closureErrors->any())<div class="notice notice-error" role="alert"><ul>@foreach($closureErrors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>@endif

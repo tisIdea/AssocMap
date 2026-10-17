@@ -123,7 +123,7 @@
         <x-modal :id="'member-profile-'.$member->id" title="Edit Member">
             <p>{{ $nameOf($member) }} · {{ $member->association->name }}</p>
             @if($restoring && old('member_action') === 'profile')<div class="notice notice-error" role="alert">@foreach($errors->all() as $error)<p>{{ $error }}</p>@endforeach</div>@endif
-            <form method="POST" action="{{ route('field-officer.members.update', $member) }}">
+            <form method="POST" action="{{ route('field-officer.members.update', $member) }}" @if($restoring && old('member_action') === 'profile') data-feedback-error-bag="default" @endif>
                 @csrf @method('PATCH')
                 <input type="hidden" name="member_record_id" value="{{ $member->id }}"><input type="hidden" name="member_action" value="profile">
                 <input type="hidden" name="expected_updated_at" value="{{ $restoring && old('member_action') === 'profile' ? $oldVersion : $version }}">
@@ -158,7 +158,7 @@
                 <p>The retained position is {{ $member->position?->name ?? 'unavailable' }}. Reactivation cannot replace an existing active President or Vice President.</p>
             @endif
             @if($restoring && old('member_action') === $action)<div class="notice notice-error" role="alert">@foreach($errors->all() as $error)<p>{{ $error }}</p>@endforeach</div>@endif
-            <form method="POST" action="{{ route('field-officer.members.'.$action, $member) }}">
+            <form method="POST" action="{{ route('field-officer.members.'.$action, $member) }}" @if($restoring && old('member_action') === $action) data-feedback-error-bag="default" @endif>
                 @csrf @method('PATCH')
                 <input type="hidden" name="member_record_id" value="{{ $member->id }}"><input type="hidden" name="member_action" value="{{ $action }}">
                 <input type="hidden" name="expected_updated_at" value="{{ $restoring && old('member_action') === $action ? $oldVersion : $version }}">
@@ -173,6 +173,7 @@
     const memberAction = {{ Illuminate\Support\Js::from($errors->any() ? old('member_action') : null) }};
     const memberRecord = {{ Illuminate\Support\Js::from(old('member_record_id')) }};
     if (['profile', 'archive', 'reactivate'].includes(memberAction) && typeof memberRecord === 'string') {
-        document.getElementById('member-' + memberAction + '-' + memberRecord)?.showModal();
+        const restoredDialog = document.getElementById('member-' + memberAction + '-' + memberRecord);
+        if (restoredDialog) restoredDialog.dataset.feedbackRestore = 'true';
     }
 @endpush

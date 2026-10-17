@@ -7,7 +7,9 @@ import { initReports } from './pages/admin/reports.js';
 import { initStaffLogin } from './pages/staff-login.js';
 import { initUserInvitations } from './pages/user-invitations.js';
 import { initProjectClosure } from './pages/project-closure.js';
+import { initFeedback, showFeedback } from './core/feedback.js';
 
+initFeedback();
 initDisclosures();
 initDialogs();
 initAdminNavigation();
@@ -26,5 +28,7 @@ if (gisRoot) {
         status.textContent = 'GIS is unavailable. Reload or try again later.';
         status.classList.add('notice-error');
         status.setAttribute('role', 'alert');
+        void showFeedback({ type: 'error', title: 'GIS Unavailable', message: 'GIS could not be loaded. Reload the page or try again later.' });
+        status.dataset.feedbackFallback = '';
     });
 }

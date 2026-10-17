@@ -5,7 +5,6 @@
     <a class="back-link" href="{{ route($prefix.'.association-officers.index') }}"><x-icon name="back" />Back to Association Officers</a>
     @include('partials.page-header', ['title' => 'Association Officers', 'description' => $association->name, 'eyebrow' => 'Association Management'])
     <p>President: {{ $association->currentPresident ? collect([$association->currentPresident->first_name, $association->currentPresident->middle_name, $association->currentPresident->last_name, $association->currentPresident->suffix])->filter(fn ($part) => filled($part))->implode(' ') : 'No active President assigned' }}</p>
-    @if(session('success'))<div class="notice notice-success" role="status">{{ session('success') }}</div>@endif
     @php($officerErrors = $errors->getBag('officerPosition'))
     @if($officerErrors->any())<div class="notice notice-error" role="alert"><ul>@foreach($officerErrors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>@endif
     <div class="notice"><p>Each member has one current organizational position. Only one active, nonarchived President and Vice President may hold office; vacancies are allowed. Other officer positions may have multiple holders. Changing positions preserves membership and account access.</p></div>
@@ -20,7 +19,7 @@
                     <td>@if(!$association->archived_at && $association->status === 'active')
                         @if($officer->position?->is_active)<a class="button" href="{{ route($prefix.'.association-officers.show', ['association' => $association, 'replace' => $officer->id]) }}">Replace</a>
                         @else<p>Inactive positions cannot be assigned to a replacement.</p>@endif
-                        <form method="POST" action="{{ route($prefix.'.association-officers.update', $association) }}">
+                        <form method="POST" action="{{ route($prefix.'.association-officers.update', $association) }}" @if($officerErrors->any() && old('member_id') === $officer->id) data-feedback-error-bag="officerPosition" @endif>
                             @csrf @method('PATCH')
                             <input type="hidden" name="action" value="remove">
                             <input type="hidden" name="member_id" value="{{ $officer->id }}">
@@ -54,7 +53,7 @@
             <nav aria-label="Eligible member pages">@if($members->previousPageUrl())<a class="button" href="{{ $members->previousPageUrl() }}">Previous</a>@endif @if($members->nextPageUrl())<a class="button" href="{{ $members->nextPageUrl() }}">Next</a>@endif</nav>
         </section>
         @if($selected)
-            <form id="officer-appointment" class="card form-section" method="POST" action="{{ route($prefix.'.association-officers.update', $association) }}">
+            <form id="officer-appointment" class="card form-section" method="POST" action="{{ route($prefix.'.association-officers.update', $association) }}" @if($officerErrors->any() && old('member_id') === $selected->id) data-feedback-error-bag="officerPosition" @endif>
                 @csrf @method('PATCH')
                 <h2>{{ $former ? 'Confirm replacement' : 'Assign officer position' }}</h2>
                 <p>{{ $selected->first_name }} {{ $selected->last_name }} — currently {{ $selected->position?->name }}. The new position replaces this member's current position.</p>

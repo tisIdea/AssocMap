@@ -1,7 +1,10 @@
 import { L, createGisMap, featureLayer, fitLayer, locationLabels } from './gis-map.js';
 import { addDetail, debounce, fillOptions, gisRequest, queryUrl, showStatus } from '../core/gis-api.js';
+import { showFeedback, showOperationError } from '../core/feedback.js';
 
 export async function initGis(root) {
+    if (root.dataset.gisInitialized === 'true') return;
+    root.dataset.gisInitialized = 'true';
     const base = root.dataset.gisBase.replace(/\/$/, '');
     const publicView = root.dataset.gisPublic === 'true';
     const manager = root.dataset.gisManager === 'true';
@@ -12,27 +15,10 @@ export async function initGis(root) {
     const selection = L.featureGroup().addTo(map);
     const dialog = root.querySelector('[data-gis-confirm]');
     const retry = root.querySelector('[data-gis-retry]');
-    const notification = manager ? document.getElementById('gis-action-notification') : null;
     let view = 'map', page = 1, lastPage = 1, selected = null, requestController, optionController;
     let pendingAction = null, opener = null, mutating = false, fitting = false, retryFit = false;
     let viewportTimer, searchTimer;
 
-    function clearPublicationNotification() {
-        if (!notification) return;
-        notification.querySelector('[data-gis-notification-content]').hidden = true;
-        notification.querySelector('[data-gis-notification-message]').textContent = '';
-    }
-
-    function showPublicationNotification() {
-        if (!notification) return;
-        notification.querySelector('[data-gis-notification-content]').hidden = false;
-        notification.querySelector('[data-gis-notification-message]').textContent = 'Success! Location published.';
-    }
-
-    notification?.querySelector('[data-gis-notification-dismiss]').addEventListener('click', () => {
-        clearPublicationNotification();
-        root.querySelector('[data-gis-reload]').focus();
-    });
 
     function actorName(name, recorded = true) {
         if (!recorded) return null;
@@ -158,7 +144,7 @@ export async function initGis(root) {
         root.querySelector('[data-gis-page="next"]').disabled = page >= lastPage;
     }
 
-    async function load({ fit = false } = {}) {
+    async function load({ fit = false, notifyFailure = false, returnFocus } = {}) {
         if (mutating) return false;
         clearTimeout(viewportTimer);
         clearTimeout(searchTimer);
@@ -186,7 +172,7 @@ export async function initGis(root) {
             if (!isCurrent() || requestedUrl !== dataUrl().toString()) return false;
             if (!Array.isArray(data.features) || data.type !== 'FeatureCollection' || !data.meta) throw new Error('GIS data is unavailable.');
             if (view === 'list' && data.meta.page > data.meta.last_page) {
-                page = Math.max(1, data.meta.last_page); return await load();
+                page = Math.max(1, data.meta.last_page); return await load({ notifyFailure, returnFocus });
             }
             features.clearLayers(); selection.clearLayers();
             if (view === 'map') {
@@ -204,6 +190,10 @@ export async function initGis(root) {
             features.clearLayers(); selection.clearLayers(); clearSelection(); root.querySelector('[data-gis-list]').replaceChildren();
             retry.hidden = false;
             showStatus(status, `${error.message || 'GIS records could not be loaded.'} Use Retry GIS records.`, true);
+            if (notifyFailure) {
+                void showOperationError(error, { returnFocus });
+                status.dataset.feedbackFallback = '';
+            }
             return false;
         } finally {
             if (requestController === controller) root.removeAttribute('aria-busy');
@@ -287,9 +277,9 @@ export async function initGis(root) {
             dialog.querySelector('[data-gis-confirm-cancel]').disabled = true;
             mutating = true; form.inert = true; requestController?.abort(); optionController?.abort();
             const { action, feature } = pendingAction;
-            clearPublicationNotification();
             showStatus(status, action === 'delete' ? 'Deleting GIS location permanently…' : 'Updating GIS location…');
-            let publicationConfirmed = false;
+            let operationConfirmed = false;
+            const outcome = { publish: 'published', unpublish: 'unpublished', archive: 'archived', delete: 'permanently deleted' }[action];
             try {
                 const deleting = action === 'delete';
                 const result = await gisRequest(`${base}/${encodeURIComponent(feature.id)}${deleting ? '' : `/${action}`}`, { method: deleting ? 'DELETE' : 'PATCH',
@@ -299,22 +289,31 @@ export async function initGis(root) {
                         || result.properties.archived_at !== null) {
                         throw new Error('Publication could not be confirmed. Refresh records before retrying.');
                     }
-                    publicationConfirmed = true;
                 }
+                if (action !== 'publish' && (result?.id !== feature.id || (action !== 'delete' && result?.type !== 'Feature'))) {
+                    const error = new Error('Action could not be confirmed. Refresh records before retrying.');
+                    error.status = 503; throw error;
+                }
+                operationConfirmed = true;
                 dialog.close();
-                if (publicationConfirmed) showPublicationNotification();
                 clearSelection(); features.clearLayers(); root.querySelector('[data-gis-list]').replaceChildren();
                 mutating = false;
                 const refreshed = await load();
-                const outcome = { publish: 'published', unpublish: 'unpublished', archive: 'archived', delete: 'permanently deleted' }[action];
-                showStatus(status, publicationConfirmed && !refreshed
-                    ? 'Publication was confirmed, but records could not be refreshed. Use Retry GIS records or Refresh Records.'
+                showStatus(status, operationConfirmed && !refreshed
+                    ? `Location ${outcome}, but records could not be refreshed. Use Retry GIS records or Refresh Records.`
                     : `Location ${outcome}.` + (refreshed ? '' : ' Records could not be refreshed. Use Refresh records.'), !refreshed);
+                void showFeedback({ type: 'success', title: 'GIS Location Updated',
+                    message: `Location ${outcome}.` + (refreshed ? '' : ' The register could not refresh. Use Refresh Records before another action.'), returnFocus: opener });
+                status.dataset.feedbackFallback = '';
             } catch (error) {
                 dialog.close(); clearSelection(); features.clearLayers(); root.querySelector('[data-gis-list]').replaceChildren();
-                showStatus(status, publicationConfirmed
-                    ? 'Publication was confirmed, but the GIS view could not be refreshed. Use Refresh Records.'
+                showStatus(status, operationConfirmed
+                    ? `Location ${outcome}, but the GIS view could not be refreshed. Use Refresh Records.`
                     : (error.status ? error.message : 'Action could not be confirmed. Refresh records before retrying.'), true);
+                if (operationConfirmed) void showFeedback({ type: 'success', title: 'GIS Change Confirmed',
+                    message: `Location ${outcome}, but the register could not refresh. Use Refresh Records.`, returnFocus: opener });
+                else void showOperationError(error, { returnFocus: opener });
+                status.dataset.feedbackFallback = '';
             } finally {
                 mutating = false; form.inert = false; button.disabled = false; pendingAction = null;
                 dialog.querySelector('[data-gis-confirm-cancel]').disabled = false;
@@ -323,8 +322,8 @@ export async function initGis(root) {
     }
 
     root.querySelectorAll('[data-gis-view]').forEach(button => button.addEventListener('click', () => setView(button.dataset.gisView)));
-    root.querySelector('[data-gis-reload]').addEventListener('click', () => { clearSelection(); loadOptions(); load({ fit: true }); });
-    retry.addEventListener('click', () => load({ fit: retryFit }));
+    root.querySelector('[data-gis-reload]').addEventListener('click', event => { clearSelection(); loadOptions(); load({ fit: true, notifyFailure: true, returnFocus: event.currentTarget }); });
+    retry.addEventListener('click', () => load({ fit: retryFit, notifyFailure: true, returnFocus: retry }));
     form.addEventListener('submit', event => { event.preventDefault(); page = 1; clearSelection(); load({ fit: true }); });
     form.addEventListener('change', event => {
         if (event.target === form.elements.q || event.target.matches('[data-gis-option-search]')) return;

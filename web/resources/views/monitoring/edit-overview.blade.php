@@ -4,7 +4,7 @@
 @include('monitoring.partials.context', ['section' => 'overview'])
 <section class="card" style="padding:20px"><h2>Edit Quarterly Overview</h2>
 @if($errors->any())<div class="notice notice-error" role="alert">@foreach($errors->all() as $error)<p>{{ $error }}</p>@endforeach</div>@endif
-<form method="POST" action="{{ route($monitoringPrefix.'.overview.update', $record) }}">@csrf @method('PATCH')
+<form method="POST" action="{{ route($monitoringPrefix.'.overview.update', $record) }}" data-feedback-error-bag="default">@csrf @method('PATCH')
     <div class="form-grid">
         <div class="field"><label for="monitored-by">Monitored By</label><select id="monitored-by" name="monitored_by">
             @if(!$record->monitored_by)<option value="" @selected(!old('monitored_by', $record->monitored_by))>Not recorded (keep historical attribution)</option>

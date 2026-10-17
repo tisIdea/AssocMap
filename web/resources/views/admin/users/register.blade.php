@@ -1,4 +1,5 @@
 @extends('layouts.admin')
+@php($globalFeedbackNotification = $users === null ? ['type' => 'error', 'title' => 'User Records Unavailable', 'message' => 'User records could not be loaded. No account data was changed. Reload to retry.'] : null)
 
 @section('content')
 <section data-workspace-module="users" data-workspace-title="User Management">
@@ -6,7 +7,7 @@
     <p><a class="button button-primary" href="{{ route('admin.user-invitations.create') }}">Invite User</a></p>
     <div class="notice"><p>Profiles and roles come from AssocMap. Auth-only identities are not application accounts and are not listed. Profile status does not prove that an Auth identity can currently sign in.</p></div>
     @if($users === null)
-        <div class="notice notice-error" role="alert">User records are unavailable. No account data was changed. Reload to retry.</div>
+        <div class="notice notice-error" role="alert" data-feedback-fallback>User records are unavailable. No account data was changed. Reload to retry.</div>
     @else
         <section class="card list-card">
             <div class="table-scroll"><table class="data-table">

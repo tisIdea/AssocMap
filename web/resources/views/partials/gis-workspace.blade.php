@@ -63,11 +63,3 @@
     @endif
     <noscript><p class="notice">Enable JavaScript to use the GIS map, record list, and controls.</p></noscript>
 </section>
-@if($gisManager)
-    <div id="gis-action-notification" class="gis-notification" role="status" aria-live="polite" aria-atomic="true">
-        <div class="gis-notification-content" data-gis-notification-content hidden>
-            <p data-gis-notification-message></p>
-            <button type="button" class="button" data-gis-notification-dismiss aria-label="Dismiss publication notification">Dismiss</button>
-        </div>
-    </div>
-@endif
