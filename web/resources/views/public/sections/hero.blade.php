@@ -1,7 +1,7 @@
 <section id="home" class="public-hero" aria-labelledby="public-hero-title">
     <div class="public-container public-hero-grid">
         <div>
-            <p class="public-eyebrow">BFAR Region VII · SAAD Phase II</p>
+            <p class="public-eyebrow">Association and Project Monitoring</p>
             <h1 id="public-hero-title">AssocMap</h1>
             <p class="public-hero-subtitle">GIS-Based Program Monitoring System<br>for Community Livelihood Associations</p>
             <p class="public-hero-description">A shared workspace for organizing association records, livelihood projects, trainings, monitoring, and geographic information.</p>

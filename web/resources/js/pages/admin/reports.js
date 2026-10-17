@@ -200,7 +200,7 @@ export function initReports() {
         container.append(plot, element('p', 'Chart shows up to 20 groups. The table below provides all recorded values.', 'field-help'));
     }
 
-    function render(result) {
+    function render(result, animateSummaries = false) {
         preview.replaceChildren(element('h2', result.title), element('p', `Generated ${result.meta.generated_at} · ${result.meta.timezone}`),
             element('p', result.meta.scope_basis), element('p', `Associations: ${result.meta.scope.join('; ') || 'None in this scope'}`));
         const context = Object.entries(result.meta.filters).map(([key, value]) => {
@@ -223,7 +223,11 @@ export function initReports() {
             const measures = element('dl', undefined, 'report-measures');
             for (const measure of section.measures) {
                 const card = element('div');
-                card.append(element('dt', measure.label), element('dd', measure.value ?? 'Unobserved'));
+                const value = element('span', measure.value ?? 'Unobserved');
+                if (animateSummaries) value.setAttribute('data-summary-counter', '');
+                const definition = element('dd');
+                definition.append(value);
+                card.append(element('dt', measure.label), definition);
                 measures.append(card);
             }
             container.append(measures);
@@ -307,7 +311,7 @@ export function initReports() {
         const selected = Object.fromEntries(filters());
         const applied = initial.result.meta.filters;
         const keys = new Set([...Object.keys(selected), ...Object.keys(applied)]);
-        if ([...keys].every(key => String(selected[key] ?? '') === String(applied[key] ?? ''))) render(initial.result);
+        if ([...keys].every(key => String(selected[key] ?? '') === String(applied[key] ?? ''))) render(initial.result, true);
         else {
             preview.replaceChildren();
             exportsEnabled(false);

@@ -15,6 +15,7 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->trimStrings(except: ['completion_confirmation', 'termination_confirmation']);
         $middleware->prepend(\App\Http\Middleware\ProtectInvitationActivation::class);
+        $middleware->prepend(\App\Http\Middleware\LocalRequestTiming::class);
         // Trust the local Cloudflare Tunnel reverse proxy.
         $middleware->trustProxies(
             at: ['127.0.0.1', '::1'],

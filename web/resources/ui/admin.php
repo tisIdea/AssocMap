@@ -57,14 +57,14 @@ $modules = [
         ],
     ],
     'members' => [
-        'title' => 'Member Management', 'singular' => 'Member', 'icon' => 'user', 'readonly' => true,
+        'title' => 'Member Management', 'singular' => 'Member', 'icon' => 'users-round', 'readonly' => true,
         'description' => 'View official member records and their membership history.',
         'columns' => ['full_name' => 'Member Name', 'association' => 'Association', 'municipality' => 'Municipality', 'barangay' => 'Barangay', 'area' => 'Specific Area', 'sex' => 'Sex', 'position' => 'Position', 'fishr_registration_number' => 'FishR Registration Number', 'date_registered' => 'Date Registered', 'status' => 'Status'],
         'filters' => [$filter('association', 'Association'), $filter('municipality', 'Municipality'), $filter('barangay', 'Barangay'), $filter('sex', 'Sex'), $filter('position', 'Position'), $filter('status', 'Status')],
         'details' => ['full_name' => 'Full Name', 'association' => 'Association', 'municipality' => 'Municipality', 'barangay' => 'Barangay', 'area' => 'Specific Area', 'birth_date' => 'Birth Date', 'sex' => 'Sex', 'contact_number' => 'Contact Number', 'fishr_registration_number' => 'FishR Registration Number', 'position' => 'Position', 'position_other_text' => 'Other Position Text', 'date_registered' => 'Date Registered', 'status' => 'Member Status', 'archived' => 'Archived', 'archived_at' => 'Archived At'],
     ],
     'projects' => [
-        'title' => 'Projects', 'singular' => 'Project', 'icon' => 'briefcase', 'action' => 'Add Project',
+        'title' => 'Projects', 'singular' => 'Project', 'icon' => 'folder-kanban', 'action' => 'Add Project',
         'description' => 'Organize livelihood interventions and their project materials.',
         'columns' => ['title' => 'Project Title', 'association' => 'Association', 'municipality' => 'Municipality', 'component' => 'SAAD Classification', 'fisheries_category' => 'Fisheries Category', 'commodity' => 'Commodity', 'program_year' => 'Program Year', 'implementation_date' => 'Implementation Date', 'status' => 'Status'],
         'filters' => [...$programFilters, $filter('fisheries_category', 'Fisheries Category', 'checkboxes'), $filter('commodity', 'Commodity'), $filter('status', 'Project Status', 'checkboxes', $options['project_status'])],
@@ -87,7 +87,7 @@ $modules = [
         ],
     ],
     'monitoring' => [
-        'title' => 'Monitoring', 'singular' => 'Monitoring Record', 'icon' => 'trend', 'action' => 'Add Monitoring',
+        'title' => 'Monitoring', 'singular' => 'Monitoring Record', 'icon' => 'clipboard-check', 'action' => 'Add Monitoring',
         'description' => 'Review project performance, production, gross income, and materials together.',
         'columns' => ['project' => 'Project', 'association' => 'Association', 'municipality' => 'Municipality', 'year' => 'Year', 'quarter' => 'Quarter', 'monitoring_date' => 'Monitoring Date', 'project_status' => 'Project Status', 'site_validated' => 'Site Validated'],
         'filters' => [...$geographyFilters, $filter('project', 'Project'), $filter('year', 'Program Year', 'select', $options['program_year']), $filter('quarter', 'Quarter'), $filter('project_status', 'Project Status'), $filter('site_validated', 'Site Validated', 'select', ['Yes', 'No'])],

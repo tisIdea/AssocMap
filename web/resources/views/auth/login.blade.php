@@ -24,14 +24,14 @@
                     aria-label="AssocMap home"
                 >
                     <span class="public-brand-mark">
-                        <x-icon name="map" />
+                        <x-assocmap-mark />
                     </span>
 
                     <span>
                         <strong>
                             Assoc<span>Map</span>
                         </strong>
-                        <small>SAAD Phase II · Region VII</small>
+                        <small>Capstone Project Prototype</small>
                     </span>
                 </a>
             </div>
@@ -49,18 +49,9 @@
                 <form
                     method="POST"
                     action="{{ route('login.store') }}"
-                    data-feedback-error-bag="default"
                     aria-describedby="staff-login-note"
                 >
                     @csrf
-
-                    @if ($errors->any())
-                        <div class="staff-login-errors" role="alert">
-                            @foreach ($errors->all() as $error)
-                                <p>{{ $error }}</p>
-                            @endforeach
-                        </div>
-                    @endif
 
                     <div class="staff-login-field">
                         <label for="staff-email">Email</label>
@@ -74,8 +65,10 @@
                             autocapitalize="none"
                             spellcheck="false"
                             placeholder="Enter your email"
+                            @if($errors->has('email')) aria-invalid="true" aria-describedby="staff-email-error" @endif
                             required
                         >
+                        @error('email')<div id="staff-email-error" class="notice notice-error" role="alert">{{ $message }}</div>@enderror
                     </div>
 
                     <div class="staff-login-field">
@@ -88,6 +81,7 @@
                                 type="password"
                                 autocomplete="current-password"
                                 placeholder="Enter your password"
+                                @if($errors->has('password')) aria-invalid="true" aria-describedby="staff-password-error" @endif
                                 required
                             >
 
@@ -103,6 +97,7 @@
                                 <span>Show</span>
                             </button>
                         </div>
+                        @error('password')<div id="staff-password-error" class="notice notice-error" role="alert">{{ $message }}</div>@enderror
                     </div>
 
                     <div class="staff-login-options">
@@ -156,6 +151,5 @@
 
         </div>
     </main>
-    <x-global-feedback />
 </body>
 </html>

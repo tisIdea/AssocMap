@@ -1,6 +1,6 @@
 <header class="page-header" data-workspace-module="monitoring" data-workspace-title="Monitoring"><div><div class="eyebrow">Quarterly Monitoring</div>
     <h1 tabindex="-1">{{ $record->project?->association?->name ?? 'Association unavailable' }}</h1>
-    <p>{{ $record->project?->title ?? 'Project unavailable' }} · Q{{ $record->quarter?->quarter_number }} {{ $record->year }}</p>
+    <p>@if($monitoringPrefix !== 'association.monitoring' && $record->project)<a href="{{ route($monitoringPrefix === 'admin.monitoring' ? 'admin.projects.show' : 'field-officer.projects.show', $record->project) }}">{{ $record->project->title }}</a>@else{{ $record->project?->title ?? 'Project unavailable' }}@endif · Q{{ $record->quarter?->quarter_number }} {{ $record->year }}</p>
 </div></header>
 <section class="card monitoring-card monitoring-overview" aria-labelledby="quarterly-overview-heading">
     <div class="monitoring-overview-heading"><h2 id="quarterly-overview-heading">Quarterly Overview</h2>

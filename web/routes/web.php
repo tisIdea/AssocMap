@@ -253,6 +253,9 @@ Route::middleware([
     Route::post('/admin/projects/{project}/terminate', [ProjectClosureController::class, 'terminate'])
         ->whereUuid('project')->name('admin.projects.terminate');
 
+    Route::get('/admin/projects/{project}/edit', [AdminProjectController::class, 'edit'])
+        ->whereUuid('project')->name('admin.projects.edit');
+
     Route::post(
         '/admin/projects',
         [AdminProjectController::class, 'store']
@@ -290,6 +293,11 @@ Route::middleware([
         [AdminTrainingController::class, 'index']
     )->name('admin.trainings.index');
 
+    Route::get('/admin/trainings/{training}/edit', [AdminTrainingController::class, 'edit'])
+        ->whereUuid('training')->name('admin.trainings.edit');
+    Route::get('/admin/trainings/{training}', [AdminTrainingController::class, 'show'])
+        ->whereUuid('training')->name('admin.trainings.show');
+
     Route::post(
         '/admin/trainings',
         [AdminTrainingController::class, 'store']
@@ -326,6 +334,11 @@ Route::middleware([
         '/admin/program-activities',
         [AdminProgramActivityController::class, 'index']
     )->name('admin.program-activities.index');
+
+    Route::get('/admin/program-activities/{programActivity}/edit', [AdminProgramActivityController::class, 'edit'])
+        ->whereUuid('programActivity')->name('admin.program-activities.edit');
+    Route::get('/admin/program-activities/{programActivity}', [AdminProgramActivityController::class, 'show'])
+        ->whereUuid('programActivity')->name('admin.program-activities.show');
 
     Route::post(
         '/admin/program-activities',
@@ -485,6 +498,9 @@ Route::middleware([
     Route::post('/field-officer/projects/{project}/terminate', [ProjectClosureController::class, 'terminate'])
         ->whereUuid('project')->name('field-officer.projects.terminate');
 
+    Route::get('/field-officer/projects/{project}/edit', [AdminProjectController::class, 'edit'])
+        ->whereUuid('project')->name('field-officer.projects.edit');
+
     Route::post(
         '/field-officer/projects',
         [FieldOfficerProjectController::class, 'store']
@@ -522,6 +538,11 @@ Route::middleware([
         [FieldOfficerTrainingController::class, 'index']
     )->name('field-officer.trainings.index');
 
+    Route::get('/field-officer/trainings/{training}/edit', [AdminTrainingController::class, 'edit'])
+        ->whereUuid('training')->name('field-officer.trainings.edit');
+    Route::get('/field-officer/trainings/{training}', [AdminTrainingController::class, 'show'])
+        ->whereUuid('training')->name('field-officer.trainings.show');
+
     Route::post(
         '/field-officer/trainings',
         [FieldOfficerTrainingController::class, 'store']
@@ -558,6 +579,11 @@ Route::middleware([
         '/field-officer/program-activities',
         [FieldOfficerProgramActivityController::class, 'index']
     )->name('field-officer.program-activities.index');
+
+    Route::get('/field-officer/program-activities/{programActivity}/edit', [AdminProgramActivityController::class, 'edit'])
+        ->whereUuid('programActivity')->name('field-officer.program-activities.edit');
+    Route::get('/field-officer/program-activities/{programActivity}', [AdminProgramActivityController::class, 'show'])
+        ->whereUuid('programActivity')->name('field-officer.program-activities.show');
 
     Route::post(
         '/field-officer/program-activities',

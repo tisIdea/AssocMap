@@ -1,2 +1,11 @@
 .app-footer { display: flex; justify-content: space-between; gap: 15px; font-size: 9px; color: var(--text-secondary); padding: 0 32px 22px; }.noscript-notice { position: fixed; bottom: 0; left: 0; right: 0; padding: 16px; background: #fff3d4; text-align: center; z-index: 99; }
-body.sidebar-collapsed { --sidebar-width: 78px; }.sidebar-collapsed .brand { padding: 26px 18px; }.sidebar-collapsed .brand-copy, .sidebar-collapsed .sidebar-section-label, .sidebar-collapsed .nav-link > span, .sidebar-collapsed .disclosure-chevron, .sidebar-collapsed .sidebar-program, .sidebar-collapsed .sidebar-collapse > span { display: none; }.sidebar-collapsed .sidebar-nav { padding: 0 10px 20px; }.sidebar-collapsed .nav-link { justify-content: center; padding: 13px; }.sidebar-collapsed .subnav { margin-left: 0; padding-left: 0; border-left: 0; }.sidebar-collapsed .sidebar-collapse .icon { transform: rotate(180deg); }.sidebar-collapsed .sidebar-footer { padding-left: 30px; }
+@media not all and (max-width: 1020px) {
+    body.sidebar-collapsed { --sidebar-width: 78px; }
+    .sidebar-collapsed [data-workspace-sidebar] .brand { padding: 26px 18px; }
+    .sidebar-collapsed [data-workspace-sidebar] :is(.brand-copy, .sidebar-section-label, .nav-link > span, .disclosure-chevron, .sidebar-program, .sidebar-collapse > span) { display: none; }
+    .sidebar-collapsed [data-workspace-sidebar] .sidebar-nav { padding: 0 10px 20px; }
+    .sidebar-collapsed [data-workspace-sidebar] .nav-link { justify-content: center; padding: 13px; }
+    .sidebar-collapsed [data-workspace-sidebar] .subnav { margin-left: 0; padding-left: 0; border-left: 0; }
+    .sidebar-collapsed [data-workspace-sidebar] .sidebar-collapse .icon { transform: rotate(180deg); }
+    .sidebar-collapsed [data-workspace-sidebar] .sidebar-footer { padding-left: 30px; }
+}

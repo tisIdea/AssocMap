@@ -29,7 +29,8 @@ class EnsureSupabaseAuthenticated
                 ]);
         }
 
-        $supabaseUser = $this->supabaseAuth->getUser($accessToken);
+        $supabaseUser = LocalRequestTiming::measure($request, 'supabase_auth',
+            fn () => $this->supabaseAuth->getUser($accessToken));
 
         if (! $supabaseUser || empty($supabaseUser['id'])) {
             $request->session()->invalidate();
@@ -42,8 +43,8 @@ class EnsureSupabaseAuthenticated
                 ]);
         }
 
-        $profile = UserProfile::with('role')
-            ->find($supabaseUser['id']);
+        $profile = LocalRequestTiming::measure($request, 'profile_role',
+            fn () => UserProfile::with('role')->find($supabaseUser['id']));
 
         if (! $profile || ! $profile->canAccessApplication($supabaseUser)) {
             $request->session()->invalidate();

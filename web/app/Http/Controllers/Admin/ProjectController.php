@@ -12,14 +12,20 @@ use App\Models\Project;
 use App\Services\ProjectService;
 use App\Services\GisQueryService;
 use App\Services\AssociationLifecycleService;
+use App\Services\ProjectLifecycleService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 
 class ProjectController extends Controller
 {
-    public function index(Request $request, GisQueryService $gis): View
+    public function index(Request $request, GisQueryService $gis): View|RedirectResponse
     {
+        if ($request->boolean('from_monitoring') && \Illuminate\Support\Str::isUuid($request->query('project_id', ''))
+            && in_array($request->query('resource_section'), ['products', 'materials'], true)) {
+            return redirect()->route('admin.projects.edit', ['project' => $request->query('project_id')]
+                + $request->only('from_monitoring', 'resource_section', 'monitoring_record'));
+        }
         $catalog = require resource_path('ui/admin.php');
 
         $statusFilter = $request->query('status', '');
@@ -139,6 +145,32 @@ class ProjectController extends Controller
                 'module' => $module,
             ]
         );
+    }
+
+    public function edit(Request $request, Project $project, ProjectLifecycleService $lifecycle, AssociationLifecycleService $associations): View
+    {
+        $project->load(['association.area.barangay.municipality', 'saadActivity', 'fisheriesCategory', 'commodity', 'materials', 'products']);
+        abort_unless($project->association, 404);
+        $actor = $request->attributes->get('current_user');
+        $lifecycle->authorize($actor, $project->association);
+        abort_unless($associations->isOperational($project->association)
+            && $project->archived_at === null && !$project->isFinalized(), 403, 'This project is read-only.');
+        $prefix = $actor->role->code === 'system_admin' ? 'admin' : 'field-officer';
+        $catalog = require resource_path('ui/admin.php');
+        $catalog['options'] = array_replace($catalog['options'], [
+            'association_records' => Association::whereNull('archived_at')->where('status', 'active')
+                ->when($prefix === 'field-officer', fn ($query) => $query->where('primary_field_officer_id', $actor->id))
+                ->orderBy('name')->get()->map(fn ($association) => ['value' => $association->id, 'label' => $association->name])->all(),
+            'fisheries_category_records' => FisheriesProjectCategory::where('is_active', true)->orderBy('name')->get()
+                ->map(fn ($category) => ['value' => $category->id, 'label' => $category->name])->all(),
+            'commodity_records' => Commodity::where('is_active', true)->orderBy('name')->get()
+                ->map(fn ($commodity) => ['value' => $commodity->id, 'label' => $commodity->name,
+                    'category_id' => $commodity->category_id, 'source' => $commodity->source])->all(),
+        ]);
+        $editRow = $this->mapProjectRow($project);
+        $editRow['update_url'] = route($prefix.'.projects.update', $project);
+
+        return view('projects.edit', compact('project', 'prefix', 'catalog', 'editRow'));
     }
 
     public function store(

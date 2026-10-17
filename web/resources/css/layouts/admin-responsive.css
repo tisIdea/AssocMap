@@ -7,7 +7,6 @@
 @media (max-width: 1020px) {
     .sidebar { transform: translateX(-100%); width: 264px; transition: transform .18s ease; }.main-shell { margin-left: 0; }.mobile-menu { display: inline-flex; }.mobile-menu .icon { width: 20px; }.sidebar-collapse { display: none; }.sidebar-footer { padding-bottom: 24px; }
     body.drawer-open { overflow: hidden; }.drawer-open .sidebar { transform: translateX(0); }.sidebar-backdrop { position: fixed; inset: 0; z-index: 35; background: #16324f80; border: 0; width: 100%; }
-    .sidebar-collapsed .brand-copy, .sidebar-collapsed .sidebar-section-label, .sidebar-collapsed .nav-link > span, .sidebar-collapsed .sidebar-program { display: revert; }.sidebar-collapsed .disclosure-chevron { display: block; }.sidebar-collapsed .nav-link { justify-content: flex-start; }.sidebar-collapsed .brand { padding: 26px 23px; }.sidebar-collapsed .subnav { margin-left: 24px; padding-left: 10px; border-left: 1px solid #456d9b; }
 }
 @media (max-width: 760px) {
     main { padding: 18px 18px 28px; }.topbar { min-height: 65px; padding: 12px 18px; }.context-product, .topbar-context > .icon, .account-copy, .account-divider { display: none; }.topbar-context { gap: 8px; }.topbar-account { gap: 5px; }

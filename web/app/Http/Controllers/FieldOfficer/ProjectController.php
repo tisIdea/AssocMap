@@ -16,8 +16,13 @@ use Illuminate\View\View;
 
 class ProjectController extends Controller
 {
-    public function index(Request $request, GisQueryService $gis): View
+    public function index(Request $request, GisQueryService $gis): View|RedirectResponse
     {
+        if ($request->boolean('from_monitoring') && \Illuminate\Support\Str::isUuid($request->query('project_id', ''))
+            && in_array($request->query('resource_section'), ['products', 'materials'], true)) {
+            return redirect()->route('field-officer.projects.edit', ['project' => $request->query('project_id')]
+                + $request->only('from_monitoring', 'resource_section', 'monitoring_record'));
+        }
         $currentUser =
             $request->attributes->get('current_user');
 

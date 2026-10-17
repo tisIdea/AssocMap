@@ -13,23 +13,23 @@
             @endforeach
             <td><div class="row-actions">
                 @if($module['key'] === 'areas')
-                    <button class="text-button" type="button" data-area-view>View</button>
-                    <button class="text-button" type="button" @disabled(empty($row['update_url'])) @if(empty($row['update_url'])) title="Editing is not available for this record type." @endif data-area-edit>Edit</button>
+                    <button class="text-button" type="button" data-area-view><x-icon name="eye" />View</button>
+                    <button class="text-button" type="button" @disabled(empty($row['update_url'])) @if(empty($row['update_url'])) title="Editing is not available for this record type." @endif data-area-edit><x-icon name="pencil" />Edit</button>
                     <button class="text-button text-danger" type="button" @disabled(($row['status'] ?? '') === 'Inactive' || empty($row['deactivate_url'])) @if(empty($row['deactivate_url'])) title="Deactivation is not available for this record type." @endif data-area-deactivate data-confirm="Deactivate {{ $row['name'] }}? Existing relationships will be preserved." data-confirm-title="Deactivate Area" data-confirm-label="Deactivate">Deactivate</button>
                 @elseif($module['key'] === 'associations')
-                    <button class="text-button" type="button" data-association-view data-association-record="{{ json_encode($row) }}" data-dialog="association-modal">View</button>
+                    <button class="text-button" type="button" data-association-view data-association-record="{{ json_encode($row) }}" data-dialog="association-modal"><x-icon name="eye" />View</button>
                     @if(!empty($row['archived_at']))
-                    <button class="text-button" type="button" data-association-unarchive data-unarchive-url="{{ $row['unarchive_url'] ?? '' }}" @disabled(empty($row['unarchive_url'])) data-confirm="Unarchive {{ $row['name'] }}? Its existing Active/Inactive status will be preserved." data-confirm-title="Unarchive Association" data-confirm-label="Unarchive">Unarchive</button>
+                    <button class="text-button" type="button" data-association-unarchive data-unarchive-url="{{ $row['unarchive_url'] ?? '' }}" @disabled(empty($row['unarchive_url'])) data-confirm="Unarchive {{ $row['name'] }}? Its existing Active/Inactive status will be preserved." data-confirm-title="Unarchive Association" data-confirm-label="Unarchive"><x-icon name="archive-restore" />Unarchive</button>
                     @else
-                    <button class="text-button" type="button" data-association-edit data-dialog="association-editor" @disabled(empty($row['update_url']))>Edit</button>
-                    <button class="text-button text-danger" type="button" data-association-archive data-archive-url="{{ $row['archive_url'] ?? '' }}" @disabled(empty($row['archive_url'])) data-confirm="Archive {{ $row['name'] }}? The record will be preserved for historical purposes." data-confirm-title="Archive Association" data-confirm-label="Archive">Archive</button>
+                    <button class="text-button" type="button" data-association-edit data-dialog="association-editor" @disabled(empty($row['update_url']))><x-icon name="pencil" />Edit</button>
+                    <button class="text-button text-danger" type="button" data-association-archive data-archive-url="{{ $row['archive_url'] ?? '' }}" @disabled(empty($row['archive_url'])) data-confirm="Archive {{ $row['name'] }}? The record will be preserved for historical purposes." data-confirm-title="Archive Association" data-confirm-label="Archive"><x-icon name="archive" />Archive</button>
                     @endif
                 @elseif($module['key'] === 'members')
-                    <button class="text-button" type="button" data-member-view data-member-record="{{ json_encode($row) }}" data-dialog="member-modal">View</button>
-                @else<a class="text-button" href="#{{ $module['key'] }}/show">View</a>@endif
-                @if(isset($module['action']) && !in_array($module['key'], ['users', 'associations', 'members']))<a class="text-button" href="#{{ $module['key'] }}/edit">Edit</a>@endif
+                    <button class="text-button" type="button" data-member-view data-member-record="{{ json_encode($row) }}" data-dialog="member-modal"><x-icon name="eye" />View</button>
+                @else<a class="text-button" href="#{{ $module['key'] }}/show"><x-icon name="eye" />View</a>@endif
+                @if(isset($module['action']) && !in_array($module['key'], ['users', 'associations', 'members']))<a class="text-button" href="#{{ $module['key'] }}/edit"><x-icon name="pencil" />Edit</a>@endif
                 @if($module['key'] === 'users')
-                    <details class="action-menu"><summary aria-label="More actions for {{ $row['name'] }}">•••</summary><div><button type="button" data-dialog="email-modal">Change Email</button><button type="button" data-confirm="{{ ($row['status'] ?? '') === 'Active' ? 'Disable' : 'Enable' }} the selected account?">{{ ($row['status'] ?? '') === 'Active' ? 'Disable Account' : 'Enable Account' }}</button></div></details>
+                    <details class="action-menu"><summary aria-label="More actions for {{ $row['name'] }}"><x-icon name="ellipsis" /></summary><div><button type="button" data-dialog="email-modal">Change Email</button><button type="button" data-confirm="{{ ($row['status'] ?? '') === 'Active' ? 'Disable' : 'Enable' }} the selected account?">{{ ($row['status'] ?? '') === 'Active' ? 'Disable Account' : 'Enable Account' }}</button></div></details>
                 @endif
             </div></td>
         </tr>

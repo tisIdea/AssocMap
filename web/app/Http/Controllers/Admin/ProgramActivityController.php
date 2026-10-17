@@ -9,6 +9,8 @@ use App\Models\ProgramActivityRecord;
 use App\Models\Project;
 use App\Models\SaadActivity;
 use App\Services\ProgramActivityService;
+use App\Services\AssociationLifecycleService;
+use App\Services\ProjectLifecycleService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -131,6 +133,51 @@ class ProgramActivityController extends Controller
                     $statusFilter,
             ]
         );
+    }
+
+    public function show(Request $request, ProgramActivityRecord $programActivity): View
+    {
+        return view('program-activities.show', $this->recordData($request, $programActivity));
+    }
+
+    public function edit(Request $request, ProgramActivityRecord $programActivity): View
+    {
+        $data = $this->recordData($request, $programActivity);
+        abort_unless($data['canEdit'], 403, 'This activity is read-only.');
+        $actor = $request->attributes->get('current_user');
+        $associations = Association::whereNull('archived_at')->where('status', 'active')
+            ->when($data['prefix'] === 'field-officer', fn ($query) => $query->where('primary_field_officer_id', $actor->id))
+            ->orderBy('name')->get();
+        $activities = SaadActivity::where('is_active', true)->whereNotIn('code', self::EXCLUDED_ACTIVITY_CODES)->orderBy('id')->get();
+        $projects = Project::whereIn('association_id', $associations->modelKeys())->whereNull('archived_at')
+            ->whereNotIn('status', ['completed', 'terminated'])->orderByDesc('program_year')->orderBy('title')->get();
+
+        return view('program-activities.edit', $data + compact('associations', 'activities', 'projects'));
+    }
+
+    private function recordData(Request $request, ProgramActivityRecord $programActivity): array
+    {
+        $actor = $request->attributes->get('current_user');
+        abort_unless($actor->canAccessApplication() && in_array($actor->role?->code, ['system_admin', 'field_officer'], true), 403);
+        $programActivity->load(['association.area.barangay.municipality', 'relatedProject.association', 'saadActivity', 'conductedByUser']);
+        $prefix = $actor->role->code === 'system_admin' ? 'admin' : 'field-officer';
+        $lifecycle = app(AssociationLifecycleService::class);
+        if ($prefix === 'field-officer') {
+            abort_unless($programActivity->association && $lifecycle->isOperational($programActivity->association), 403);
+            app(ProjectLifecycleService::class)->authorize($actor, $programActivity->association);
+        }
+        $canEdit = $programActivity->archived_at === null
+            && (!$programActivity->association_id || ($programActivity->association && $lifecycle->isOperational($programActivity->association)))
+            && !($programActivity->relatedProject?->isFinalized() ?? false)
+            && (!$programActivity->relatedProject || ($programActivity->relatedProject->association
+                && $lifecycle->isOperational($programActivity->relatedProject->association)));
+        $canViewProject = $programActivity->relatedProject?->association
+            && ($prefix === 'admin' || $programActivity->relatedProject->association->primary_field_officer_id === $actor->id);
+        $record = $programActivity;
+        $row = $this->mapActivityRow($record);
+        $row['update_url'] = route($prefix.'.program-activities.update', $record);
+
+        return compact('record', 'prefix', 'row', 'canEdit', 'canViewProject');
     }
 
     public function store(

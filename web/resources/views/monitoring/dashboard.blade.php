@@ -17,7 +17,7 @@
     </div>
     @forelse($records->groupBy(fn ($record) => ($record->project?->association_id ?? '').':'.$record->project_id) as $group)
         @php($context = $group->first())
-        <section class="monitoring-group"><h2>{{ $context->project?->association?->name ?? 'Association unavailable' }}</h2><p>{{ $context->project?->title ?? 'Project unavailable' }} · {{ $selectedYear }}</p>
+        <section class="monitoring-group"><h2>{{ $context->project?->association?->name ?? 'Association unavailable' }}</h2><p>@if($monitoringPrefix !== 'association.monitoring' && $context->project)<a href="{{ route($monitoringPrefix === 'admin.monitoring' ? 'admin.projects.show' : 'field-officer.projects.show', $context->project) }}">{{ $context->project->title }}</a>@else{{ $context->project?->title ?? 'Project unavailable' }}@endif · {{ $selectedYear }}</p>
         <div class="monitoring-scroll" tabindex="0" role="region" aria-label="Quarterly records for {{ $context->project?->association?->name }} · {{ $context->project?->title }}"><div class="monitoring-grid">
             @foreach([1,2,3,4] as $quarterNumber)
                 <section><h3>Q{{ $quarterNumber }}</h3>

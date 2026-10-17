@@ -2,8 +2,8 @@
     && !$record->project->archived_at && $record->project->association
     && !$record->project->association->archived_at && $record->project->association->status === 'active')
     <div class="monitoring-actions">
-        <a class="button" href="{{ route($monitoringPrefix === 'admin.monitoring' ? 'admin.projects.index' : 'field-officer.projects.index', [
-            'from_monitoring' => 1, 'project_id' => $record->project_id,
+        <a class="button" href="{{ route($monitoringPrefix === 'admin.monitoring' ? 'admin.projects.edit' : 'field-officer.projects.edit', [
+            'project' => $record->project_id, 'from_monitoring' => 1,
             'resource_section' => $section === 'production' ? 'products' : 'materials',
             'monitoring_record' => $record->id,
         ]) }}">{{ $section === 'production' ? 'Add Project Product' : 'Add Project Material' }}</a>

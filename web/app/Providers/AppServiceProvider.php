@@ -22,6 +22,12 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        if ($this->app->environment('local')) {
+            $this->app['events']->listen(\Illuminate\Database\Events\QueryExecuted::class, function ($event): void {
+                \App\Http\Middleware\LocalRequestTiming::recordQuery($this->app['request'], (float) $event->time);
+            });
+        }
+
         RateLimiter::for('api-auth', fn (Request $request) => Limit::perMinute(60)->by('api-auth-ip:'.$request->ip()));
         RateLimiter::for('invitation-activation', function (Request $request) {
             return [

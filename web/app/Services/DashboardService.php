@@ -25,49 +25,64 @@ class DashboardService
         $associationCounts = (clone $associations)->selectRaw("COUNT(*) AS total,
             COUNT(CASE WHEN a.status = 'active' AND a.archived_at IS NULL THEN 1 END) AS active,
             COUNT(CASE WHEN a.status = 'inactive' AND a.archived_at IS NULL THEN 1 END) AS inactive,
-            COUNT(CASE WHEN a.archived_at IS NOT NULL THEN 1 END) AS archived")->first();
+            COUNT(CASE WHEN a.archived_at IS NOT NULL THEN 1 END) AS archived");
         $members = $this->records('members', 'm', $ids)->selectRaw("COUNT(*) AS total,
             COUNT(CASE WHEN m.member_status = 'active' AND m.archived_at IS NULL THEN 1 END) AS active,
-            COUNT(CASE WHEN m.archived_at IS NOT NULL THEN 1 END) AS archived")->first();
+            COUNT(CASE WHEN m.archived_at IS NOT NULL THEN 1 END) AS archived");
         $projects = $this->records('projects', 'p', $ids);
         $projectCounts = (clone $projects)->selectRaw('COUNT(*) AS total,
-            COUNT(CASE WHEN p.archived_at IS NULL THEN 1 END) AS unarchived')->first();
+            COUNT(CASE WHEN p.archived_at IS NULL THEN 1 END) AS unarchived');
         $currentProjects = (clone $projects)->whereNull('p.archived_at');
+
+        // Aggregate each table separately so one-to-many relationships cannot inflate counts.
+        $summaryQuery = DB::query()->useWritePdo()->fromSub($associationCounts, 'association_counts')
+            ->crossJoinSub($members, 'member_counts')->crossJoinSub($projectCounts, 'project_counts')
+            ->select(['association_counts.total as associations_total', 'association_counts.active as associations_active',
+                'association_counts.inactive as associations_inactive', 'association_counts.archived as associations_archived',
+                'member_counts.total as members_total', 'member_counts.active as members_active',
+                'project_counts.total as projects_total', 'project_counts.unarchived as projects_unarchived']);
+        if ($role === 'system_admin') {
+            $summaryQuery->selectSub(DB::table('user_profiles as u')->useWritePdo()->join('roles as r', 'r.id', '=', 'u.role_id')
+                ->where('r.code', 'field_officer')->where('r.is_active', true)->where('u.is_active', true)
+                ->selectRaw('COUNT(*)'), 'field_officers');
+        }
+        $summaryCounts = $summaryQuery->first();
 
         $metrics = [];
         if ($role === 'system_admin') {
-            $metrics[] = $this->metric('associations_total', 'Registered associations', $associationCounts->total, 'All retained associations, including archives.', 'building');
-            $metrics[] = $this->metric('associations_inactive', 'Inactive associations', $associationCounts->inactive, 'Inactive and unarchived.', 'building');
-            $metrics[] = $this->metric('associations_archived', 'Archived associations', $associationCounts->archived, 'Archive takes precedence over status.', 'building');
+            $metrics[] = $this->metric('associations_total', 'Registered associations', $summaryCounts->associations_total, 'All retained associations, including archives.', 'building');
+            $metrics[] = $this->metric('associations_inactive', 'Inactive associations', $summaryCounts->associations_inactive, 'Inactive and unarchived.', 'building');
+            $metrics[] = $this->metric('associations_archived', 'Archived associations', $summaryCounts->associations_archived, 'Archive takes precedence over status.', 'building');
         }
         if ($role !== 'association_account') {
-            $metrics[] = $this->metric('associations_active', $role === 'field_officer' ? 'Assigned active associations' : 'Active associations', $associationCounts->active, 'Active and unarchived; current assignments only for Field Officers.', 'building');
+            $metrics[] = $this->metric('associations_active', $role === 'field_officer' ? 'Assigned active associations' : 'Active associations', $summaryCounts->associations_active, 'Active and unarchived; current assignments only for Field Officers.', 'building');
         }
-        $metrics[] = $this->metric('members_total', 'Official members', $members->total, 'All retained official records, including archived members.', 'users');
-        $metrics[] = $this->metric('members_active', 'Active official members', $members->active, 'Active member status and no archive date.', 'users');
-        $metrics[] = $this->metric('projects_total', 'Registered projects', $projectCounts->total, 'All retained projects in this scope, including archives.', 'briefcase');
-        $metrics[] = $this->metric('projects_unarchived', 'Unarchived projects', $projectCounts->unarchived, 'All current project statuses; not just ongoing projects.', 'briefcase');
+        $metrics[] = $this->metric('members_total', 'Official members', $summaryCounts->members_total, 'All retained official records, including archived members.', 'users');
+        $metrics[] = $this->metric('members_active', 'Active official members', $summaryCounts->members_active, 'Active member status and no archive date.', 'users');
+        $metrics[] = $this->metric('projects_total', 'Registered projects', $summaryCounts->projects_total, 'All retained projects in this scope, including archives.', 'briefcase');
+        $metrics[] = $this->metric('projects_unarchived', 'Unarchived projects', $summaryCounts->projects_unarchived, 'All current project statuses; not just ongoing projects.', 'briefcase');
         if ($role === 'system_admin') {
-            $officers = DB::table('user_profiles as u')->useWritePdo()->join('roles as r', 'r.id', '=', 'u.role_id')
-                ->where('r.code', 'field_officer')->where('r.is_active', true)->where('u.is_active', true)->count();
-            $metrics[] = $this->metric('field_officers', 'Active Field Officer profiles', $officers, 'Active profile and role flags; not an invitation activation count.', 'user');
+            $metrics[] = $this->metric('field_officers', 'Active Field Officer profiles', $summaryCounts->field_officers, 'Active profile and role flags; not an invitation activation count.', 'user');
         }
 
         $training = $this->optional('training', function () use ($ids) {
-            $counts = $this->records('trainings', 't', $ids)->selectRaw("COUNT(*) AS total,
-                COUNT(CASE WHEN t.status = 'completed' THEN 1 END) AS completed")->first();
             $present = DB::table('training_participants as tp')->useWritePdo()
                 ->join('trainings as t', 't.id', '=', 'tp.training_id')->join('members as m', 'm.id', '=', 'tp.member_id')
                 ->whereColumn('m.association_id', 't.association_id')->whereIn('t.association_id', clone $ids)
-                ->where('tp.attendance_status', 'present')->distinct()->count('tp.member_id');
+                ->where('tp.attendance_status', 'present')->selectRaw('COUNT(DISTINCT tp.member_id)');
+            $counts = $this->records('trainings', 't', $ids)->selectRaw("COUNT(*) AS total,
+                COUNT(CASE WHEN t.status = 'completed' THEN 1 END) AS completed")
+                ->selectSub($present, 'present_members')->first();
 
-            return ['records' => (int) $counts->total, 'completed' => (int) $counts->completed, 'distinct_present_members' => $present];
+            return ['records' => (int) $counts->total, 'completed' => (int) $counts->completed, 'distinct_present_members' => (int) $counts->present_members];
         });
         $metrics[] = $this->metric('training_records', 'Recorded training activities', $training['records'] ?? null, 'All start dates and statuses; historical archives retained.', 'graduation');
 
         $monitoring = $this->optional('monitoring', function () use ($currentProjects) {
             $records = DB::table('monitoring_records as mr')->useWritePdo()->whereIn('mr.project_id', (clone $currentProjects)->select('p.id'));
-            $periods = DB::query()->useWritePdo()->fromSub((clone $records)->select('mr.year', 'mr.quarter_id')->distinct(), 'periods')->count();
+            $periods = DB::query()->useWritePdo()->fromSub((clone $records)->select('mr.year', 'mr.quarter_id')->distinct(), 'periods')
+                ->selectRaw('COUNT(*)');
+            $counts = (clone $records)->selectRaw('COUNT(*) AS total')->selectSub($periods, 'periods')->first();
             $recent = (clone $records)->join('projects as p', 'p.id', '=', 'mr.project_id')->join('quarters as q', 'q.id', '=', 'mr.quarter_id')
                 ->orderByDesc('mr.monitoring_date')->orderBy('mr.id')->limit(6)
                 ->get(['mr.id', 'p.title', 'mr.year', 'q.quarter_number', 'mr.monitoring_date', 'mr.project_status'])
@@ -80,7 +95,7 @@ class DashboardService
                 return ['total' => (int) $counts->total, 'legacy_imports' => (int) $counts->legacy];
             });
 
-            return ['records' => (clone $records)->count(), 'periods' => $periods, 'visits' => $visits, 'recent' => $recent];
+            return ['records' => (int) $counts->total, 'periods' => (int) $counts->periods, 'visits' => $visits, 'recent' => $recent];
         });
         $metrics[] = $this->metric('monitoring_records', 'Quarterly monitoring records', $monitoring['records'] ?? null, 'All recorded years; unarchived projects only.', 'chart');
 
@@ -100,9 +115,9 @@ class DashboardService
         $charts = [];
         if ($role === 'system_admin') {
             $charts[] = $this->chart('association_status', 'Association lifecycle', 'All registered associations; categories do not overlap.', [
-                ['label' => 'Active / unarchived', 'value' => (int) $associationCounts->active],
-                ['label' => 'Inactive / unarchived', 'value' => (int) $associationCounts->inactive],
-                ['label' => 'Archived', 'value' => (int) $associationCounts->archived],
+                ['label' => 'Active / unarchived', 'value' => (int) $summaryCounts->associations_active],
+                ['label' => 'Inactive / unarchived', 'value' => (int) $summaryCounts->associations_inactive],
+                ['label' => 'Archived', 'value' => (int) $summaryCounts->associations_archived],
             ]);
             $charts[] = $this->optional('municipalities', fn () => $this->chart('municipalities', 'Associations by municipality / city',
                 'Registered associations, including inactive and archived. Up to 12 largest groups.',
@@ -163,7 +178,7 @@ class DashboardService
         return [
             'version' => 'assocmap.dashboard.v1', 'role' => $role,
             'generated_at' => now('Asia/Manila')->toIso8601String(), 'timezone' => 'Asia/Manila',
-            'scope_count' => (int) $associationCounts->total, 'association' => $association,
+            'scope_count' => (int) $summaryCounts->associations_total, 'association' => $association,
             'metrics' => $metrics, 'charts' => $charts, 'associations' => $overview,
             'training' => $training, 'monitoring' => $monitoring, 'applications' => $applications,
             'officer_attention' => $attention, 'recent_projects' => $recentProjects, 'activities' => $activities,

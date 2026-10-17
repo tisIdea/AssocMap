@@ -11,6 +11,7 @@ use App\Models\Training;
 use App\Services\AssociationLifecycleService;
 use App\Services\ProjectClosureService;
 use App\Services\ProjectLifecycleService;
+use App\Services\GisQueryService;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
@@ -25,15 +26,21 @@ use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 
 class ProjectClosureController extends Controller
 {
-    public function show(Request $request, Project $project, ProjectLifecycleService $lifecycle, AssociationLifecycleService $associations): View
+    public function show(Request $request, Project $project, ProjectLifecycleService $lifecycle, AssociationLifecycleService $associations, GisQueryService $gis): View
     {
-        $project->load('association');
+        $project->load('association.area.barangay.municipality');
         abort_unless($project->association, 404);
         $actor = $request->attributes->get('current_user');
         $lifecycle->authorize($actor, $project->association);
         $prefix = $actor->role->code === 'system_admin' ? 'admin' : 'field-officer';
         $project->load(['fisheriesCategory', 'commodity', 'saadActivity', 'materials', 'products', 'closedBy']);
         $parentOperational = $associations->isOperational($project->association);
+        $canEdit = $parentOperational && $project->archived_at === null && !$project->isFinalized();
+        $gisLocations = $gis->projectLocations($actor, [$project->id]);
+        $locationRow = ['id' => $project->id, 'area' => $project->association->area?->address,
+            'barangay' => $project->association->area?->barangay?->name,
+            'municipality' => $project->association->area?->barangay?->municipality?->name,
+            'gis_locations' => $gisLocations[$project->id] ?? [], 'gis_locations_available' => $gisLocations !== null];
         $canClose = $parentOperational && $project->archived_at === null
             && $project->status === 'ongoing' && $project->closed_at === null;
         $canViewHistory = $prefix === 'admin' || $parentOperational;
@@ -51,7 +58,7 @@ class ProjectClosureController extends Controller
                 ->where('entity_id', $project->id)->where('action_type', $project->status === 'terminated' ? 'TERMINATE PROJECT' : 'CLOSE PROJECT')
                 ->orderByDesc('performed_at')->first(['id']) : null;
 
-        return view('projects.show', compact('project', 'prefix', 'canClose', 'monitoring', 'trainings', 'activities', 'closureAudit'));
+        return view('projects.show', compact('project', 'prefix', 'canClose', 'canEdit', 'locationRow', 'monitoring', 'trainings', 'activities', 'closureAudit'));
     }
 
     public function store(CloseProjectRequest $request, Project $project, ProjectClosureService $service): RedirectResponse|JsonResponse

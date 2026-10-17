@@ -1,6 +1,7 @@
 import { initDisclosures } from './core/helpers.js';
 import { initDialogs } from './core/dialogs.js';
 import { initAdminNavigation } from './layouts/admin-navigation.js';
+import { initWorkspaceSidebar } from './layouts/workspace-sidebar.js';
 import { initPublicNavigation } from './layouts/public-navigation.js';
 import { initForms } from './pages/admin/forms.js';
 import { initReports } from './pages/admin/reports.js';
@@ -8,14 +9,17 @@ import { initStaffLogin } from './pages/staff-login.js';
 import { initUserInvitations } from './pages/user-invitations.js';
 import { initProjectClosure } from './pages/project-closure.js';
 import { initFeedback, showFeedback } from './core/feedback.js';
+import { mountSummaryCounters } from './components/summary-counter.js';
 
 initFeedback();
 initDisclosures();
 initDialogs();
-initAdminNavigation();
+const sidebar = initWorkspaceSidebar();
+initAdminNavigation(sidebar);
 initPublicNavigation();
 initForms();
 initReports();
+mountSummaryCounters();
 initStaffLogin();
 initUserInvitations();
 initProjectClosure();

@@ -1,21 +1,15 @@
-<aside class="sidebar" id="admin-sidebar" aria-label="Administration sidebar" data-dashboard-url="{{ route('admin.dashboard') }}">
-    <a class="brand" href="{{ route('admin.dashboard') }}" aria-label="AssocMap dashboard"><span class="brand-symbol"><x-icon name="map" /></span><span class="brand-copy"><strong>Assoc<span>Map</span></strong><small>SAAD PHASE II · REGION VII</small></span></a>
-    <div class="sidebar-section-label">WORKSPACE</div>
-    <nav class="sidebar-nav" aria-label="Main navigation">
-        <a class="nav-link active" href="{{ route('admin.dashboard') }}" data-nav="dashboard" aria-current="page" title="Dashboard"><x-icon name="grid" /><span>Dashboard</span></a>
-        @foreach(['users', 'areas', 'associations', 'members'] as $key)
-            <a class="nav-link" href="{{ route('admin.'.$key.'.index') }}" data-nav="{{ $key }}" title="{{ $catalog['modules'][$key]['title'] }}"><x-icon :name="$catalog['modules'][$key]['icon']" /><span>{{ $catalog['modules'][$key]['title'] }}</span></a>
+<x-workspace-sidebar :dashboard-url="route('admin.dashboard')" workspace="ADMIN WORKSPACE" id="admin-sidebar" aria-label="Administration sidebar" data-dashboard-url="{{ route('admin.dashboard') }}">
+    <x-workspace-nav-link :href="route('admin.dashboard')" label="Dashboard" icon="grid" :active="request()->routeIs('admin.dashboard')" data-nav="dashboard" />
+    @foreach(['users', 'areas', 'associations', 'members'] as $key)
+        <x-workspace-nav-link :href="route('admin.'.$key.'.index')" :label="$catalog['modules'][$key]['title']" :icon="$catalog['modules'][$key]['icon']" :active="request()->routeIs('admin.'.$key.'.*')" data-nav="{{ $key }}" />
+    @endforeach
+    <x-workspace-nav-group id="program-navigation" :active="request()->routeIs('admin.projects.*', 'admin.trainings.*', 'admin.monitoring.*', 'admin.program-activities.*')">
+        @foreach(['projects', 'trainings', 'monitoring', 'program-activities'] as $key)
+            <x-workspace-nav-link :href="route('admin.'.$key.'.index')" :label="$catalog['modules'][$key]['title']" :icon="$catalog['modules'][$key]['icon']" :active="request()->routeIs('admin.'.$key.'.*')" data-nav="{{ $key }}" />
         @endforeach
-        <button type="button" class="nav-link program-toggle" data-disclosure="program-navigation" aria-expanded="false" aria-controls="program-navigation" title="Program Operations"><x-icon name="briefcase" /><span>Program Operations</span><x-icon name="chevron" class="disclosure-chevron" /></button>
-        <div class="subnav" id="program-navigation" hidden>
-            @foreach(['projects', 'trainings', 'monitoring', 'program-activities'] as $key)
-                <a class="nav-link" href="{{ route('admin.'.$key.'.index') }}" data-nav="{{ $key }}" title="{{ $catalog['modules'][$key]['title'] }}"><x-icon :name="$catalog['modules'][$key]['icon']" /><span>{{ $catalog['modules'][$key]['title'] }}</span></a>
-            @endforeach
-        </div>
-        <a class="nav-link" href="{{ route('admin.gis.index') }}" data-nav="gis" title="GIS Mapping"><x-icon name="map" /><span>GIS Mapping</span></a>
-        <a class="nav-link" href="{{ route('admin.reports.index') }}" data-nav="reports" title="Reports & Analytics"><x-icon name="chart" /><span>Reports &amp; Analytics</span></a>
-        <a class="nav-link" href="{{ route('admin.audit-logs.index') }}" data-nav="audit-logs" title="Audit Log"><x-icon name="receipt" /><span>Audit Log</span></a>
-    </nav>
-    <div class="sidebar-footer"><div class="sidebar-program"><x-icon name="shield" /><div><strong>BFAR Region VII</strong><small>Community livelihood monitoring</small></div></div><button type="button" class="sidebar-collapse" data-collapse-sidebar aria-label="Collapse sidebar" aria-expanded="true"><x-icon name="back" /><span>Collapse sidebar</span></button></div>
-</aside>
+    </x-workspace-nav-group>
+    <x-workspace-nav-link :href="route('admin.gis.index')" label="GIS Mapping" icon="map-pinned" :active="request()->routeIs('admin.gis.*')" data-nav="gis" />
+    <x-workspace-nav-link :href="route('admin.reports.index')" label="Reports & Analytics" icon="chart" :active="request()->routeIs('admin.reports.*')" data-nav="reports" />
+    <x-workspace-nav-link :href="route('admin.audit-logs.index')" label="Audit Log" icon="receipt" :active="request()->routeIs('admin.audit-logs.*')" data-nav="audit-logs" />
+</x-workspace-sidebar>
 <button class="sidebar-backdrop" data-close-sidebar aria-label="Close navigation" hidden></button>

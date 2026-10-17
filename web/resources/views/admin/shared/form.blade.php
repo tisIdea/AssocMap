@@ -24,7 +24,7 @@
             </x-form-section>
         @endforeach
         @if($module['key'] === 'trainings')@include('admin.trainings.participants', ['mode' => $mode, 'participants' => $values['participants'] ?? []])@endif
-        <div class="form-actions"><a href="#{{ $module['key'] }}" class="button">Cancel</a><button type="button" disabled class="button button-primary"><x-icon name="check" />{{ $module['key'] === 'users' ? 'Invite User' : ($editing ? 'Save Changes' : 'Save') }}</button></div>
+        <div class="form-actions"><a href="#{{ $module['key'] }}" class="button">Cancel</a><button type="button" disabled class="button button-primary"><x-icon name="save" />{{ $module['key'] === 'users' ? 'Invite User' : ($editing ? 'Save Changes' : 'Save') }}</button></div>
     </div>
     <aside class="form-aside"><div class="card"><span class="stat-icon"><x-icon :name="$module['icon']" /></span><h3>{{ $module['singular'] }} information</h3><p>{{ $module['description'] }}</p><hr><p class="muted">Saving is not connected yet.</p></div></aside>
 </form>

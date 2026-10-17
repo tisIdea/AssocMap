@@ -58,7 +58,7 @@
     </section>
     <div class="report-preview">
         <section class="card report-document">
-            <div class="report-document-header"><span class="brand-symbol"><x-icon name="map" /></span><div><strong>ASSOCMAP</strong><small>BFAR Region VII · SAAD Phase II</small></div><span class="badge badge-neutral">Authorized report</span></div>
+            <div class="report-document-header"><span class="brand-symbol"><x-assocmap-mark /></span><div><strong>ASSOCMAP</strong><small>Association and project monitoring</small></div><span class="badge badge-neutral">Authorized report</span></div>
             <p data-report-status role="status" aria-live="polite" @if($unavailable) data-feedback-fallback @endif @class(['notice-error' => $unavailable])>{{ $unavailable ? 'Reporting is temporarily unavailable. Please try again later.' : 'Report loaded from authorized records.' }}</p>
             <div data-report-result>
                 @if($result)
@@ -69,7 +69,7 @@
                     <details open><summary>Data quality and interpretation</summary><ul>@foreach($result['notes'] as $note)<li>{{ $note }}</li>@endforeach</ul></details>
                     @foreach($result['sections'] as $section)
                         <section class="report-section"><h3>{{ $section['title'] }}</h3>
-                            <dl class="report-measures">@foreach($section['measures'] as $measure)<div><dt>{{ $measure['label'] }}</dt><dd>{{ $measure['value'] ?? 'Unobserved' }}</dd></div>@endforeach</dl>
+                            <dl class="report-measures">@foreach($section['measures'] as $measure)<div><dt>{{ $measure['label'] }}</dt><dd><x-summary-counter :value="$measure['value'] ?? 'Unobserved'" /></dd></div>@endforeach</dl>
                             @foreach($section['notes'] as $note)<p class="field-help">{{ $note }}</p>@endforeach
                             @if($section['rows'])
                                 <div class="report-table-scroll" tabindex="0" aria-label="{{ $section['title'] }}"><table><caption>{{ $section['title'] }}</caption><thead><tr>@foreach($section['columns'] as $column)<th scope="col">{{ $column['label'] }}</th>@endforeach</tr></thead><tbody>

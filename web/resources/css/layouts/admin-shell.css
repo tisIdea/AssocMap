@@ -8,6 +8,8 @@
 .brand-copy small { display: block; color: #b7cde6; font-size: 8px; letter-spacing: 1.1px; margin-top: 6px; white-space: nowrap; }
 .sidebar-section-label { font-size: 10px; font-weight: 650; letter-spacing: 1.5px; padding: 2px 27px 14px; color: #a8c3e1; }
 .sidebar-nav { padding: 0 13px 20px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #6685a9 transparent; }
+[data-workspace-sidebar] > .brand, [data-workspace-sidebar] > .sidebar-section-label, [data-workspace-sidebar] > .sidebar-footer { flex-shrink: 0; }
+[data-workspace-sidebar] > .sidebar-nav { flex: 1; min-height: 0; }
 .nav-link { display: flex; width: 100%; align-items: center; text-align: left; border: 0; background: transparent; gap: 12px; color: #d1e0f2; padding: 13px; min-height: 48px; margin-bottom: 5px; border-radius: 9px; font-size: 13px; font-weight: 550; line-height: 1.35; white-space: nowrap; }
 .nav-link > .icon { width: 21px; height: 21px; color: #bbd1ec; }
 .nav-link:hover { background: rgb(255 255 255 / 8%); color: #fff; }
@@ -30,6 +32,11 @@
 .topbar-context { font-size: 12px; color: var(--text-secondary); }
 .topbar-context .icon { width: 12px; }
 #current-context { color: #334155; font-weight: 600; }
+.workspace-header .topbar-context { min-width: 0; }
+.workspace-header .context-product, .workspace-header .mobile-menu { flex-shrink: 0; }
+.workspace-header-context { min-width: 0; overflow-wrap: anywhere; color: #334155; font-weight: 600; }
+.workspace-header .account-copy { min-width: 0; max-width: 240px; overflow-wrap: anywhere; }
+.workspace-header .topbar-account > form { flex-shrink: 0; }
 .topbar-account { flex-shrink: 0; gap: 12px; }
 .account-divider { width: 1px; height: 31px; background: var(--border-color); margin: 0 6px; }
 .avatar { height: 37px; width: 37px; background: #e9f0f8; color: #244f7f; border: 1px solid #d8e4f1; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; flex-shrink: 0; }

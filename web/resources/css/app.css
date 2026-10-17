@@ -4,6 +4,7 @@
 @import './layouts/admin-shell.css';
 @import './components/controls.css';
 @import './pages/admin-dashboard.css';
+@import './components/summary-counter.css';
 @import './components/tables.css';
 @import './components/forms.css';
 @import './components/feedback.css';

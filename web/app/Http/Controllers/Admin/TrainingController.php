@@ -10,6 +10,8 @@ use App\Models\Project;
 use App\Models\SaadActivity;
 use App\Models\Training;
 use App\Services\TrainingService;
+use App\Services\AssociationLifecycleService;
+use App\Services\ProjectLifecycleService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -141,6 +143,51 @@ class TrainingController extends Controller
                     $statusFilter,
             ]
         );
+    }
+
+    public function show(Request $request, Training $training): View
+    {
+        return view('trainings.show', $this->recordData($request, $training));
+    }
+
+    public function edit(Request $request, Training $training): View
+    {
+        $data = $this->recordData($request, $training);
+        abort_unless($data['canEdit'], 403, 'This training is read-only.');
+        $actor = $request->attributes->get('current_user');
+        $associations = Association::whereNull('archived_at')->where('status', 'active')
+            ->when($data['prefix'] === 'field-officer', fn ($query) => $query->where('primary_field_officer_id', $actor->id))
+            ->orderBy('name')->get();
+        $activities = SaadActivity::where('is_active', true)->whereIn('code', self::TRAINING_ACTIVITY_CODES)->orderBy('id')->get();
+        $projects = Project::whereIn('association_id', $associations->modelKeys())->whereNull('archived_at')
+            ->whereNotIn('status', ['completed', 'terminated'])->orderByDesc('program_year')->orderBy('title')->get();
+        $members = Member::whereIn('association_id', $associations->modelKeys())->where('member_status', 'active')
+            ->whereNull('archived_at')->orderBy('last_name')->orderBy('first_name')->get();
+
+        return view('trainings.edit', $data + compact('associations', 'activities', 'projects', 'members'));
+    }
+
+    private function recordData(Request $request, Training $training): array
+    {
+        $actor = $request->attributes->get('current_user');
+        abort_unless($actor->canAccessApplication() && in_array($actor->role?->code, ['system_admin', 'field_officer'], true), 403);
+        $training->load(['association.area.barangay.municipality', 'relatedProject.association', 'saadActivity', 'participants.member']);
+        $prefix = $actor->role->code === 'system_admin' ? 'admin' : 'field-officer';
+        $lifecycle = app(AssociationLifecycleService::class);
+        if ($prefix === 'field-officer') {
+            abort_unless($training->association && $lifecycle->isOperational($training->association), 403);
+            app(ProjectLifecycleService::class)->authorize($actor, $training->association);
+        }
+        $canEdit = $training->archived_at === null && $training->association && $lifecycle->isOperational($training->association)
+            && !($training->relatedProject?->isFinalized() ?? false)
+            && (!$training->relatedProject || ($training->relatedProject->association
+                && $lifecycle->isOperational($training->relatedProject->association)));
+        $canViewProject = $training->relatedProject?->association
+            && ($prefix === 'admin' || $training->relatedProject->association->primary_field_officer_id === $actor->id);
+        $row = $this->mapTrainingRow($training);
+        $row['update_url'] = route($prefix.'.trainings.update', $training);
+
+        return compact('training', 'prefix', 'row', 'canEdit', 'canViewProject');
     }
 
     public function store(

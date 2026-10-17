@@ -15,10 +15,9 @@
             <div class="activation-password-control">
                 <input id="activation-password" name="password" type="password" autocomplete="new-password" minlength="12" maxlength="128" required aria-invalid="{{ $errors->has('password') ? 'true' : 'false' }}">
                 <button type="button" class="activation-password-toggle" data-invitation-password-toggle data-password-label="new password" aria-controls="activation-password" aria-label="Show new password" hidden>
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
-                        <path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12 M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0" />
+                    <x-icon name="eye">
                         <path data-password-eye-off d="m3 3 18 18" hidden />
-                    </svg>
+                    </x-icon>
                     <span data-password-toggle-text>Show</span>
                 </button>
             </div>
@@ -28,10 +27,9 @@
             <div class="activation-password-control">
                 <input id="activation-confirmation" name="password_confirmation" type="password" autocomplete="new-password" minlength="12" maxlength="128" required aria-invalid="{{ $errors->has('password_confirmation') ? 'true' : 'false' }}">
                 <button type="button" class="activation-password-toggle" data-invitation-password-toggle data-password-label="confirm password" aria-controls="activation-confirmation" aria-label="Show confirm password" hidden>
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
-                        <path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12 M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0" />
+                    <x-icon name="eye">
                         <path data-password-eye-off d="m3 3 18 18" hidden />
-                    </svg>
+                    </x-icon>
                     <span data-password-toggle-text>Show</span>
                 </button>
             </div>
