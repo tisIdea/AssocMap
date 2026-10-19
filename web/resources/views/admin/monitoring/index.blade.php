@@ -1,1 +1,1 @@
-@include('admin.shared.index')
+@include('monitoring.dashboard')

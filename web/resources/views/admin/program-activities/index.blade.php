@@ -1,1 +1,1 @@
-@include('admin.shared.index')
+@include('program-activities.register', ['prefix' => 'admin'])

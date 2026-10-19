@@ -1,1 +1,13 @@
-<header class="topbar"><div class="topbar-context"><button class="icon-button mobile-menu" type="button" data-open-sidebar aria-label="Open navigation" aria-controls="admin-sidebar" aria-expanded="false"><x-icon name="menu" /></button><span class="context-product">Admin workspace</span><x-icon name="chevron" /><span id="current-context">Dashboard</span></div><div class="topbar-account"><button class="icon-button notification-button" type="button" data-notice="Notifications will be available when the backend is connected." aria-label="Notifications preview"><x-icon name="bell" /></button><span class="account-divider"></span><span class="avatar">SA</span><div class="account-copy"><strong>System Administrator</strong><small>Administrator workspace</small></div></div></header>
+<x-workspace-header
+    workspace="Admin workspace"
+    context="Dashboard"
+    context-id="current-context"
+    :display-name="$currentUser->display_name"
+    :account-label="$currentUser->role->name"
+    avatar="SA"
+    :notification-preview="true"
+>
+    <x-slot:navigationToggle>
+        <button class="icon-button mobile-menu" type="button" data-open-sidebar aria-label="Open navigation" aria-controls="admin-sidebar" aria-expanded="false"><x-icon name="menu" /></button>
+    </x-slot:navigationToggle>
+</x-workspace-header>

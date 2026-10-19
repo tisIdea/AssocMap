@@ -1,0 +1,79 @@
+/* Member and application registers. */
+.member-management { display: grid; gap: 22px; min-width: 0; }
+.member-management .member-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 20px; padding: 24px; border-top: 3px solid var(--primary); }
+.member-management .member-heading > div { flex: 1 1 300px; min-width: 0; }
+.member-management .member-heading p:not(.eyebrow) { margin-top: 8px; font-size: 13px; }
+.member-management .member-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(185px, 1fr)); gap: 16px; }
+.member-management .member-summary > a { color: inherit; border-radius: var(--radius-md); min-width: 0; }
+.member-management .member-summary .stat-card { height: 100%; transition: background-color 150ms, border-color 150ms; }
+.member-management .member-summary .stat-top { font-size: 12px; }
+.member-management .member-summary strong { color: var(--primary); }
+.member-management .member-summary a:hover .stat-card { border-color: #7a9fca; background: #f3f7fd; }
+.member-management .member-summary a[aria-current="page"] .stat-card { background: #0b427b; border-color: #0b427b; box-shadow: 0 4px 14px rgb(11 66 123 / 15%); }
+.member-management .member-summary a[aria-current="page"] :is(.stat-top, strong, small) { color: #fff; }
+.member-management .member-summary a[aria-current="page"] .stat-icon { color: #fff; background: rgb(255 255 255 / 15%); }
+.member-management .member-summary-help { font-size: 12px; line-height: 1.7; margin-top: -6px; }
+.member-management .member-register { min-width: 0; overflow: hidden; }
+.member-management .member-section-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 22px; }
+.member-management .member-section-heading h2 { font-size: 17px; color: #263f58; }
+.member-management .member-section-heading p { font-size: 12px; margin-top: 5px; }
+.member-management .member-search-bar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; padding: 0 22px 16px; }
+.member-management .member-search { flex: 1 1 320px; }
+.member-management .member-search > div { position: relative; }
+.member-management .member-search .icon { position: absolute; left: 12px; top: 13px; width: 18px; height: 18px; color: #66809a; }
+.member-management .member-search input { padding-left: 38px; min-height: 44px; }
+.member-management .member-filter-indicator { font-size: 12px; color: var(--primary); padding-block: 12px; }
+.member-management .member-filter-disclosure > summary { display: flex; width: fit-content; margin: 0 22px 18px; min-height: 44px; cursor: pointer; list-style: none; }
+.member-management .member-filter-disclosure > summary::-webkit-details-marker { display: none; }
+.member-management .member-filter-disclosure[open] > summary { background: #edf4fc; border-color: #92b7db; }
+.member-management .member-filter-disclosure[open] > summary .icon:last-child { transform: rotate(180deg); }
+.member-management .member-filter-panel { padding: 20px 22px; background: #f7faff; border-block: 1px solid var(--border-color); }
+.member-management .member-filter-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; }
+.member-management .member-filter-grid select { min-height: 44px; }
+.member-management .member-filter-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+.member-management .member-register-table { min-width: 820px; }
+.member-management .member-register-table :is(tbody th, td) { padding: 17px 22px; vertical-align: middle; font-size: 13px; max-width: 320px; overflow-wrap: anywhere; }
+.member-management .member-register-table tbody th { text-align: left; font-weight: 600; min-width: 190px; }
+.member-management .member-register-table small { display: block; font-size: 11px; color: var(--text-secondary); font-weight: 400; margin-top: 5px; }
+.member-management .member-row-actions { flex-wrap: wrap; gap: 6px; min-width: 180px; }
+.member-management .member-register-table .button { min-height: 38px; padding: 8px 10px; white-space: nowrap; font-size: 12px; }
+.member-management .member-register-table .button .icon { width: 15px; height: 15px; }
+.member-management .member-register-notice { margin: 0 22px 18px; }
+.member-management .member-register-pagination, .member-management .member-register-pagination nav { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.member-management .member-association-context { padding: 20px 22px; }
+.member-management .member-association-context summary { display: flex; justify-content: space-between; gap: 15px; cursor: pointer; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.member-management .member-association-context[open] summary { margin-bottom: 22px; }
+.member-management :is(a, button, input, select, summary, [tabindex]):focus-visible { outline: 3px solid #2563eb; outline-offset: 3px; }
+.modal:has(.member-record-dialog) { width: min(800px, calc(100% - 30px)); }
+.member-record-dialog { min-width: 0; }
+.member-record-dialog .member-detail-banner { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; padding: 18px; margin-bottom: 24px; border: 1px solid #dae7f3; border-radius: 9px; background: #f4f8fd; }
+.member-record-dialog .member-detail-banner > div { flex: 1 1 200px; overflow-wrap: anywhere; }
+.member-record-dialog .member-detail-banner h3 { font-size: 17px; }
+.member-record-dialog .member-detail-banner p { font-size: 12px; margin-top: 5px; }
+.member-record-dialog .member-avatar { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 10px; color: var(--primary); background: #e4eef9; }
+.member-record-dialog .detail-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 22px; }
+.member-record-dialog :is(p, form > p) { font-size: 13px; margin-bottom: 18px; }
+.member-record-dialog .form-section { padding: 22px 0 0; margin: 24px 0 0; border-top: 1px solid var(--border-color); display: grid; grid-template-columns: minmax(0, 2fr) minmax(150px, 1fr); gap: 24px; }
+.member-record-dialog .form-section h3 { font-size: 13px; margin-bottom: 10px; }
+.member-record-dialog .form-section textarea { min-height: 220px; }
+.member-record-dialog .form-section img { border-radius: 9px; border: 1px solid var(--border-color); }
+.member-record-dialog .member-application-fields { border: 0; padding: 0; margin: 22px 0 0; min-width: 0; }
+.member-record-dialog .member-application-fields > legend { font-size: 15px; font-weight: 650; margin-bottom: 12px; }
+.member-record-dialog .member-form-help { color: var(--text-secondary); }
+.member-record-dialog .member-form-subheading { font-size: 15px; padding-top: 20px; margin: 0 0 18px; border-top: 1px solid var(--border-color); }
+.member-record-dialog .field-help { line-height: 1.7; }
+.member-record-dialog .modal-actions { flex-wrap: wrap; }
+@media (max-width: 760px) {
+    .member-management .member-heading, .member-management .member-section-heading { padding: 18px; }
+    .member-management .member-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .member-management .member-register-pagination { align-items: flex-start; flex-direction: column; }
+    .member-record-dialog .detail-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 480px) {
+    .member-management .member-summary .stat-card { padding: 15px; }
+    .member-management .member-summary .stat-top { flex-direction: column; align-items: flex-start; gap: 10px; }
+    .member-management .member-search-bar { padding-inline: 18px; }
+    .member-management .member-filter-grid, .member-management .member-association-context .detail-grid,
+    .member-record-dialog .detail-grid, .member-record-dialog .form-grid, .member-record-dialog .form-section { grid-template-columns: minmax(0, 1fr); }
+}
+@media (prefers-reduced-motion: reduce) { .member-management .member-summary .stat-card { transition: none; } }

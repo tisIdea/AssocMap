@@ -1,0 +1,56 @@
+/* Geographic register and dedicated detail pages. */
+.area-management { display: grid; gap: 22px; min-width: 0; }
+.area-management .area-page-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 18px; padding: 24px; border-top: 3px solid var(--primary); }
+.area-management .area-page-heading p:not(.eyebrow) { font-size: 13px; margin-top: 8px; max-width: 760px; }
+.area-management .area-page-heading > div { flex: 1 1 260px; min-width: 0; overflow-wrap: anywhere; }
+.area-management .area-summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+.area-management .area-summary-card { color: inherit; border-radius: var(--radius-md); min-width: 0; }
+.area-management .area-summary-card .stat-card { height: 100%; padding: 20px; transition: border-color 150ms, box-shadow 150ms; }
+.area-management .area-summary-card .stat-top { font-size: 12px; gap: 10px; }
+.area-management .area-summary-card strong { color: var(--primary); font-size: 28px; }
+.area-management .area-summary-card:is(:hover, [aria-current="page"]) .stat-card { border-color: #82abd1; background: #f7faff; box-shadow: 0 2px 8px rgb(11 76 140 / 8%); }
+.area-management .area-help, .area-management .area-table-note { color: var(--text-secondary); font-size: 12px; line-height: 1.7; }
+.area-management .area-help { margin-top: -6px; }
+.area-management .area-table-note { padding: 0 22px 18px; }
+.area-management .area-directory { min-width: 0; }
+.area-management .area-section-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px; padding: 22px; }
+.area-management .area-section-heading p { font-size: 12px; margin-top: 5px; }
+.area-management h2 { font-size: 17px; color: #263f58; }
+.area-management .area-tabs { display: flex; gap: 20px; padding: 0 22px; border-bottom: 1px solid var(--border-color); }
+.area-management .area-tabs a { padding: 12px 0; border-bottom: 3px solid transparent; font-weight: 600; font-size: 13px; }
+.area-management .area-tabs a[aria-current="page"] { border-color: var(--primary); }
+.area-management .area-filter-form { padding: 22px; background: #fbfcfe; border-bottom: 1px solid var(--border-color); }
+.area-management .area-filter-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.area-management .area-filter-grid :is(input, select) { min-height: 44px; }
+.area-management .area-filter-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+.area-management .area-record-table { min-width: 720px; }
+.area-management .area-record-table :is(td, tbody th) { padding: 18px 22px; vertical-align: middle; font-size: 13px; overflow-wrap: anywhere; }
+.area-management .area-record-table tbody th { text-align: left; font-weight: 600; min-width: 210px; max-width: 370px; }
+.area-management .area-record-table small { display: block; font-size: 11px; color: var(--text-secondary); font-weight: 400; margin-top: 5px; }
+.area-management .area-record-table a:hover, .area-management .area-breadcrumbs a:hover { text-decoration: underline; }
+.area-management .area-record-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; }
+.area-management .area-record-actions .text-button { min-height: 40px; white-space: nowrap; }
+.area-management .area-record-actions .icon { width: 15px; height: 15px; }
+.area-management .area-pagination nav { display: flex; gap: 8px; }
+.area-management .area-breadcrumbs { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; font-size: 12px; overflow-wrap: anywhere; }
+.area-management .area-information { padding-bottom: 22px; }
+.area-management .area-information-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; padding: 0 22px; margin: 0 0 24px; }
+.area-management .area-information-grid dt { color: var(--text-secondary); font-size: 12px; margin-bottom: 7px; }
+.area-management .area-information-grid dd { margin: 0; font-size: 14px; overflow-wrap: anywhere; }
+.area-management .area-information > .area-help { padding: 0 22px; margin: 0; }
+.area-management :is(a, button, select, input, [tabindex]):focus-visible { outline: 3px solid #2563eb; outline-offset: 3px; }
+@media (max-width: 1200px) { .area-management .area-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 760px) {
+    .area-management .area-page-heading, .area-management .area-section-heading, .area-management .area-filter-form { padding: 18px; }
+    .area-management .area-filter-grid, .area-management .area-information-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .area-management .area-pagination { align-items: flex-start; flex-direction: column; }
+    .area-management .area-summary-card .stat-card { padding: 16px; }
+}
+@media (max-width: 480px) {
+    .area-management .area-filter-grid, .area-management .area-information-grid { grid-template-columns: minmax(0, 1fr); }
+    .area-management .area-summary-card .stat-top { align-items: flex-start; flex-direction: column; }
+    .area-management .area-summary-card .stat-icon { width: 28px; height: 28px; }
+    .area-management .area-summary-card small { font-size: 10px; }
+    .area-management .area-page-heading > .button { width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) { .area-management .area-summary-card .stat-card { transition: none; } }

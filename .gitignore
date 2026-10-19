@@ -53,3 +53,6 @@ python-reporting/.env
 .idea/
 .DS_Store
 Thumbs.db
+
+# Local testing evidence
+/docs/testing/

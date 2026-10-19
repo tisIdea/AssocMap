@@ -38,6 +38,16 @@ return [
             'report' => false,
         ],
 
+        'member_application_photos' => [
+            'driver' => 'local',
+            'root' => storage_path('app/member-application-photos'),
+            'visibility' => 'private',
+            'directory_visibility' => 'private',
+            'serve' => false,
+            'throw' => true,
+            'report' => false,
+        ],
+
         'public' => [
             'driver' => 'local',
             'root' => storage_path('app/public'),

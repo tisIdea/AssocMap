@@ -1,0 +1,26 @@
+
+-- ============================================================
+-- ASSOCMAP MIGRATION 010
+-- PERMANENT ASSOCIATION TERMINATION
+-- ============================================================
+--
+-- STATUS: WITHDRAWN - NO DATABASE CHANGES
+--
+-- This migration was withdrawn before deployment because
+-- permanent termination was incorrectly assigned to
+-- Association Management.
+--
+-- Associations retain their existing active/inactive
+-- and archive/unarchive lifecycle.
+--
+-- Permanent finalization applies to Projects instead:
+-- 1. Completed
+-- 2. Terminated
+--
+-- This file is retained for migration sequence traceability.
+--
+-- No tables, columns, constraints, triggers, or records
+-- are created, modified, or deleted by this migration.
+--
+-- DO NOT restore the original termination SQL.
+-- ============================================================

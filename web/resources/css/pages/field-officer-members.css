@@ -1,0 +1,115 @@
+/* Field Officer member directory. */
+[data-workspace-module="members"] .member-directory-toolbar {
+    justify-content: space-between;
+    gap: 16px;
+}
+
+[data-workspace-module="members"] .button {
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+[data-workspace-module="members"] .area-list-switch {
+    overflow-x: auto;
+}
+
+[data-workspace-module="members"] .area-list-switch .button {
+    flex: 1 0 auto;
+}
+
+[data-workspace-module="members"] .member-filters {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto;
+    align-items: end;
+    gap: 16px;
+}
+
+[data-workspace-module="members"] .member-filters .form-actions {
+    padding: 0;
+    flex-wrap: wrap;
+}
+
+[data-workspace-module="members"] .member-results-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 22px 20px;
+}
+
+[data-workspace-module="members"] .member-results-heading p {
+    margin-top: 6px;
+    font-size: 12px;
+}
+
+[data-workspace-module="members"] .member-legacy-notice {
+    margin: 0 20px 20px;
+}
+
+[data-workspace-module="members"] .member-legacy-notice p {
+    color: inherit;
+}
+
+[data-workspace-module="members"] .member-directory-table {
+    min-width: 960px;
+}
+
+[data-workspace-module="members"] .member-directory-table td {
+    vertical-align: middle;
+    overflow-wrap: anywhere;
+}
+
+[data-workspace-module="members"] .member-directory-table td:last-child {
+    min-width: 255px;
+    max-width: none;
+}
+
+[data-workspace-module="members"] .member-secondary {
+    display: block;
+    margin-top: 5px;
+    color: var(--text-secondary);
+    font-size: 11px;
+}
+
+[data-workspace-module="members"] .member-row-actions {
+    flex-wrap: wrap;
+    gap: 7px;
+}
+
+[data-workspace-module="members"] .member-row-actions .button {
+    min-height: 34px;
+    padding: 7px 9px;
+    font-size: 11px;
+}
+
+[data-workspace-module="members"] .member-pagination {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+@media (max-width: 1190px) {
+    [data-workspace-module="members"] .member-filters {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    [data-workspace-module="members"] .member-filters .form-actions {
+        grid-column: 1 / -1;
+    }
+}
+
+@media (max-width: 640px) {
+    [data-workspace-module="members"] .member-directory-toolbar .area-list-switch {
+        width: 100%;
+    }
+
+    [data-workspace-module="members"] .member-filters {
+        grid-template-columns: 1fr;
+    }
+
+    [data-workspace-module="members"] .member-results-heading,
+    [data-workspace-module="members"] .member-directory-footer {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+}
