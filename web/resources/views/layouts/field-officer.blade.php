@@ -4,6 +4,7 @@
 @endphp
 @php if (request()->routeIs('field-officer.reports.*')) $workspaceHeading = 'Reports & Analytics'; @endphp
 @php if (request()->routeIs('field-officer.dashboard')) $workspaceHeading = 'Dashboard'; @endphp
+@php if (request()->routeIs('field-officer.associations.*')) $workspaceHeading = 'Assigned Associations'; @endphp
 <html lang="en">
 <head>
     <meta charset="utf-8">
@@ -17,6 +18,7 @@
     <x-workspace-sidebar :dashboard-url="route('field-officer.dashboard')" workspace="FIELD OFFICER WORKSPACE" id="field-officer-sidebar" aria-label="Field Officer navigation">
         <x-workspace-nav-link :href="route('field-officer.dashboard')" label="Dashboard" icon="layout-dashboard" :active="request()->routeIs('field-officer.dashboard')" />
         <x-workspace-nav-link :href="route('field-officer.members.index')" label="Member Management" icon="users-round" :active="request()->routeIs('field-officer.members.*')" />
+        <x-workspace-nav-link :href="route('field-officer.associations.index')" label="Assigned Associations" icon="building" :active="request()->routeIs('field-officer.associations.*')" />
         <x-workspace-nav-link :href="route('field-officer.association-officers.index')" label="Association Officers" icon="users" :active="request()->routeIs('field-officer.association-officers.*')" />
         <x-workspace-nav-link :href="route('field-officer.member-applications.index')" label="Member Applications" icon="users" :active="request()->routeIs('field-officer.member-applications.*')" />
         <x-workspace-nav-group id="field-officer-program-navigation" :active="request()->routeIs('field-officer.projects.*', 'field-officer.trainings.*', 'field-officer.monitoring.*', 'field-officer.program-activities.*')">

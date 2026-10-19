@@ -269,14 +269,14 @@ class MemberOfficerLifecycleTest extends TestCase
         string $status, ?string $archivedAt, string $operation): void
     {
         $member = $this->member(1, ['archived_at' => $operation === 'unarchive' ? '2025-02-01' : null]);
-        $before = $member->getRawOriginal();
+        $before = (array) DB::table('members')->where('id', $member->id)->first();
         $data = ['member_record_id' => $member->id,
             'expected_updated_at' => $member->updated_at->format('Y-m-d\TH:i:s.uP')];
         $data += $operation === 'update' ? ['first_name' => 'Changed'] : ['confirm_change' => '1'];
         DB::table('associations')->where('id', self::ASSOCIATION)
             ->update(['status' => $status, 'archived_at' => $archivedAt]);
         $this->assertRejected(fn () => app(MemberService::class)->{$operation}($member, $data, $this->actor()), 'member');
-        $this->assertSame($before, $member->fresh()->getRawOriginal());
+        $this->assertSame($before, (array) DB::table('members')->where('id', $member->id)->first());
         $this->assertSame([1], $member->classifications()->pluck('member_classifications.id')->all());
         $this->assertDatabaseCount('audit_logs', 0);
     }
@@ -501,12 +501,23 @@ class MemberOfficerLifecycleTest extends TestCase
     public function test_archival_records_office_inactivation_without_demoting_or_deleting_membership(): void
     {
         $member = $this->member(2, ['archived_at' => null, 'archived_by' => null]);
-        $archived = app(MemberService::class)->archive($member, $this->actor(self::ADMIN));
+        $archived = app(MemberService::class)->archive($member, [
+            'member_record_id' => $member->id,
+            'expected_updated_at' => $member->updated_at->format('Y-m-d\TH:i:s.uP'),
+            'confirm_change' => '1',
+        ], $this->actor());
         $this->assertNotNull($archived->archived_at);
+        $this->assertSame('inactive', $archived->member_status);
+        $this->assertSame(self::OFFICER, $archived->archived_by);
         $this->assertSame(2, $archived->position_id);
         $this->assertSame(1, Member::count());
-        $event = DB::table('audit_logs')->first();
+        $this->assertDatabaseCount('audit_logs', 2);
+        $this->assertDatabaseHas('audit_logs', ['action_type' => 'ARCHIVE MEMBER', 'entity_id' => $member->id]);
+        $event = DB::table('audit_logs')->where('action_type', 'ARCHIVE ASSOCIATION OFFICER')->first();
+        $this->assertNotNull($event);
         $this->assertSame('ARCHIVE ASSOCIATION OFFICER', $event->action_type);
+        $this->assertSame(self::OFFICER, $event->actor_user_id);
+        $this->assertSame($member->id, $event->entity_id);
         $this->assertNull(json_decode($event->old_values, true)['archived_at']);
         $this->assertNotNull(json_decode($event->new_values, true)['archived_at']);
         $this->assertSame([1], $archived->classifications()->pluck('member_classifications.id')->all());

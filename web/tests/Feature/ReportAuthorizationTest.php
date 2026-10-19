@@ -8,6 +8,7 @@ use App\Exceptions\ReportingUnavailableException;
 use App\Services\Reporting\PythonReportEngine;
 use App\Services\Reporting\ReportScope;
 use App\Services\Reporting\ReportService;
+use App\Services\Reporting\ReportCatalog;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -294,5 +295,111 @@ class ReportAuthorizationTest extends TestCase
         $this->app->instance(ReportService::class,$service);
         $response=$this->get('/'.$prefix.'/reports')->assertOk()->assertSee($label)->assertDontSee($label,false);
         $export ? $response->assertSee('Export PDF')->assertSee('Export XLSX') : $response->assertDontSee('Export PDF')->assertDontSee('Export XLSX');
+    }
+
+    private function uiResult(array $filters): array
+    {
+        return ['version' => ReportCatalog::VERSION, 'title' => ReportCatalog::TYPES[$filters['report_type']],
+            'empty' => false, 'notes' => ['Synthetic interpretation note'], 'sections' => [],
+            'meta' => ['filters' => $filters, 'generated_at' => now('Asia/Manila')->toIso8601String(),
+                'timezone' => 'Asia/Manila', 'currency' => 'PHP', 'scope' => ['Synthetic association'], 'scope_basis' => 'Synthetic authorized scope']];
+    }
+
+    private function mockUiReport(array $result, bool $unavailable = false): void
+    {
+        $options = array_fill_keys(['municipalities', 'associations', 'projects', 'products', 'components', 'program_years'], []);
+        $options['years'] = [(int) now('Asia/Manila')->format('Y'), 2024];
+        $service = Mockery::mock(ReportService::class);
+        $service->shouldReceive('options')->once()->andReturn($options);
+        $generation = $service->shouldReceive('generate')->once();
+        $unavailable ? $generation->andThrow(new ReportingUnavailableException('synthetic_unavailable'))
+            : $generation->andReturn(['result' => $result, 'artifact' => null]);
+        $this->app->instance(ReportService::class, $service);
+    }
+
+    private function htmlQuery(string $html): \DOMXPath
+    {
+        $document = new \DOMDocument();
+        $document->loadHTML($html, LIBXML_NOERROR | LIBXML_NOWARNING);
+
+        return new \DOMXPath($document);
+    }
+
+    #[DataProvider('reportRoles')]
+    public function test_report_toolbar_groups_supported_actions_and_preserves_get_post_contracts(string $prefix, int $role, bool $export): void
+    {
+        $this->webIdentity($role);
+        $filters = ['report_type' => 'comprehensive', 'year' => 2024, 'quarter' => 2];
+        $this->mockUiReport($this->uiResult($filters));
+        $html = $this->get('/'.$prefix.'/reports?'.http_build_query($filters))->assertOk()->getContent();
+        $query = $this->htmlQuery($html);
+        $this->assertSame(1, $query->query('//header//div[@aria-label="Report actions"]/button[@data-report-filter-toggle]')->length);
+        $this->assertSame('report-filter-panel', $query->query('//button[@data-report-filter-toggle]')->item(0)->getAttribute('aria-controls'));
+        $this->assertSame('2', $query->query('//*[@data-report-filter-count]')->item(0)->textContent);
+        $this->assertSame(1, $query->query('//*[@id="report-filter-panel" and not(@hidden)]')->length, 'Filters remain usable without JavaScript.');
+        $this->assertSame(1, $query->query('//form[@data-report-form and @method="GET"]')->length);
+        $this->assertSame('2024', $query->query('//select[@name="year"]/option[@selected]')->item(0)->getAttribute('value'));
+        $this->assertSame('2', $query->query('//select[@name="quarter"]/option[@selected]')->item(0)->getAttribute('value'));
+        $this->assertSame(1, $query->query('//a[@href="'.url('/'.$prefix.'/reports').'" and contains(., "Reset filters")]')->length);
+        $this->assertSame((int) $export, $query->query('//header//details[@data-report-export-menu]/form[@method="POST"]')->length);
+        if ($export) {
+            $this->assertSame(1, $query->query('//form[@data-report-export]/input[@name="_token"]')->length);
+            foreach ($filters as $name => $value) {
+                $this->assertSame((string) $value, $query->query('//*[@data-export-filters]/input[@name="'.$name.'"]')->item(0)->getAttribute('value'));
+            }
+            foreach (['pdf', 'xlsx'] as $format) {
+                $this->assertSame(1, $query->query('//form[@data-report-export]/button[@formaction="'.url('/'.$prefix.'/reports/export/'.$format).'" and not(@disabled)]')->length);
+            }
+        } else {
+            $this->assertSame(0, $query->query('//select[@name="association_id" or @name="municipality_id"]')->length);
+        }
+    }
+
+    public static function reportTypes(): array
+    {
+        return array_map(fn ($type) => [$type], array_keys(ReportCatalog::TYPES));
+    }
+
+    #[DataProvider('reportTypes')]
+    public function test_every_existing_report_keeps_only_its_supported_filter_controls_enabled(string $type): void
+    {
+        $this->webIdentity(2);
+        $filters = ['report_type' => $type];
+        if (in_array('year', ReportCatalog::filters($type), true)) $filters['year'] = (int) now('Asia/Manila')->format('Y');
+        $this->mockUiReport($this->uiResult($filters));
+        $query = $this->htmlQuery($this->get('/admin/reports?report_type='.$type)->assertOk()->getContent());
+        foreach (['program_year', 'year', 'quarter', 'month', 'project_id', 'product_id', 'component_id'] as $name) {
+            $select = $query->query('//select[@name="'.$name.'"]')->item(0);
+            $this->assertSame(!in_array($name, ReportCatalog::filters($type), true), $select->hasAttribute('disabled'), $type.': '.$name);
+        }
+        $this->assertSame(0, $query->query('//select[@name="sort"] | //input[@name="search"]')->length);
+    }
+
+    public function test_report_tables_keep_exact_zero_null_text_and_no_script_row_fallback(): void
+    {
+        $this->webIdentity(2);
+        $result = $this->uiResult(['report_type' => 'income', 'year' => (int) now('Asia/Manila')->format('Y')]);
+        $result['sections'] = [['title' => 'Synthetic income', 'measures' => [['label' => 'Recorded zero', 'value' => '0.00']],
+            'notes' => [], 'chart' => [], 'columns' => [['key' => 'label', 'label' => 'Association', 'type' => 'text'],
+                ['key' => 'gross', 'label' => 'Recorded gross income (PHP)', 'type' => 'decimal']],
+            'rows' => array_merge([['label' => '<script>unsafe</script>', 'gross' => '0.00'], ['label' => 'Missing', 'gross' => null]],
+                array_fill(0, 99, ['label' => 'Retained history', 'gross' => '1234567890.12']))]];
+        $this->mockUiReport($result);
+        $response = $this->get('/admin/reports?report_type=income')->assertOk()->assertSee('<script>unsafe</script>')->assertDontSee('<script>unsafe</script>', false)
+            ->assertSee('0.00')->assertSee('Unobserved / N/A')->assertSee('1234567890.12')->assertSee('Showing the first 100 rows');
+        $query = $this->htmlQuery($response->getContent());
+        $this->assertSame(100, $query->query('//div[@role="region"]/table/tbody/tr')->length);
+        $this->assertSame(100, $query->query('//tbody/tr/td[@class="report-numeric"]')->length);
+        $this->assertSame('0.00', $query->query('//tbody/tr[1]/td[2]')->item(0)->textContent);
+        $this->assertSame('Unobserved / N/A', $query->query('//tbody/tr[2]/td[2]')->item(0)->textContent);
+    }
+
+    public function test_unavailable_report_keeps_filters_and_disables_both_existing_exports(): void
+    {
+        $this->webIdentity(2);
+        $this->mockUiReport($this->uiResult(['report_type' => 'comprehensive']), true);
+        $query = $this->htmlQuery($this->get('/admin/reports')->assertOk()->assertSee('Reporting is temporarily unavailable.')->getContent());
+        $this->assertSame(2, $query->query('//form[@data-report-export]/button[@disabled]')->length);
+        $this->assertSame(1, $query->query('//button[@data-report-submit and not(@disabled)]')->length);
     }
 }

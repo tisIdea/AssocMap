@@ -5,10 +5,13 @@ import { initWorkspaceSidebar } from './layouts/workspace-sidebar.js';
 import { initPublicNavigation } from './layouts/public-navigation.js';
 import { initForms } from './pages/admin/forms.js';
 import { initUserMenus } from './pages/admin/users.js';
+import { initAssociationUi } from './pages/admin/associations.js';
 import { initReports } from './pages/admin/reports.js';
 import { initStaffLogin } from './pages/staff-login.js';
 import { initUserInvitations } from './pages/user-invitations.js';
 import { initProjectClosure } from './pages/project-closure.js';
+import { initProgramLookups } from './pages/program-lookups.js';
+import { initProgramActivities } from './pages/program-activities.js';
 import { initFeedback, showFeedback } from './core/feedback.js';
 import { mountSummaryCounters } from './components/summary-counter.js';
 
@@ -20,11 +23,14 @@ initAdminNavigation(sidebar);
 initPublicNavigation();
 initForms();
 initUserMenus();
+initAssociationUi();
 initReports();
 mountSummaryCounters();
 initStaffLogin();
 initUserInvitations();
 initProjectClosure();
+initProgramLookups();
+initProgramActivities();
 
 const gisRoot = document.querySelector('[data-gis-workspace], [data-gis-editor]');
 if (gisRoot) {

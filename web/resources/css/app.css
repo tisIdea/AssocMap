@@ -17,3 +17,7 @@
 @import './pages/gis-workspace.css';
 @import './pages/user-management.css';
 @import './pages/area-management.css';
+@import './pages/association-management.css';
+@import './pages/member-management.css';
+@import './pages/program-management.css';
+@import './pages/monitoring-management.css';

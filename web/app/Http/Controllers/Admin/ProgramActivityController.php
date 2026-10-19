@@ -3,136 +3,36 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\ProgramDirectoryRequest;
 use App\Http\Requests\StoreProgramActivityRequest;
-use App\Models\Association;
 use App\Models\ProgramActivityRecord;
-use App\Models\Project;
-use App\Models\SaadActivity;
-use App\Services\ProgramActivityService;
 use App\Services\AssociationLifecycleService;
+use App\Services\ProgramActivityService;
+use App\Services\ProgramDirectoryQueryService;
+use App\Services\ProgramEditorQueryService;
 use App\Services\ProjectLifecycleService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Carbon;
 use Illuminate\View\View;
 
 class ProgramActivityController extends Controller
 {
-    private const EXCLUDED_ACTIVITY_CODES = [
-        'FPL_LPD',
-        'SP_LT',
-        'FPL_CST',
-        'MAED_ERT',
-        'PM_CB',
-        'PM_CD',
-    ];
-
-    public function index(Request $request): View
+    public function index(ProgramDirectoryRequest $request, ProgramDirectoryQueryService $directory, ProgramEditorQueryService $editor): View|JsonResponse
     {
-        $statusFilter = $request->query('status', '');
+        if ($request->filled('lookup')) return response()->json($editor->lookup($request));
+        $actor = $request->attributes->get('current_user');
+        $prefix = $actor->role->code === 'system_admin' ? 'admin' : 'field-officer';
+        $filters = $request->filters();
+        $summary = $directory->summary($actor, 'program-activities');
+        $records = $directory->records($actor, 'program-activities', $filters, $summary);
+        $rows = $records->getCollection()->map(fn ($record) => $this->mapActivityRow($record, $prefix, $actor->id));
+        $showEditor = $request->validated('editor') === 'create'
+            || ($request->old('program_activity_form') === 'editor'
+                && !$request->old('program_activity_record_id'));
+        $editorData = $showEditor ? $editor->activityData($request) : [];
 
-        $statusFilter = in_array(
-            $statusFilter,
-            [
-                'planned',
-                'ongoing',
-                'completed',
-                'cancelled',
-                'archived',
-            ],
-            true
-        )
-            ? $statusFilter
-            : '';
-
-        $records = ProgramActivityRecord::query()
-            ->with([
-                'saadActivity',
-                'association.area.barangay.municipality',
-                'relatedProject',
-                'conductedByUser',
-            ])
-            ->when(
-                $statusFilter === 'archived',
-                fn ($query) =>
-                    $query->whereNotNull('archived_at'),
-                fn ($query) =>
-                    $query->whereNull('archived_at')
-            )
-            ->when(
-                in_array(
-                    $statusFilter,
-                    [
-                        'planned',
-                        'ongoing',
-                        'completed',
-                        'cancelled',
-                    ],
-                    true
-                ),
-                fn ($query) =>
-                    $query->where(
-                        'status',
-                        $statusFilter
-                    )
-            )
-            ->orderByDesc('program_year')
-            ->orderByDesc('activity_date')
-            ->orderBy('title')
-            ->get();
-
-        $associations = Association::query()
-            ->whereNull('archived_at')
-            ->where('status', 'active')
-            ->orderBy('name')
-            ->get();
-
-        $activities = SaadActivity::query()
-            ->where('is_active', true)
-            ->whereNotIn(
-                'code',
-                self::EXCLUDED_ACTIVITY_CODES
-            )
-            ->orderBy('id')
-            ->get();
-
-        $projects = Project::query()
-            ->whereNotIn('status', ['completed', 'terminated'])
-            ->whereNull('archived_at')
-            ->orderByDesc('program_year')
-            ->orderBy('title')
-            ->get();
-
-        $activityRows = $records
-            ->map(
-                fn (ProgramActivityRecord $record) =>
-                    $this->mapActivityRow($record)
-            )
-            ->values()
-            ->all();
-
-        return view(
-            'admin.program-activities.index',
-            [
-                'records' =>
-                    $records,
-
-                'activityRows' =>
-                    $activityRows,
-
-                'associations' =>
-                    $associations,
-
-                'activities' =>
-                    $activities,
-
-                'projects' =>
-                    $projects,
-
-                'statusFilter' =>
-                    $statusFilter,
-            ]
-        );
+        return view('program-activities.register', compact('prefix', 'filters', 'summary', 'records', 'rows', 'showEditor') + $editorData);
     }
 
     public function show(Request $request, ProgramActivityRecord $programActivity): View
@@ -140,42 +40,28 @@ class ProgramActivityController extends Controller
         return view('program-activities.show', $this->recordData($request, $programActivity));
     }
 
-    public function edit(Request $request, ProgramActivityRecord $programActivity): View
+    public function edit(Request $request, ProgramActivityRecord $programActivity, ProgramEditorQueryService $editor): View
     {
         $data = $this->recordData($request, $programActivity);
         abort_unless($data['canEdit'], 403, 'This activity is read-only.');
-        $actor = $request->attributes->get('current_user');
-        $associations = Association::whereNull('archived_at')->where('status', 'active')
-            ->when($data['prefix'] === 'field-officer', fn ($query) => $query->where('primary_field_officer_id', $actor->id))
-            ->orderBy('name')->get();
-        $activities = SaadActivity::where('is_active', true)->whereNotIn('code', self::EXCLUDED_ACTIVITY_CODES)->orderBy('id')->get();
-        $projects = Project::whereIn('association_id', $associations->modelKeys())->whereNull('archived_at')
-            ->whereNotIn('status', ['completed', 'terminated'])->orderByDesc('program_year')->orderBy('title')->get();
-
-        return view('program-activities.edit', $data + compact('associations', 'activities', 'projects'));
+        return view('program-activities.edit', $data + $editor->activityData($request, $programActivity));
     }
 
     private function recordData(Request $request, ProgramActivityRecord $programActivity): array
     {
         $actor = $request->attributes->get('current_user');
         abort_unless($actor->canAccessApplication() && in_array($actor->role?->code, ['system_admin', 'field_officer'], true), 403);
-        $programActivity->load(['association.area.barangay.municipality', 'relatedProject.association', 'saadActivity', 'conductedByUser']);
+        $programActivity->load(['association.area.barangay.municipality', 'relatedProject.association', 'saadActivity']);
         $prefix = $actor->role->code === 'system_admin' ? 'admin' : 'field-officer';
         $lifecycle = app(AssociationLifecycleService::class);
         if ($prefix === 'field-officer') {
             abort_unless($programActivity->association && $lifecycle->isOperational($programActivity->association), 403);
             app(ProjectLifecycleService::class)->authorize($actor, $programActivity->association);
         }
-        $canEdit = $programActivity->archived_at === null
-            && (!$programActivity->association_id || ($programActivity->association && $lifecycle->isOperational($programActivity->association)))
-            && !($programActivity->relatedProject?->isFinalized() ?? false)
-            && (!$programActivity->relatedProject || ($programActivity->relatedProject->association
-                && $lifecycle->isOperational($programActivity->relatedProject->association)));
-        $canViewProject = $programActivity->relatedProject?->association
-            && ($prefix === 'admin' || $programActivity->relatedProject->association->primary_field_officer_id === $actor->id);
         $record = $programActivity;
-        $row = $this->mapActivityRow($record);
-        $row['update_url'] = route($prefix.'.program-activities.update', $record);
+        $row = $this->mapActivityRow($record, $prefix, $actor->id);
+        $canEdit = !$row['archived'] && $row['can_manage'];
+        $canViewProject = $row['can_view_project'];
 
         return compact('record', 'prefix', 'row', 'canEdit', 'canViewProject');
     }
@@ -280,113 +166,45 @@ class ProgramActivityController extends Controller
             );
     }
 
-    private function mapActivityRow(
-        ProgramActivityRecord $record
-    ): array {
-        $association =
-            $record->association;
-
-        $area =
-            $association?->area;
-
-        $barangay =
-            $area?->barangay;
-
-        $municipality =
-            $barangay?->municipality;
+    private function mapActivityRow(ProgramActivityRecord $record, string $prefix, string $actorId): array
+    {
+        $association = $record->association;
+        $project = $record->relatedProject;
+        $lifecycle = app(AssociationLifecycleService::class);
+        $parentsOperational = (!$record->association_id || ($association && $lifecycle->isOperational($association)))
+            && (!$project || ($project->association && $lifecycle->isOperational($project->association)));
+        $finalized = $project?->isFinalized() ?? false;
 
         return [
-            'id' =>
-                $record->id,
-
-            'project_finalized' => $record->relatedProject?->isFinalized() ?? false,
-
-            'saad_activity_id' =>
-                $record->saad_activity_id,
-
-            'activity' =>
-                $record->saadActivity?->name
-                    ?? '—',
-
-            'activity_code' =>
-                $record->saadActivity?->code,
-
-            'association_id' =>
-                $record->association_id,
-
-            'association' =>
-                $association?->name
-                    ?? 'Program-wide',
-
-            'municipality' =>
-                $municipality?->name
-                    ?? '—',
-
-            'barangay' =>
-                $barangay?->name
-                    ?? '—',
-
-            'related_project_id' =>
-                $record->related_project_id,
-
-            'related_project' =>
-                $record->relatedProject?->title
-                    ?? '—',
-
-            'title' =>
-                $record->title,
-
-            'description' =>
-                $record->description,
-
-            'program_year' =>
-                $record->program_year,
-
-            'activity_date' =>
-                $record->activity_date
-                    ? Carbon::parse(
-                        $record->activity_date
-                    )->format('Y-m-d')
-                    : null,
-
-            'venue' =>
-                $record->venue,
-
-            'status' =>
-                ucfirst(
-                    $record->status
-                ),
-
-            'status_value' =>
-                $record->status,
-
-            'conducted_by' =>
-                $record->conducted_by,
-
-            'remarks' =>
-                $record->remarks,
-
-            'archived' =>
-                $record->archived_at
-                    !== null,
-
-            'update_url' =>
-                route(
-                    'admin.program-activities.update',
-                    $record
-                ),
-
-            'archive_url' =>
-                route(
-                    'admin.program-activities.archive',
-                    $record
-                ),
-
-            'unarchive_url' =>
-                route(
-                    'admin.program-activities.unarchive',
-                    $record
-                ),
+            'id' => $record->id,
+            'project_finalized' => $finalized,
+            'association_archived' => $association?->archived_at !== null,
+            'parents_operational' => $parentsOperational,
+            'can_manage' => $parentsOperational && !$finalized,
+            'can_view_project' => $project?->association && ($prefix === 'admin'
+                || ($project->association->archived_at === null && $project->association->primary_field_officer_id === $actorId)),
+            'saad_activity_id' => $record->saad_activity_id,
+            'activity' => $record->saadActivity?->name ?? 'Not recorded',
+            'activity_code' => $record->saadActivity?->code,
+            'association_id' => $record->association_id,
+            'association' => $record->association_id ? ($association?->name ?? 'Association unavailable') : 'Program-wide',
+            'municipality' => $association?->area?->barangay?->municipality?->name ?? 'Not recorded',
+            'barangay' => $association?->area?->barangay?->name ?? 'Not recorded',
+            'related_project_id' => $record->related_project_id,
+            'related_project' => $project?->title ?? 'No linked project',
+            'title' => $record->title,
+            'description' => $record->description,
+            'program_year' => $record->program_year,
+            'activity_date' => $record->activity_date?->format('Y-m-d'),
+            'venue' => $record->venue,
+            'status' => ucfirst($record->status),
+            'status_value' => $record->status,
+            'conducted_by' => $record->conducted_by,
+            'remarks' => $record->remarks,
+            'archived' => $record->archived_at !== null,
+            'update_url' => route($prefix.'.program-activities.update', $record),
+            'archive_url' => route($prefix.'.program-activities.archive', $record),
+            'unarchive_url' => route($prefix.'.program-activities.unarchive', $record),
         ];
     }
 }

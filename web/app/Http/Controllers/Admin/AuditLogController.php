@@ -37,19 +37,7 @@ class AuditLogController extends Controller
         $logs = $query->orderByDesc('performed_at')->orderByDesc('id')
             ->paginate((int) ($filters['per_page'] ?? 25), ['*'], 'page', (int) ($filters['page'] ?? 1));
         $logs->appends(array_diff_key($filters, ['page' => true]));
-        $choices = [];
-        foreach (['action_type', 'module', 'entity_type'] as $field) {
-            $choices[$field] = AuditLog::query()->whereNotNull($field)->select($field)->distinct()->orderBy($field)->limit(100)->pluck($field)->all();
-        }
-        $actors = UserProfile::query()->select(['id', 'display_name'])
-            ->whereExists(fn ($audit) => $audit->selectRaw('1')->from('audit_logs')->whereColumn('audit_logs.actor_user_id', 'user_profiles.id'))
-            ->orderBy('display_name')->orderBy('id')->limit(100)->get();
-        if (isset($filters['actor_user_id']) && $filters['actor_user_id'] !== 'unavailable' && ! $actors->contains('id', $filters['actor_user_id'])) {
-            $actor = UserProfile::query()->find($filters['actor_user_id'], ['id', 'display_name']);
-            if ($actor) $actors->push($actor);
-        }
-
-        return view('admin.audit-logs.index', compact('logs', 'filters', 'choices', 'actors', 'timezone'));
+        return view('admin.audit-logs.index', compact('logs', 'filters', 'timezone') + $request->filterOptions());
     }
 
     public function show(Request $request, string $auditLog, AuditLogService $service): View

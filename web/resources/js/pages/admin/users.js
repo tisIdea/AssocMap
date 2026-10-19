@@ -1,6 +1,7 @@
-export function initUserMenus(root = document.querySelector('[data-user-management]')) {
+export function initUserMenus(root = document.querySelector('[data-user-management], [data-project-actions]')) {
     if (!root || root.dataset.userMenusInitialized === 'true') return;
     root.dataset.userMenusInitialized = 'true';
+    const projectActions = 'projectActions' in root.dataset;
     const menus = [...root.querySelectorAll('[data-user-actions]')];
     const close = (menu, restore = false) => {
         menu.open = false;
@@ -33,5 +34,8 @@ export function initUserMenus(root = document.querySelector('[data-user-manageme
         close(menu, true);
     }, true);
     window.addEventListener('resize', closeAll);
-    window.addEventListener('scroll', closeAll, true);
+    window.addEventListener('scroll', event => {
+        if (projectActions && menus.some(menu => menu.open && menu.querySelector('[data-user-actions-panel]') === event.target)) return;
+        closeAll();
+    }, true);
 }

@@ -7,6 +7,10 @@ use App\Http\Requests\StoreMemberApplicationRequest;
 use App\Models\MemberApplication;
 use App\Services\MemberApplicationPhotoService;
 use App\Services\SupabaseStorageService;
+use GuzzleHttp\Promise\Create;
+use GuzzleHttp\Psr7\PumpStream;
+use GuzzleHttp\Psr7\Response as ProviderResponse;
+use GuzzleHttp\Psr7\Utils;
 use Illuminate\Http\Client\Request as ClientRequest;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Log;
@@ -14,6 +18,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class MemberApplicationEvidenceTest extends TestCase
@@ -296,6 +301,62 @@ class MemberApplicationEvidenceTest extends TestCase
         config(['services.supabase_storage.photo_transport' => 'local']);
         $service->discard($path, self::APPLICATION_ID);
         Storage::disk('member_application_photos')->assertExists($path);
+        Http::assertSentCount(1);
+    }
+
+    #[DataProvider('remoteReadResponses')]
+    public function test_provider_body_stream_is_closed_after_success_missing_outage_and_invalid_responses(int $status, string $contents, string $mime, string $outcome): void
+    {
+        $path = 'photos/'.self::APPLICATION_ID.'/'.self::PHOTO_ID.'.png';
+        $stream = Utils::streamFor($contents);
+        Http::fake(['https://storage.example.test/storage/v1/object/authenticated/member-application-photos/'.$path =>
+            Create::promiseFor(new ProviderResponse($status, ['Content-Type' => $mime], $stream))]);
+        $photo = null;
+        try {
+            try {
+                $photo = $this->photos()->open(self::APPLICATION_ID, $path);
+                if ($outcome === 'unavailable') $this->fail('Unavailable provider response was accepted.');
+                if ($outcome === 'missing') $this->assertNull($photo);
+                else {
+                    $this->assertSame('image/png', $photo['mime_type']);
+                    $this->assertSame($contents, stream_get_contents($photo['stream']));
+                }
+            } catch (MemberApplicationPhotoUnavailableException $exception) {
+                $this->assertSame('unavailable', $outcome);
+            }
+            $this->assertFalse($stream->isReadable());
+            Http::assertSentCount(1);
+        } finally {
+            if (isset($photo['stream']) && is_resource($photo['stream'])) fclose($photo['stream']);
+        }
+    }
+
+    public static function remoteReadResponses(): array
+    {
+        return ['success' => [200, 'synthetic image bytes', 'image/png', 'downloaded'],
+            'missing object' => [404, '{"code":"NoSuchKey"}', 'application/json', 'missing'],
+            'provider outage' => [503, '{}', 'application/json', 'unavailable'],
+            'wrong MIME' => [200, 'synthetic image bytes', 'image/jpeg', 'unavailable'],
+            'oversized body' => [200, str_repeat('x', 2 * 1024 * 1024 + 1), 'image/png', 'unavailable']];
+    }
+
+    public function test_interrupted_provider_body_read_is_unavailable_and_closes_the_stream_without_retry(): void
+    {
+        $reads = 0;
+        $stream = new PumpStream(function () use (&$reads): never {
+            $reads++;
+            throw new \RuntimeException('Synthetic interrupted storage body');
+        });
+        $path = 'photos/'.self::APPLICATION_ID.'/'.self::PHOTO_ID.'.png';
+        Http::fake(['https://storage.example.test/storage/v1/object/authenticated/member-application-photos/'.$path =>
+            Create::promiseFor(new ProviderResponse(200, ['Content-Type' => 'image/png'], $stream))]);
+        try {
+            $this->photos()->open(self::APPLICATION_ID, $path);
+            $this->fail('Interrupted provider read was accepted.');
+        } catch (MemberApplicationPhotoUnavailableException $exception) {
+            $this->assertSame(1, $reads);
+            $this->assertTrue($stream->eof());
+        }
         Http::assertSentCount(1);
     }
 

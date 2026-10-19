@@ -8,6 +8,44 @@ function element(tag, text, className) {
     return node;
 }
 
+function initReportControls(root, form, readFilters, defaultYear) {
+    const toggle = root.querySelector('[data-report-filter-toggle]');
+    const panel = root.querySelector('#report-filter-panel');
+    const count = root.querySelector('[data-report-filter-count]');
+    const indicator = root.querySelector('[data-report-filter-status]');
+    const exportMenu = root.querySelector('[data-report-export-menu]');
+
+    function setOpen(open, returnFocus = false) {
+        panel.hidden = !open;
+        toggle.setAttribute('aria-expanded', String(open));
+        if (returnFocus) toggle.focus();
+    }
+
+    toggle.hidden = false;
+    setOpen(false);
+    toggle.addEventListener('click', () => setOpen(panel.hidden));
+    panel.addEventListener('keydown', event => {
+        if (event.key === 'Escape') { event.preventDefault(); setOpen(false, true); }
+    });
+    form.addEventListener('invalid', () => setOpen(true), true);
+    exportMenu?.addEventListener('keydown', event => {
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            exportMenu.open = false;
+            exportMenu.querySelector('summary').focus();
+        }
+    });
+
+    return function sync() {
+        const active = [...readFilters()].filter(([key, value]) => key !== 'report_type'
+            && !(key === 'year' && Number(value) === defaultYear)).length;
+        count.textContent = String(active);
+        count.hidden = active === 0;
+        toggle.setAttribute('aria-label', active ? `Filters, ${active} active` : 'Filters');
+        indicator.textContent = active ? `${active} active filter(s)` : 'Default filters';
+    };
+}
+
 export function initReports() {
     const root = document.querySelector('[data-report-workspace]');
     if (!root || root.dataset.reportsInitialized === 'true') return;
@@ -22,6 +60,7 @@ export function initReports() {
     let request;
     let optionsRequest;
     let revision = 0;
+    const syncControls = initReportControls(root, form, filters, initial.defaultYear);
 
     function syncBusy() {
         form.querySelector('[data-report-submit]').disabled = Boolean(request || optionsRequest);
@@ -128,6 +167,7 @@ export function initReports() {
             fill('program_year', options.program_years.map(year => ({ id: year, name: year })), 'All recorded program years');
             fill('year', options.years.map(year => ({ id: year, name: year })));
             relevance();
+            syncControls();
             showStatus('Filters changed. Apply filters to load current results.');
         } catch (error) {
             if (current === optionsRequest && error.name !== 'AbortError') showStatus(error.message, true);
@@ -137,9 +177,10 @@ export function initReports() {
     }
 
     function table(section, container) {
-        if (!section.rows.length) { container.append(element('p', 'No recorded rows for this section.')); return; }
+        if (!section.rows.length) { container.append(element('p', 'No recorded rows for this section.', 'report-empty')); return; }
         const scroll = element('div', undefined, 'report-table-scroll');
         scroll.tabIndex = 0;
+        scroll.setAttribute('role', 'region');
         scroll.setAttribute('aria-label', section.title);
         const table = element('table');
         table.append(element('caption', section.title));
@@ -148,6 +189,7 @@ export function initReports() {
         for (const column of section.columns) {
             const th = element('th', column.label);
             th.scope = 'col';
+            if (['integer', 'decimal'].includes(column.type)) th.className = 'report-numeric';
             tr.append(th);
         }
         head.append(tr);
@@ -155,9 +197,13 @@ export function initReports() {
         table.append(head, body);
         scroll.append(table);
         const controls = element('div', undefined, 'report-pagination');
+        controls.setAttribute('role', 'group');
+        controls.setAttribute('aria-label', `${section.title} table pages`);
         const previous = element('button', 'Previous', 'button');
         const next = element('button', 'Next', 'button');
         previous.type = next.type = 'button';
+        previous.setAttribute('aria-label', `Previous page: ${section.title}`);
+        next.setAttribute('aria-label', `Next page: ${section.title}`);
         const context = element('span');
         context.setAttribute('aria-live', 'polite');
         controls.append(previous, context, next);
@@ -166,7 +212,8 @@ export function initReports() {
             body.replaceChildren();
             for (const row of section.rows.slice(page * 50, (page + 1) * 50)) {
                 const rowNode = element('tr');
-                for (const column of section.columns) rowNode.append(element('td', row[column.key] ?? 'Unobserved / N/A'));
+                for (const column of section.columns) rowNode.append(element('td', row[column.key] ?? 'Unobserved / N/A',
+                    ['integer', 'decimal'].includes(column.type) ? 'report-numeric' : undefined));
                 body.append(rowNode);
             }
             previous.disabled = page === 0;
@@ -264,6 +311,7 @@ export function initReports() {
             field('project_id').value = '';
             field('product_id').value = '';
         }
+        syncControls();
         if (['municipality_id', 'association_id', 'project_id', 'report_type'].includes(name)) refreshOptions();
     });
 
@@ -307,6 +355,7 @@ export function initReports() {
     });
     relevance();
     associationOptions();
+    syncControls();
     if (initial.result) {
         const selected = Object.fromEntries(filters());
         const applied = initial.result.meta.filters;

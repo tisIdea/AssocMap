@@ -1,7 +1,34 @@
-@include('partials.page-header', ['title' => 'Reports & Analytics', 'description' => 'Review authorized program records, observation coverage and reporting periods.', 'eyebrow' => 'Reporting workspace'])
+@php
+    $defaultYear = (int) now('Asia/Manila')->format('Y');
+    $activeFilterCount = count(array_filter($filters, fn ($value, $key) => $key !== 'report_type'
+        && !($key === 'year' && (int) $value === $defaultYear), ARRAY_FILTER_USE_BOTH));
+@endphp
 <div class="reports-layout" data-report-workspace data-data-url="{{ route($prefix.'.data') }}" data-options-url="{{ route($prefix.'.options') }}">
-    <section class="card report-configuration" aria-label="Report filters">
-        <div class="section-heading"><span class="stat-icon"><x-icon name="receipt" /></span><div><h2>Configure report</h2><p>Set the scope and reporting period</p></div></div>
+    <header class="card report-page-header">
+        <div class="report-page-heading">
+            <p class="eyebrow">Reporting workspace</p>
+            <h1 tabindex="-1">Reports &amp; Analytics</h1>
+            <p>Review authorized program records, observation coverage and reporting periods.</p>
+            <span class="report-access-label"><x-icon name="shield" />{{ match ($role) { 'system_admin' => 'Organizational reporting', 'field_officer' => 'Current assigned associations', default => 'Your association · View only' } }}</span>
+        </div>
+        <div class="report-toolbar" role="group" aria-label="Report actions">
+            <button class="button" type="button" data-report-filter-toggle aria-controls="report-filter-panel" aria-expanded="true" hidden><x-icon name="filter" />Filters<span class="report-filter-count" data-report-filter-count @if(!$activeFilterCount) hidden @endif>{{ $activeFilterCount }}</span><x-icon name="chevron-down" /></button>
+            @if($canExport)
+                <details class="report-export-menu" data-report-export-menu>
+                    <summary class="button button-primary"><x-icon name="download" />Export<x-icon name="chevron-down" /></summary>
+                    <form method="POST" data-report-export class="report-export-panel">
+                        @csrf
+                        <div data-export-filters>@foreach($filters as $key => $value)<input type="hidden" name="{{ $key }}" value="{{ $value }}">@endforeach</div>
+                        <p class="field-help">Exports use the applied filters and current authorized records.</p>
+                        <button type="submit" class="button" formaction="{{ route($prefix.'.export', ['format' => 'pdf']) }}" @disabled(!$result)>Export PDF</button>
+                        <button type="submit" class="button" formaction="{{ route($prefix.'.export', ['format' => 'xlsx']) }}" @disabled(!$result)>Export XLSX</button>
+                    </form>
+                </details>
+            @endif
+        </div>
+    </header>
+    <section id="report-filter-panel" class="card report-configuration" aria-labelledby="report-filter-title">
+        <div class="section-heading"><span class="stat-icon"><x-icon name="filter" /></span><div><h2 id="report-filter-title">Report filters</h2><p>Set the scope and reporting period</p></div><span class="report-filter-indicator" data-report-filter-status role="status">{{ $activeFilterCount ? $activeFilterCount.' active filter(s)' : 'Default filters' }}</span></div>
         <form data-report-form method="GET" action="{{ route($prefix.'.index') }}">
             <noscript><p>Choose a report type below before setting its filters:</p><ul>@foreach($types as $value => $label)<li><a href="{{ route($prefix.'.index', ['report_type' => $value]) }}">{{ $label }}</a></li>@endforeach</ul></noscript>
             <div class="field"><label for="report-type">Report type</label><select id="report-type" name="report_type" required>
@@ -40,21 +67,10 @@
             @endforeach
             <p class="field-help">Reporting periods apply to recorded events. Association/member counts remain current snapshots. Month filters use recorded details only.</p>
             <div class="report-filter-actions">
-                <button class="button button-primary button-block" type="submit" data-report-submit>Apply filters</button>
-                <a class="button button-quiet button-block" href="{{ route($prefix.'.index') }}">Reset filters</a>
+                <a class="button button-quiet" href="{{ route($prefix.'.index') }}">Reset filters</a>
+                <button class="button button-primary" type="submit" data-report-submit>Apply filters</button>
             </div>
         </form>
-        @if($canExport)
-            <form method="POST" data-report-export>
-                @csrf
-                <div data-export-filters>@foreach($filters as $key => $value)<input type="hidden" name="{{ $key }}" value="{{ $value }}">@endforeach</div>
-                <p class="field-help">Exports use the applied filters and current authorized records.</p>
-                <div class="format-options">
-                    <button type="submit" class="button" formaction="{{ route($prefix.'.export', ['format' => 'pdf']) }}" @disabled(!$result)>Export PDF</button>
-                    <button type="submit" class="button" formaction="{{ route($prefix.'.export', ['format' => 'xlsx']) }}" @disabled(!$result)>Export XLSX</button>
-                </div>
-            </form>
-        @endif
     </section>
     <div class="report-preview">
         <section class="card report-document">
@@ -72,11 +88,11 @@
                             <dl class="report-measures">@foreach($section['measures'] as $measure)<div><dt>{{ $measure['label'] }}</dt><dd><x-summary-counter :value="$measure['value'] ?? 'Unobserved'" /></dd></div>@endforeach</dl>
                             @foreach($section['notes'] as $note)<p class="field-help">{{ $note }}</p>@endforeach
                             @if($section['rows'])
-                                <div class="report-table-scroll" tabindex="0" aria-label="{{ $section['title'] }}"><table><caption>{{ $section['title'] }}</caption><thead><tr>@foreach($section['columns'] as $column)<th scope="col">{{ $column['label'] }}</th>@endforeach</tr></thead><tbody>
-                                    @foreach(array_slice($section['rows'], 0, 100) as $row)<tr>@foreach($section['columns'] as $column)<td>{{ $row[$column['key']] ?? 'Unobserved / N/A' }}</td>@endforeach</tr>@endforeach
+                                <div class="report-table-scroll" role="region" tabindex="0" aria-label="{{ $section['title'] }}"><table><caption>{{ $section['title'] }}</caption><thead><tr>@foreach($section['columns'] as $column)<th scope="col" @class(['report-numeric' => in_array($column['type'], ['integer', 'decimal'], true)])>{{ $column['label'] }}</th>@endforeach</tr></thead><tbody>
+                                    @foreach(array_slice($section['rows'], 0, 100) as $row)<tr>@foreach($section['columns'] as $column)<td @class(['report-numeric' => in_array($column['type'], ['integer', 'decimal'], true)])>{{ $row[$column['key']] ?? 'Unobserved / N/A' }}</td>@endforeach</tr>@endforeach
                                 </tbody></table></div>
                                 @if(count($section['rows']) > 100)<p>Showing the first 100 rows. Enable JavaScript for all table pages.</p>@endif
-                            @else<p>No recorded rows for this section.</p>@endif
+                            @else<p class="report-empty">No recorded rows for this section.</p>@endif
                         </section>
                     @endforeach
                 @endif

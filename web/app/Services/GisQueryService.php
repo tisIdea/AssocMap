@@ -29,15 +29,20 @@ class GisQueryService
 
     public function scoped(?UserProfile $user, ?bool $archived = false): Builder
     {
+        $administrator = $user !== null && $this->role($user) === 'system_admin';
         $query = GisLocation::query()->from('gis_locations as g')
             ->leftJoin('projects as p', 'p.id', '=', 'g.project_id')
             ->join('associations as a', 'a.id', '=', DB::raw('COALESCE(g.association_id, p.association_id)'))
             ->join('areas as ar', 'ar.id', '=', 'a.area_id')
             ->join('barangays as b', 'b.id', '=', 'ar.barangay_id')
             ->join('municipalities as m', 'm.id', '=', 'b.municipality_id')
-            ->where('a.status', 'active')->whereNull('a.archived_at')
+            ->where(function ($associations) use ($administrator) {
+                $associations->where(fn ($active) => $active->where('a.status', 'active')->whereNull('a.archived_at'));
+                if ($administrator) $associations->orWhereNotNull('a.archived_at');
+            })
             ->whereIn('g.location_type', GisLocation::TYPES)
-            ->whereNull('g.association_id')->whereNotNull('p.id')->whereNull('p.archived_at');
+            ->whereNull('g.association_id')->whereNotNull('p.id')
+            ->when(! $administrator, fn ($projects) => $projects->whereNull('p.archived_at'));
         if ($user !== null) $this->applyRoleScope($query, $user);
         if ($user !== null && $this->manager($user)) {
             if ($archived === true) $query->whereNotNull('g.archived_at');
@@ -75,7 +80,7 @@ class GisQueryService
         $features = [];
         $bytes = 0;
         foreach ($rows as $row) {
-            $feature = $this->serializer->make($row, $public, $manager);
+            $feature = $this->serializer->make($row, $public, $manager, $manager && $user->role->code === 'system_admin');
             $bytes += strlen(json_encode($feature, JSON_THROW_ON_ERROR));
             if ($map && $bytes > 2097152) { $meta['truncated'] = true; break; }
             $features[] = $feature;
@@ -131,7 +136,7 @@ class GisQueryService
         }
         abort_unless($row, 404);
 
-        return $this->serializer->make($row, false, $manager);
+        return $this->serializer->make($row, false, $manager, $user->role->code === 'system_admin');
     }
 
     public function parents(UserProfile $user, array $filters): array
@@ -257,7 +262,8 @@ class GisQueryService
                 ->selectRaw('g.updated_at::text AS version');
         }
         if (! $public && $manager) {
-            $query->addSelect(['p.status as project_status', 'p.closed_at as project_closed_at']);
+            $query->addSelect(['p.status as project_status', 'p.closed_at as project_closed_at',
+                'p.archived_at as project_archived_at', 'a.status as association_status', 'a.archived_at as association_archived_at']);
             foreach (['created', 'updated', 'published', 'archived'] as $action) {
                 $alias = $action.'_actor';
                 $query->leftJoin('user_profiles as '.$alias, $alias.'.id', '=', 'g.'.$action.'_by')

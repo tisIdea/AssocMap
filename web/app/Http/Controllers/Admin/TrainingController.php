@@ -4,10 +4,10 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreTrainingRequest;
-use App\Models\Association;
-use App\Models\Member;
-use App\Models\Project;
-use App\Models\SaadActivity;
+use App\Http\Requests\ProgramDirectoryRequest;
+use App\Services\ProgramDirectoryQueryService;
+use App\Services\ProgramEditorQueryService;
+use Illuminate\Http\JsonResponse;
 use App\Models\Training;
 use App\Services\TrainingService;
 use App\Services\AssociationLifecycleService;
@@ -19,130 +19,19 @@ use Illuminate\View\View;
 
 class TrainingController extends Controller
 {
-    private const TRAINING_ACTIVITY_CODES = [
-        'SP_LT',
-        'FPL_CST',
-        'MAED_ERT',
-        'PM_CB',
-        'PM_CD',
-    ];
-
-    public function index(Request $request): View
+    public function index(ProgramDirectoryRequest $request, ProgramDirectoryQueryService $directory, ProgramEditorQueryService $editor): View|JsonResponse
     {
-        $statusFilter = $request->query('status', '');
+        if ($request->filled('lookup')) return response()->json($editor->lookup($request));
+        $actor = $request->attributes->get('current_user');
+        $prefix = 'admin';
+        $filters = $request->filters();
+        $summary = $directory->summary($actor, 'trainings');
+        $trainings = $directory->records($actor, 'trainings', $filters, $summary);
+        $showEditor = $request->validated('editor') === 'create'
+            || ($request->old('training_form') === 'editor' && !$request->old('training_record_id'));
+        $editorData = $showEditor ? $editor->trainingData($request) : [];
 
-        $statusFilter = in_array(
-            $statusFilter,
-            [
-                'scheduled',
-                'completed',
-                'cancelled',
-                'archived',
-            ],
-            true
-        )
-            ? $statusFilter
-            : '';
-
-        $trainings = Training::query()
-            ->with([
-                'association.area.barangay.municipality',
-                'relatedProject',
-                'saadActivity',
-                'participants.member',
-            ])
-            ->when(
-                $statusFilter === 'archived',
-                fn ($query) =>
-                    $query->whereNotNull('archived_at'),
-                fn ($query) =>
-                    $query->whereNull('archived_at')
-            )
-            ->when(
-                in_array(
-                    $statusFilter,
-                    [
-                        'scheduled',
-                        'completed',
-                        'cancelled',
-                    ],
-                    true
-                ),
-                fn ($query) =>
-                    $query->where(
-                        'status',
-                        $statusFilter
-                    )
-            )
-            ->orderByDesc('program_year')
-            ->orderByDesc('start_date')
-            ->orderBy('title')
-            ->get();
-
-        $associations = Association::query()
-            ->whereNull('archived_at')
-            ->where('status', 'active')
-            ->orderBy('name')
-            ->get();
-
-        $activities = SaadActivity::query()
-            ->where('is_active', true)
-            ->whereIn(
-                'code',
-                self::TRAINING_ACTIVITY_CODES
-            )
-            ->orderBy('id')
-            ->get();
-
-        $projects = Project::query()
-            ->whereNotIn('status', ['completed', 'terminated'])
-            ->whereNull('archived_at')
-            ->orderByDesc('program_year')
-            ->orderBy('title')
-            ->get();
-
-        $members = Member::query()
-            ->where('member_status', 'active')
-            ->whereNull('archived_at')
-            ->orderBy('last_name')
-            ->orderBy('first_name')
-            ->get();
-
-        $trainingRows = $trainings
-            ->map(
-                fn (Training $training) =>
-                    $this->mapTrainingRow(
-                        $training
-                    )
-            )
-            ->values()
-            ->all();
-
-        return view(
-            'admin.trainings.index',
-            [
-                'trainings' =>
-                    $trainings,
-
-                'trainingRows' =>
-                    $trainingRows,
-
-                'associations' =>
-                    $associations,
-
-                'activities' =>
-                    $activities,
-
-                'projects' =>
-                    $projects,
-
-                'members' =>
-                    $members,
-
-                'statusFilter' =>
-                    $statusFilter,
-            ]
-        );
+        return view('trainings.register', compact('prefix', 'filters', 'summary', 'trainings', 'showEditor') + $editorData);
     }
 
     public function show(Request $request, Training $training): View
@@ -150,28 +39,19 @@ class TrainingController extends Controller
         return view('trainings.show', $this->recordData($request, $training));
     }
 
-    public function edit(Request $request, Training $training): View
+    public function edit(Request $request, Training $training, ProgramEditorQueryService $editor): View
     {
         $data = $this->recordData($request, $training);
         abort_unless($data['canEdit'], 403, 'This training is read-only.');
-        $actor = $request->attributes->get('current_user');
-        $associations = Association::whereNull('archived_at')->where('status', 'active')
-            ->when($data['prefix'] === 'field-officer', fn ($query) => $query->where('primary_field_officer_id', $actor->id))
-            ->orderBy('name')->get();
-        $activities = SaadActivity::where('is_active', true)->whereIn('code', self::TRAINING_ACTIVITY_CODES)->orderBy('id')->get();
-        $projects = Project::whereIn('association_id', $associations->modelKeys())->whereNull('archived_at')
-            ->whereNotIn('status', ['completed', 'terminated'])->orderByDesc('program_year')->orderBy('title')->get();
-        $members = Member::whereIn('association_id', $associations->modelKeys())->where('member_status', 'active')
-            ->whereNull('archived_at')->orderBy('last_name')->orderBy('first_name')->get();
-
-        return view('trainings.edit', $data + compact('associations', 'activities', 'projects', 'members'));
+        return view('trainings.edit', $data + $editor->trainingData($request, $training));
     }
 
     private function recordData(Request $request, Training $training): array
     {
         $actor = $request->attributes->get('current_user');
         abort_unless($actor->canAccessApplication() && in_array($actor->role?->code, ['system_admin', 'field_officer'], true), 403);
-        $training->load(['association.area.barangay.municipality', 'relatedProject.association', 'saadActivity', 'participants.member']);
+        $request->validate(['participant_page' => ['nullable', 'integer', 'min:1', 'max:1000000']]);
+        $training->load(['association.area.barangay.municipality', 'relatedProject.association', 'saadActivity']);
         $prefix = $actor->role->code === 'system_admin' ? 'admin' : 'field-officer';
         $lifecycle = app(AssociationLifecycleService::class);
         if ($prefix === 'field-officer') {
@@ -183,11 +63,16 @@ class TrainingController extends Controller
             && (!$training->relatedProject || ($training->relatedProject->association
                 && $lifecycle->isOperational($training->relatedProject->association)));
         $canViewProject = $training->relatedProject?->association
-            && ($prefix === 'admin' || $training->relatedProject->association->primary_field_officer_id === $actor->id);
+            && ($prefix === 'admin' || ($training->relatedProject->association->archived_at === null
+                && $training->relatedProject->association->primary_field_officer_id === $actor->id));
+        $participants = $training->participants()->with('member:id,association_id,first_name,middle_name,last_name,suffix,member_status,archived_at')
+            ->orderBy('id')->paginate(25, ['*'], 'participant_page')->withQueryString();
+        $training->setRelation('participants', $participants->getCollection());
         $row = $this->mapTrainingRow($training);
         $row['update_url'] = route($prefix.'.trainings.update', $training);
+        $row['participant_count'] = $participants->total();
 
-        return compact('training', 'prefix', 'row', 'canEdit', 'canViewProject');
+        return compact('training', 'prefix', 'row', 'canEdit', 'canViewProject', 'participants');
     }
 
     public function store(
@@ -310,6 +195,10 @@ class TrainingController extends Controller
                 $training->id,
 
             'project_finalized' => $training->relatedProject?->isFinalized() ?? false,
+            'association_archived' => $association?->archived_at !== null,
+            'parents_operational' => $association && app(AssociationLifecycleService::class)->isOperational($association)
+                && (!$training->relatedProject || ($training->relatedProject->association
+                    && app(AssociationLifecycleService::class)->isOperational($training->relatedProject->association))),
             'expected_updated_at' => $training->updated_at?->format('Y-m-d\TH:i:s.uP'),
 
             'association_id' =>

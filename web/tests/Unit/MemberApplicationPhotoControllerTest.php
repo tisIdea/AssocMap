@@ -8,6 +8,7 @@ use App\Models\Role;
 use App\Models\UserProfile;
 use App\Services\MemberApplicationPhotoService;
 use App\Services\SupabaseStorageService;
+use Tests\Fixtures\PhotoReadFailureStream;
 use Illuminate\Database\Connection;
 use Illuminate\Database\ConnectionResolverInterface;
 use Illuminate\Database\Eloquent\Model;
@@ -191,5 +192,55 @@ class MemberApplicationPhotoControllerTest extends TestCase
         $this->assertStringContainsString('temporarily unavailable', $outage->getContent());
         $this->assertStringContainsString('no-store', $outage->headers->get('Cache-Control'));
         Http::assertSentCount(2);
+    }
+
+    public function test_authorized_stream_is_closed_after_the_response_has_sent_its_contents(): void
+    {
+        $this->scope([self::ASSOCIATION_ID, self::ACTOR_ID], [true], 'associations');
+        $stream = fopen('php://temp', 'w+b');
+        fwrite($stream, 'synthetic image bytes');
+        rewind($stream);
+        $photos = Mockery::mock(MemberApplicationPhotoService::class);
+        $photos->shouldReceive('open')->once()->with(self::APPLICATION_ID, self::PATH)
+            ->andReturn(['stream' => $stream, 'mime_type' => 'image/png']);
+        $request = Request::create('/synthetic-photo', 'GET');
+        $request->attributes->set('current_user', $this->actor('field_officer'));
+        try {
+            $this->assertPrivatePhoto((new MemberApplicationPhotoController)($request, $this->application(), $photos));
+            $this->assertFalse(is_resource($stream));
+        } finally {
+            if (is_resource($stream)) fclose($stream);
+        }
+        Http::assertNothingSent();
+    }
+
+    public function test_authorized_stream_is_also_closed_when_reading_the_response_fails(): void
+    {
+        $this->scope([self::ASSOCIATION_ID, self::ACTOR_ID], [true], 'associations');
+        $this->assertTrue(stream_wrapper_register('synthetic-photo', PhotoReadFailureStream::class));
+        PhotoReadFailureStream::$closes = 0;
+        $stream = fopen('synthetic-photo://image', 'rb');
+        $photos = Mockery::mock(MemberApplicationPhotoService::class);
+        $photos->shouldReceive('open')->once()->with(self::APPLICATION_ID, self::PATH)
+            ->andReturn(['stream' => $stream, 'mime_type' => 'image/png']);
+        $request = Request::create('/synthetic-photo', 'GET');
+        $request->attributes->set('current_user', $this->actor('field_officer'));
+        ob_start();
+        try {
+            $response = (new MemberApplicationPhotoController)($request, $this->application(), $photos);
+            try {
+                $response->sendContent();
+                $this->fail('The synthetic stream failure did not propagate.');
+            } catch (\RuntimeException $exception) {
+                $this->assertSame('Synthetic photo read failure', $exception->getMessage());
+            }
+            $this->assertFalse(is_resource($stream));
+            $this->assertSame(1, PhotoReadFailureStream::$closes);
+        } finally {
+            ob_end_clean();
+            if (is_resource($stream)) fclose($stream);
+            stream_wrapper_unregister('synthetic-photo');
+        }
+        Http::assertNothingSent();
     }
 }

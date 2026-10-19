@@ -9,9 +9,9 @@
     $selectedOfficer = $visitOld('conducted_by_user_id', $report?->conducted_by_user_id);
 @endphp
 @section('content')
-@include('monitoring.partials.styles')
+<div class="monitoring-management" data-workspace-module="monitoring" data-workspace-title="Monitoring">
 @include('monitoring.partials.context')
-<section class="card" style="padding:20px"><h2>{{ ucfirst($mode) }} Visit Report</h2>
+<section class="card monitoring-form-card"><h2>{{ ucfirst($mode) }} Visit Report</h2>
     <form method="POST" action="{{ $report ? route($monitoringPrefix.'.visit.update', [$record, $report->id]) : route($monitoringPrefix.'.visit.store', $record) }}" data-visit-report-form data-feedback-error-bag="monitoringVisit" data-saved-conductor="{{ json_encode($report ? ['id' => $report->conducted_by_user_id, 'name' => $report->conducted_by] : null) }}" data-historical-date="{{ $historicalDate }}">@csrf @if($report) @method('PATCH') @endif
         <input type="hidden" name="monitoring_form" value="visit">
         @if($visitErrors->any())<div class="notice notice-error" role="alert" data-visit-validation tabindex="-1">@foreach($visitErrors->all() as $error)<p>{{ $error }}</p>@endforeach</div>@endif
@@ -44,5 +44,6 @@
     </form>
 <div class="monitoring-actions"><a class="button" href="{{ route($monitoringPrefix.'.visits', $record) }}">Back to Visit Reports</a></div>
 </section>
+</div>
 @include('monitoring.partials.visit-script')
 @endsection

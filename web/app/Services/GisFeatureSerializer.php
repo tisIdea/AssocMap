@@ -6,7 +6,7 @@ use App\Models\GisLocation;
 
 class GisFeatureSerializer
 {
-    public function make(GisLocation $location, bool $public, bool $manager = false): array
+    public function make(GisLocation $location, bool $public, bool $manager = false, bool $administrator = false): array
     {
         $geometry = is_string($location->geometry_json) ? json_decode($location->geometry_json, true) : null;
         $properties = [
@@ -26,6 +26,11 @@ class GisFeatureSerializer
             $properties += [
                 'association_id' => $location->association_id, 'project_id' => $location->project_id,
                 'parent_association_id' => $location->parent_association_id,
+                'association_status' => $location->association_status,
+                'association_archived_at' => $location->association_archived_at,
+                'project_archived_at' => $location->project_archived_at,
+                'can_correct_geometry' => $administrator && ($location->archived_at !== null
+                    || $location->association_archived_at !== null || $location->project_archived_at !== null),
                 'project_status' => $location->project_status,
                 'project_finalized' => in_array($location->project_status, ['completed', 'terminated'], true)
                     || $location->project_closed_at !== null,

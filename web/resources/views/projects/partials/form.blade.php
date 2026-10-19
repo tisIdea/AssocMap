@@ -32,6 +32,8 @@
         @csrf
         <input type="hidden" name="project_form" value="editor"><input type="hidden" name="project_record_id" value="{{ $editing['id'] ?? '' }}"><input type="hidden" name="_method" value="PATCH" @disabled(!$editing)>
         <p>Fields marked * are required.</p>
+        @if(empty($catalog['options']['association_records']) || empty($catalog['options']['fisheries_category_records']))<p class="notice">An active association and fisheries category are required. No eligible choices are currently available for one of these fields.</p>@endif
+        @include('program-management.partials.lookup', ['kind' => 'associations', 'target' => 'association_id', 'lookupRoute' => $prefix.'.index', 'label' => 'Find an association'])
         @if($restore)<div class="notice notice-error" role="alert" data-project-errors>@foreach($errors->all() as $error)<p>{{ $error }}</p>@endforeach</div>@endif
         <h3>Basic Project Information</h3><div class="form-grid">@foreach(array_slice($fields, 0, 3) as $field)<x-field :field="$field" prefix="project" :value="$initialValues[$field['name']] ?? ''" />@endforeach</div>
         <h3>SAAD Classification</h3><p>Livelihood Project Delivery <small>(System-controlled)</small></p>
@@ -49,7 +51,7 @@
         <div class="modal-actions">
             @if($fromMonitoring)<a class="button" href="{{ $monitoringReturnUrl }}" data-return-monitoring>Return to Monitoring</a>@endif
             @if($editing)<a class="button" href="{{ route($prefix.'.show', $editing['id']) }}">Cancel</a>@else<button type="button" class="button" data-close-dialog>Cancel</button>@endif
-            <button type="submit" class="button button-primary">Save Project</button>
+            <button type="submit" class="button button-primary" @disabled(empty($catalog['options']['association_records']) || empty($catalog['options']['fisheries_category_records']))>Save Project</button>
         </div>
     </form>
 <template id="project-material-template"><fieldset class="repeat-row"><legend>Material</legend><div class="repeat-row-heading"><strong data-material-heading></strong><button type="button" class="text-button text-danger" data-remove-material>Remove Material</button></div><div class="form-grid">
@@ -195,7 +197,7 @@
         form.elements.association_id.focus();
     });
     populate(initial, editingRecord);
-    if (restore && !editingRecord) document.getElementById('project-editor').dataset.feedbackRestore = 'true';
+    if ((restore || {{ Illuminate\Support\Js::from($showEditor ?? false) }}) && !editingRecord) document.getElementById('project-editor').dataset.feedbackRestore = 'true';
     document.querySelectorAll('[data-return-monitoring]').forEach(link => link.addEventListener('click', event => {
         if (!editingRecord && !document.getElementById('project-editor').open) return;
         event.preventDefault();

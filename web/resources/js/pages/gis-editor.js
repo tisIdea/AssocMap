@@ -42,6 +42,8 @@ export async function initGis(root) {
     const form = root.querySelector('[data-gis-editor-form]');
     const status = root.querySelector('[data-gis-editor-status]');
     const save = root.querySelector('[data-gis-save]');
+    const saveLabel = save.textContent;
+    const draftState = root.querySelector('[data-gis-draft-state]');
     const type = form.elements.location_type;
     const association = root.querySelector('[data-gis-editor-association]');
     const project = form.elements.project_id;
@@ -57,12 +59,13 @@ export async function initGis(root) {
     const longitude = root.querySelector('[data-gis-longitude]');
     const latitude = root.querySelector('[data-gis-latitude]');
     const seed = JSON.parse(root.querySelector('[data-gis-seed]').textContent);
-    const identityLocked = Boolean(seed?.properties.project_finalized);
+    const correcting = form.dataset.gisCorrection === 'true';
+    const identityLocked = correcting || Boolean(seed?.properties.project_finalized);
     parentSearch.disabled = identityLocked;
     const map = createGisMap(root.querySelector('[data-gis-editor-map]'), root.querySelector('[data-gis-tile-notice]'));
     const editable = L.featureGroup().addTo(map);
     let forceMulti = false, syncing = false, dirty = false, saving = false;
-    let associationController, projectController, associationReady = false, projectState = 'idle', projectKey = null;
+    let associationController, projectController, associationReady = correcting, projectState = correcting ? 'ready' : 'idle', projectKey = null;
     let selectedAssociation = seed?.properties.parent_association_id || '';
     let selectedProject = seed?.properties.project_id || '';
     let associationState = 'idle';
@@ -70,6 +73,12 @@ export async function initGis(root) {
     map.pm.setGlobalOptions({ layerGroup: editable, allowSelfIntersection: false, snappable: false });
 
     function boundary() { return type.value === 'project_boundary'; }
+
+    function markDirty() {
+        dirty = true;
+        draftState.dataset.dirty = 'true';
+        draftState.textContent = 'Unsaved changes';
+    }
 
     function synchronizeBoundary() {
         if (syncing || !boundary()) return;
@@ -82,7 +91,7 @@ export async function initGis(root) {
         const geometry = polygons.length ? (polygons.length > 1 || forceMulti
             ? { type: 'MultiPolygon', coordinates: polygons } : { type: 'Polygon', coordinates: polygons[0] }) : null;
         json.value = geometry ? JSON.stringify(geometry, null, 2) : '';
-        dirty = true;
+        markDirty();
     }
 
     function trackLayer(layer) {
@@ -139,6 +148,7 @@ export async function initGis(root) {
 
     function updateSaveState() {
         save.disabled = saving || !associationReady || projectState !== 'ready';
+        save.textContent = saving ? 'Saving GIS location…' : saveLabel;
     }
 
     function updateRegisteredArea() {
@@ -262,10 +272,10 @@ export async function initGis(root) {
         }
     }
 
-    function loadParents() { return Promise.all([loadAssociations(), loadProjects()]); }
+    function loadParents() { return correcting ? Promise.resolve() : Promise.all([loadAssociations(), loadProjects()]); }
 
     function setPoint(lng, lat) {
-        try { renderGeometry({ type: 'Point', coordinates: [lng, lat] }); dirty = true; showStatus(status, 'Point selected. Save the form to store this location.'); }
+        try { renderGeometry({ type: 'Point', coordinates: [lng, lat] }); markDirty(); showStatus(status, 'Point selected. Save the form to store this location.'); }
         catch (error) { showStatus(status, error.message, true); }
     }
 
@@ -274,12 +284,12 @@ export async function initGis(root) {
     [longitude, latitude].forEach(input => input.addEventListener('change', () => {
         if (longitude.value !== '' && latitude.value !== '') setPoint(Number(longitude.value), Number(latitude.value));
         else {
-            syncing = true; editable.clearLayers(); syncing = false; json.value = ''; dirty = true;
+            syncing = true; editable.clearLayers(); syncing = false; json.value = ''; markDirty();
             showStatus(status, 'Both coordinates are required to select a point. Supply coordinates or valid GeoJSON before saving.', true);
         }
     }));
     type.addEventListener('change', () => {
-        updateMode(); loadProjects(); updateSaveState(); dirty = true;
+        updateMode(); loadProjects(); updateSaveState(); markDirty();
     });
     association.addEventListener('change', () => {
         associationController?.abort();
@@ -291,9 +301,9 @@ export async function initGis(root) {
         address.value = '';
         updateRegisteredArea();
         form.elements.parent_association_id.value = selectedAssociation;
-        loadProjects(); dirty = true;
+        loadProjects(); markDirty();
     });
-    project.addEventListener('change', () => { selectedProject = project.value; address.value = ''; dirty = true; });
+    project.addEventListener('change', () => { selectedProject = project.value; address.value = ''; markDirty(); });
     parentSearch.addEventListener('input', () => {
         associationController?.abort(); projectController?.abort(); projectKey = null;
         associationState = 'loading';
@@ -305,16 +315,16 @@ export async function initGis(root) {
     associationRetry.addEventListener('click', () => loadAssociations());
     projectRetry.addEventListener('click', () => loadProjects(true));
     root.querySelector('[data-gis-preview]').addEventListener('click', () => {
-        try { renderGeometry(JSON.parse(json.value), true); dirty = true; showStatus(status, 'Geometry preview updated. Server validation runs when saving.'); }
+        try { renderGeometry(JSON.parse(json.value), true); markDirty(); showStatus(status, 'Geometry preview updated. Server validation runs when saving.'); }
         catch (error) { showStatus(status, error instanceof SyntaxError ? 'Provide valid GeoJSON text.' : error.message, true); }
     });
     root.querySelector('[data-gis-fit]').addEventListener('click', () => fitLayer(map, editable));
     root.querySelector('[data-gis-clear]').addEventListener('click', () => {
         stopGeometryModes();
-        syncing = true; editable.clearLayers(); syncing = false; forceMulti = false; json.value = ''; longitude.value = ''; latitude.value = ''; dirty = true;
+        syncing = true; editable.clearLayers(); syncing = false; forceMulti = false; json.value = ''; longitude.value = ''; latitude.value = ''; markDirty();
         showStatus(status, 'Geometry cleared from this form. Supply replacement geometry before saving.');
     });
-    form.addEventListener('input', event => { if (!event.target.matches('[data-gis-option-search]')) dirty = true; });
+    form.addEventListener('input', event => { if (!event.target.matches('[data-gis-option-search]')) markDirty(); });
     window.addEventListener('beforeunload', event => { if (dirty) { event.preventDefault(); event.returnValue = ''; } });
     form.addEventListener('submit', async event => {
         event.preventDefault();
@@ -322,14 +332,17 @@ export async function initGis(root) {
         form.querySelectorAll('[aria-invalid]').forEach(input => input.removeAttribute('aria-invalid'));
         try {
             const geometry = validateGeometry(JSON.parse(json.value), boundary());
-            const payload = Object.fromEntries(new FormData(form));
+            const correction = form.dataset?.gisCorrection === 'true';
+            const payload = correction ? { version: form.elements.version.value } : Object.fromEntries(new FormData(form));
             payload.geometry = geometry;
-            payload.parent_association_id = association.value;
-            payload.project_id = project.value;
+            if (!correction) {
+                payload.parent_association_id = association.value;
+                payload.project_id = project.value;
+            }
             delete payload._token; delete payload._method;
             associationController?.abort(); projectController?.abort();
             stopGeometryModes();
-            saving = true; save.disabled = true; form.inert = true; showStatus(status, 'Saving GIS location…');
+            saving = true; updateSaveState(); form.inert = true; showStatus(status, 'Saving GIS location…');
             const result = await gisRequest(form.action, { method: seed ? 'PATCH' : 'POST', body: payload, csrf: form.elements._token.value });
             if (result?.type !== 'Feature' || typeof result.id !== 'string' || !result.id || (seed && result.id !== seed.id)) {
                 const error = new Error('Save could not be confirmed. Review the saved register before retrying.');
@@ -353,6 +366,16 @@ export async function initGis(root) {
     });
 
     if (seed) { type.value = seed.properties.location_type; json.value = seed.geometry ? JSON.stringify(seed.geometry, null, 2) : ''; }
+    if (correcting) {
+        association.replaceChildren(new Option(seed.properties.association, selectedAssociation));
+        project.replaceChildren(new Option(seed.properties.project, selectedProject));
+        association.disabled = true;
+        registeredArea.value = [seed.properties.area, seed.properties.barangay, seed.properties.municipality].filter(Boolean).join(', ');
+        showStatus(registeredStatus, 'Saved geographic reference. Geometry correction does not change this address.');
+        showStatus(parentNote, 'Historical ownership is fixed. Only geometry may be corrected.');
+        showStatus(projectStatus, 'The existing project is preserved.');
+        updateSaveState();
+    }
     updateMode();
     if (seed?.geometry) {
         try { renderGeometry(seed.geometry, true); showStatus(status, 'Saved geometry loaded. Changes require saving.'); }

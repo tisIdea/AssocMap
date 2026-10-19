@@ -225,6 +225,15 @@ class RecordNavigationTest extends TestCase
         $this->identity = self::OFFICER;
         DB::table('associations')->update(['primary_field_officer_id' => self::ADMIN]);
         foreach (['show', 'edit'] as $action) $this->get($this->url($module, $action, 'field-officer'))->assertForbidden();
+        $this->get('/field-officer/members?association='.self::ASSOCIATION)->assertNotFound();
+        Schema::create('sex_categories', function (Blueprint $table) {
+            $table->id(); $table->string('name'); $table->boolean('is_active');
+        });
+        foreach (['active', 'inactive', 'archived'] as $status) {
+            $members = $this->get('/field-officer/members?status='.$status)->assertOk();
+            $this->assertCount(0, $members->viewData('members'));
+            $this->assertCount(0, $members->viewData('associations'));
+        }
         $this->patchJson($this->url($module, 'update', 'field-officer'), $this->payload($module))->assertUnprocessable();
         $this->postJson($this->url($module, 'store', 'field-officer'), $this->data($module))->assertUnprocessable();
         $this->identity = self::ACCOUNT;
@@ -313,6 +322,95 @@ class RecordNavigationTest extends TestCase
             ->assertDontSee($this->url($module, 'edit', 'field-officer'), false);
         $this->get($this->url($module, 'edit', 'field-officer'))->assertForbidden();
         $this->patchJson($this->url($module, 'update', 'field-officer'), $this->payload($module))->assertUnprocessable();
+    }
+
+    #[DataProvider('modules')]
+    public function test_archived_parent_history_has_view_links_without_operational_forms(string $module): void
+    {
+        DB::table('associations')->update(['archived_at' => '2026-01-20']);
+        foreach ([false, true] as $archived) {
+            DB::table($this->table($module))->where('id', $this->id($module))->update(['archived_at' => $archived ? '2026-01-21' : null]);
+            $listing = $this->get($this->url($module, 'index').($archived ? '?status=archived' : ''))->assertOk();
+            $dom = $this->document($listing->getContent());
+            $this->assertGreaterThan(0, $dom->query('//a[@href="'.$this->url($module, 'show').'"]')->length);
+            $this->assertSame(0, $dom->query('//a[@href="'.$this->url($module, 'edit').'"]')->length);
+            foreach (['archive', 'unarchive'] as $action) {
+                $this->assertSame(0, $dom->query('//form[@action="'.$this->url($module, $action).'"]')->length);
+                $this->patchJson($this->url($module, $action))->assertUnprocessable();
+            }
+            $this->get($this->url($module, 'show'))->assertOk()->assertSee('Association Archived — Read Only');
+        }
+        $this->identity = self::OFFICER;
+        $listing = $this->get($this->url($module, 'index', 'field-officer').'?status=archived')->assertOk();
+        $this->assertSame(0, $this->document($listing->getContent())->query('//a[@href="'.$this->url($module, 'show', 'field-officer').'"]')->length);
+        foreach (['show', 'edit'] as $action) $this->get($this->url($module, $action, 'field-officer'))->assertForbidden();
+        $this->assertDatabaseHas('training_participants', ['id' => self::RECORD, 'member_id' => self::ACCOUNT]);
+        $this->assertDatabaseHas('members', ['id' => self::ACCOUNT, 'member_status' => 'active']);
+        $this->assertDatabaseHas('projects', ['id' => self::PROJECT, 'status' => 'ongoing']);
+    }
+
+    public function test_cross_owner_links_remain_intact_and_do_not_freeze_unrelated_program_records(): void
+    {
+        $owner = '99999999-9999-4999-8999-999999999999';
+        DB::table('associations')->insert(['id' => $owner, 'name' => 'Archived actual project owner',
+            'status' => 'active', 'primary_field_officer_id' => self::OFFICER]);
+        DB::table('monitoring_production')->delete();
+        DB::table('monitoring_records')->delete();
+        $this->patch($this->url('projects', 'update'), array_replace($this->payload('projects'), ['association_id' => $owner]))
+            ->assertRedirect()->assertSessionHasNoErrors();
+        DB::table('associations')->where('id', $owner)->update(['archived_at' => '2026-01-20']);
+        foreach (['trainings', 'program-activities'] as $module) {
+            $this->get($this->url($module, 'show'))->assertOk()->assertDontSee($this->url($module, 'edit'), false);
+            foreach (['admin', 'field-officer'] as $prefix) {
+                $this->identity = $prefix === 'admin' ? self::ADMIN : self::OFFICER;
+                $listing = $this->get($this->url($module, 'index', $prefix))->assertOk();
+                $this->assertSame(0, $this->document($listing->getContent())->query('//a[@href="'.$this->url($module, 'edit', $prefix).'"]')->length);
+                $this->get($this->url($module, 'edit', $prefix))->assertForbidden();
+                $this->patchJson($this->url($module, 'update', $prefix), array_replace($this->payload($module), ['related_project_id' => null]))->assertUnprocessable();
+            }
+            $this->assertDatabaseHas($this->table($module), ['id' => self::PRODUCT, 'association_id' => self::ASSOCIATION, 'related_project_id' => self::PROJECT]);
+            $this->identity = self::ADMIN;
+            $unrelated = $this->data($module);
+            $unrelated['related_project_id'] = null;
+            DB::table($this->table($module))->insert(['id' => $owner] + $unrelated);
+            $this->get('/admin/'.$module.'/'.$owner.'/edit')->assertOk();
+        }
+    }
+
+    public function test_archived_details_tolerate_missing_optional_relations(): void
+    {
+        DB::table('associations')->update(['archived_at' => '2026-01-20']);
+        DB::table('projects')->update(['commodity_id' => null, 'fisheries_category_id' => null, 'saad_activity_id' => null]);
+        DB::table('members')->delete();
+        $this->get($this->url('trainings', 'show'))->assertOk()->assertSee('Member unavailable');
+        DB::table('trainings')->update(['related_project_id' => null]);
+        DB::table('program_activity_records')->update(['related_project_id' => null, 'conducted_by_user_id' => null]);
+        foreach (self::modules() as [$module]) $this->get($this->url($module, 'show'))->assertOk();
+        $this->assertDatabaseCount('training_participants', 1);
+    }
+
+    public function test_archived_member_http_writes_preserve_the_database_snapshot_with_current_request_contracts(): void
+    {
+        Schema::create('sex_categories', function (Blueprint $table) {
+            $table->id(); $table->string('name'); $table->boolean('is_active');
+        });
+        DB::table('sex_categories')->insert(['id' => 1, 'name' => 'Synthetic sex', 'is_active' => true]);
+        DB::table('members')->update(['updated_at' => '2026-01-01 00:00:00']);
+        DB::table('associations')->update(['archived_at' => '2026-01-20']);
+        $this->identity = self::OFFICER;
+        $before = DB::table('members')->orderBy('id')->get()->toJson();
+        $version = \App\Models\Member::findOrFail(self::ACCOUNT)->updated_at->format('Y-m-d\TH:i:s.uP');
+        foreach (['update', 'archive', 'reactivate'] as $action) {
+            $data = ['member_record_id' => self::ACCOUNT, 'expected_updated_at' => $version,
+                'member_action' => $action === 'update' ? 'profile' : $action];
+            $data += $action === 'update' ? ['first_name' => 'Changed', 'last_name' => 'Participant',
+                'birth_date' => '2000-01-01', 'sex_id' => 1] : ['confirm_change' => '1'];
+            $this->patchJson(route('field-officer.members.'.$action, self::ACCOUNT), $data)
+                ->assertUnprocessable()->assertJsonValidationErrors('member');
+            $this->assertSame($before, DB::table('members')->orderBy('id')->get()->toJson());
+        }
+        $this->assertDatabaseHas('training_participants', ['id' => self::RECORD, 'member_id' => self::ACCOUNT]);
+        $this->assertDatabaseCount('audit_logs', 0);
     }
 
     public function test_record_templates_compile_to_valid_php(): void

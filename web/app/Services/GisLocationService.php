@@ -90,6 +90,46 @@ class GisLocationService
         }, 3);
     }
 
+    public function correctGeometry(string $id, array $data, UserProfile $user, Request $request): array
+    {
+        if (array_diff(array_keys($data), ['geometry', 'version']) !== []) {
+            throw ValidationException::withMessages(['geometry' => 'Only geometry and the expected version may be corrected.']);
+        }
+
+        return DB::transaction(function () use ($id, $data, $user, $request) {
+            $this->lockIdentity($id);
+            $actor = $this->actor($user);
+            abort_unless($actor->role->code === 'system_admin', 403);
+            $location = $this->locked($id);
+            abort_unless($location->association_id === null && $location->project_id !== null
+                && in_array($location->location_type, GisLocation::TYPES, true), 404);
+            $project = Project::whereKey($location->project_id)->firstOrFail();
+            $association = Association::whereKey($project->association_id)->lockForUpdate()->firstOrFail();
+            abort_unless($association->status === 'active' || $association->archived_at !== null, 404);
+            $lockedProject = Project::whereKey($project->id)->lockForUpdate()->firstOrFail();
+            abort_unless($lockedProject->association_id === $association->id, 409, 'The project association changed. Reload before correcting geometry.');
+            abort_unless($association->archived_at !== null || $lockedProject->archived_at !== null
+                || $location->archived_at !== null, 409, 'Use the regular editor for an operational GIS location.');
+            $this->assertVersion($location, $data['version']);
+            $geometry = $this->geometry->normalize($data['geometry'], $location->location_type);
+            $this->geometry->validateSpatial($geometry);
+            $old = $this->geometrySnapshot($location);
+            DB::update('UPDATE gis_locations SET geom = extensions.ST_SetSRID(extensions.ST_GeomFromGeoJSON(?), 4326),
+                updated_by = ?, updated_at = ? WHERE id = ?', [json_encode($geometry, JSON_THROW_ON_ERROR),
+                $actor->id, now()->format('Y-m-d H:i:s.u'), $id]);
+            $location = $this->locked($id);
+            $this->audit('CORRECT GIS GEOMETRY', $location, $old, $this->geometrySnapshot($location), $actor, $request);
+
+            return $this->queries->detail($actor, $id);
+        }, 3);
+    }
+
+    private function geometrySnapshot(GisLocation $location): array
+    {
+        return ['association_id' => $location->association_id, 'project_id' => $location->project_id,
+            'location_type' => $location->location_type, 'geometry' => json_decode($location->geometry_json, true)];
+    }
+
     public function lifecycle(string $id, string $action, string $version, UserProfile $user, Request $request): array
     {
         abort_unless(in_array($action, ['publish', 'unpublish', 'archive'], true), 404);

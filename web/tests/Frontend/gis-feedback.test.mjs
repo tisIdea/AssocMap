@@ -104,10 +104,37 @@ test('passive GIS load failures stay inline; explicit retry can request one erro
         root: { setAttribute() {}, removeAttribute() {}, querySelector: () => ({ replaceChildren() {} }) },
         dataUrl: () => '/gis/data', gisRequest: async () => { const error = new Error('Synthetic'); error.status = 503; throw error; },
         features: { clearLayers() {} }, selection: { clearLayers() {} }, clearSelection() {}, showStatus() {},
-        showOperationError: error => errors.push(error) };
+        updateFilterSummary() {}, showOperationError: error => errors.push(error) };
     runInNewContext(load, context);
     assert.equal(await context.load(), false); assert.equal(errors.length, 0);
     assert.equal(await context.load({ notifyFailure: true }), false); assert.equal(errors.length, 1);
+});
+
+test('pending editor saves reject duplicate submissions and retain the original version on conflict', async () => {
+    let handler, reject;
+    const calls = [], json = { value: '{"type":"Point","coordinates":[124,10]}' };
+    const form = { action: '/admin/gis/saved-id', dataset: {}, elements: { _token: { value: 'synthetic-csrf' },
+        version: { value: 'original-version' }, namedItem: () => null }, reportValidity: () => true,
+        querySelectorAll: () => [], addEventListener: (name, fn) => { handler = fn; } };
+    const context = { form, json, saving: false, associationReady: true, projectState: 'ready', seed: { id: 'saved-id' }, dirty: true,
+        validateGeometry: value => value, boundary: () => false,
+        FormData: class { *[Symbol.iterator]() { yield ['version', form.elements.version.value]; yield ['location_name', 'Unsaved name']; } },
+        association: { value: 'association-id' }, project: { value: 'project-id' }, save: {}, status: { dataset: {} },
+        associationController: undefined, projectController: undefined, stopGeometryModes() {}, updateSaveState() {},
+        gisRequest: (url, options) => { calls.push(options); return new Promise((resolve, fail) => { reject = fail; }); },
+        applyFormErrors() {}, showStatus() {}, showOperationError() {},
+        showFeedback: () => assert.fail('A pending or rejected save must not report success.'),
+        window: { location: { assign: () => assert.fail('A conflict must preserve the editor.') } }, document: { querySelector: () => null } };
+    runInNewContext(save, context);
+    const pending = handler({ preventDefault() {} });
+    await handler({ preventDefault() {} });
+    assert.equal(calls.length, 1); assert.equal(form.inert, true);
+    const error = new Error('Synthetic version conflict'); error.status = 409;
+    reject(error); await pending;
+    assert.equal(form.elements.version.value, 'original-version');
+    assert.equal(json.value, '{"type":"Point","coordinates":[124,10]}');
+    assert.equal(calls[0].body.location_name, 'Unsaved name');
+    assert.equal(context.dirty, true); assert.equal(form.inert, false); assert.equal(context.saving, false);
 });
 
 test('GIS request helper preserves status, same-origin/session/CSRF, rejects HTML and malformed successes', async () => {

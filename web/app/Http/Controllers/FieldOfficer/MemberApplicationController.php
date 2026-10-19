@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\FieldOfficer;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\MemberRegisterRequest;
+use App\Services\MemberDirectoryQueryService;
 use App\Models\MemberApplication;
 use App\Services\MemberApplicationService;
 use Illuminate\Http\RedirectResponse;
@@ -11,54 +13,19 @@ use Illuminate\View\View;
 
 class MemberApplicationController extends Controller
 {
-    public function index(Request $request): View
+    public function index(MemberRegisterRequest $request, MemberDirectoryQueryService $directory): View
     {
         $currentUser = $request->attributes->get('current_user');
+        $filters = $request->filters();
+        $statusFilter = $filters['status'];
+        $associations = $directory->associations($currentUser, true);
+        if ($filters['association'] !== '') abort_unless($associations->contains('id', $filters['association']), 404);
+        $scope = MemberApplication::query()->useWritePdo()->whereHas('association',
+            fn ($query) => $query->where('primary_field_officer_id', $currentUser->id));
+        $summary = $directory->applicationSummary($scope);
+        $applications = $directory->applications($scope, $filters, true, $summary);
 
-        $statusFilter = $request->query('status', 'pending');
-
-        $statusFilter = in_array(
-            $statusFilter,
-            [
-                'pending',
-                'approved',
-                'rejected',
-            ],
-            true
-        )
-            ? $statusFilter
-            : 'pending';
-
-        $applications = MemberApplication::query()
-            ->with([
-                'association.area.barangay.municipality',
-                'sex',
-                'position',
-                'classifications',
-                'submittedBy',
-                'reviewedBy',
-                'member.classifications',
-            ])
-            ->whereHas(
-                'association',
-                function ($query) use ($currentUser) {
-                    $query->where(
-                        'primary_field_officer_id',
-                        $currentUser->id
-                    );
-                }
-            )
-            ->where('status', $statusFilter)
-            ->orderByDesc('created_at')
-            ->get();
-
-        return view(
-            'field-officer.member-applications.index',
-            [
-                'applications' => $applications,
-                'statusFilter' => $statusFilter,
-            ]
-        );
+        return view('field-officer.member-applications.index', compact('applications', 'statusFilter', 'filters', 'associations', 'summary'));
     }
 
     public function approve(

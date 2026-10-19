@@ -48,75 +48,17 @@
 @endphp
 @extends($monitoringLayout)
 @section('content')
-<style>
-    #monitoring-records, .monitoring-workspace { min-width: 0; }
-    .monitoring-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 18px; padding: 18px 0; }
-    #monitoring-records { padding: 20px; }
-    .monitoring-project-group { margin-bottom: 24px; }
-    .monitoring-project-heading { margin-bottom: 16px; }
-    .monitoring-project-heading h2, .monitoring-project-heading p { overflow-wrap: anywhere; }
-    .monitoring-quarter-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
-    .monitoring-quarter { min-width: 0; }
-    .monitoring-quarter > h3 { margin-bottom: 12px; }
-    .monitoring-quarter .monitoring-card { margin-bottom: 12px; padding: 16px; }
-    .monitoring-quarter .detail-grid { grid-template-columns: minmax(0, 1fr); }
-    .monitoring-quarter .monitoring-card-actions { flex-wrap: wrap; }
-    .monitoring-project-group[hidden], .monitoring-quarter-grid [hidden] { display: none; }
-    .monitoring-card { border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 20px; background: var(--card-bg); min-width: 0; }
-    .monitoring-card h2, .monitoring-card h3, .monitoring-card p { overflow-wrap: anywhere; }
-    .monitoring-card h4 { margin: 0 0 12px; }
-    .monitoring-card .detail-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin: 18px 0 0; }
-    .monitoring-card-heading { display: flex; flex-wrap: wrap; align-items: start; justify-content: space-between; gap: 12px; }
-    .monitoring-card-heading h2 { flex: 1 1 170px; }
-    .monitoring-card > p { margin-top: 6px; }
-    .monitoring-card-actions { display: flex; gap: 10px; margin-top: 20px; }
-    .modal:has(.monitoring-workspace) { width: min(1000px, calc(100% - 30px)); }
-    .monitoring-context { margin-bottom: 18px; border-left: 4px solid var(--primary); }
-    .monitoring-context h2 { font-size: 22px; margin-top: 4px; }
-    .monitoring-tabs { display: flex; gap: 6px; overflow-x: auto; border-bottom: 1px solid var(--border-color); padding: 4px 0 12px; margin-bottom: 20px; }
-    .monitoring-tabs button { flex-shrink: 0; border: 1px solid var(--border-color); background: var(--card-bg); border-radius: var(--radius-sm); padding: 10px 16px; }
-    .monitoring-tabs button[aria-selected="true"] { background: var(--primary); border-color: var(--primary); color: white; }
-    .monitoring-workspace .form-section { padding: 0; }
-    #editor-panel-overview .field-wide { border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 16px; }
-    .monitoring-editor-cards { display: grid; gap: 18px; margin: 18px 0; }
-    .monitoring-editor-cards > .monitoring-card { margin: 0; }
-    .monitoring-income-group { margin: 20px 0; }
-    .monitoring-empty { padding: 20px; border: 1px dashed var(--border-color); border-radius: var(--radius-sm); }
-    .monitoring-text { white-space: pre-wrap; overflow-wrap: anywhere; }
-    #monitoring-form .monitoring-editor-section { margin: 18px 0; padding-bottom: 18px; border-bottom: 1px solid var(--border-color); }
-    #monitoring-form .monitoring-period-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-    #monitoring-form .monitoring-context { margin: 14px 0 0; padding: 16px; }
-    #monitoring-form .monitoring-context h2 { font-size: 18px; }
-    #monitoring-form .monitoring-card { padding: 16px; }
-    #monitoring-form .monitoring-income-group { margin: 14px 0; }
-    #monitoring-form .monitoring-income-group h3 { margin-bottom: 12px; }
-    #monitoring-form .monitoring-tabs button:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
-    #monitoring-form [data-monitoring-panel][hidden] { display: none; }
-    #monitoring-form .monitoring-frequency { margin: 12px 0; }
-    @media (max-width: 1100px) {
-        .monitoring-quarter-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    }
-    @media (max-width: 640px) {
-        .monitoring-quarter-grid { grid-template-columns: minmax(0, 1fr); }
-        #monitoring-form .monitoring-period-grid { grid-template-columns: minmax(0, 1fr); }
-        .monitoring-workspace .form-grid { grid-template-columns: minmax(0, 1fr); }
-        .monitoring-workspace .field-wide { grid-column: auto; }
-        .monitoring-card { padding: 16px; }
-        .modal:has(.monitoring-workspace) { padding: 16px; }
-        .monitoring-card .detail-grid { grid-template-columns: minmax(0, 1fr); }
-    }
-</style>
-@include('monitoring.partials.styles')
-<div data-workspace-module="monitoring" data-workspace-title="Monitoring">
+
+<div class="monitoring-management" data-workspace-module="monitoring" data-workspace-title="Monitoring">
 <noscript><p class="notice">Enable JavaScript to populate and edit this Monitoring form.</p></noscript>
 @if($record)
     @include('monitoring.partials.context')
     @include('monitoring.partials.project-shortcuts')
 @else
-    <header class="page-header"><div><h1>Add Monitoring Record</h1></div></header>
+    <header class="card monitoring-heading"><div><p class="eyebrow">Quarterly Monitoring</p><h1 tabindex="-1">Add Monitoring Record</h1><p>Select an eligible project and record its quarterly progress.</p></div></header>
     <a class="button" href="{{ route($monitoringPrefix.'.index') }}">Dashboard</a>
 @endif
-<section class="card" id="monitoring-editor" style="padding:20px"><h2 id="monitoring-editor-title" tabindex="-1">Monitoring</h2>
+<section class="card monitoring-form-card" id="monitoring-editor"><h2 id="monitoring-editor-title" tabindex="-1">Monitoring</h2>
     <form method="POST" action="{{ route($monitoringPrefix.'.store') }}" id="monitoring-form" class="monitoring-workspace" data-monitoring-workspace @if($restore) data-feedback-error-bag="default" @endif novalidate>
         @csrf
         <input type="hidden" name="monitoring_form" value="editor"><input type="hidden" name="monitoring_record_id"><input type="hidden" name="_method" value="PATCH" disabled>
@@ -173,6 +115,7 @@
             <p class="field-hint">Production, income and materials share this reporting period. Monthly income uses the monitoring year and selected quarter.</p>
         </section>
         <section class="monitoring-editor-section" aria-labelledby="monitoring-details-heading">
+            <h3 id="monitoring-details-heading" class="sr-only">Quarterly details</h3>
             <div class="monitoring-tabs" role="tablist" aria-label="Editor sections">
                 @foreach(['overview' => 'Overview', 'production' => 'Production', 'income' => 'Income', 'materials' => 'Materials'] as $tab => $label)<button type="button" role="tab" id="editor-tab-{{ $tab }}" aria-controls="editor-panel-{{ $tab }}" aria-selected="{{ $loop->first ? 'true' : 'false' }}" tabindex="{{ $loop->first ? '0' : '-1' }}" data-monitoring-tab="{{ $tab }}">{{ $label }}</button>@endforeach
             </div>
@@ -198,7 +141,7 @@
             @endforeach
             <section class="form-section" role="tabpanel" id="editor-panel-income" aria-labelledby="editor-tab-income" data-monitoring-panel="income" hidden><h3>Product Income</h3><div class="field"><label for="monitoring-income-product">Product</label><select id="monitoring-income-product" disabled><option value="">Add a Production product first</option></select></div><p class="field-hint">Choose monthly or quarterly income for the selected product. Switching products preserves every group’s values.</p><div id="monitoring-income-groups"></div><p id="monitoring-income-empty" class="monitoring-empty">Add a production entry first. Income must be linked to a product’s production record.</p>@if(!$section)<button type="button" class="button" data-go-production>Go to Production</button>@else<a class="button" href="{{ route($monitoringPrefix.'.workspace', [$record, 'production']) }}">Go to Production</a>@endif</section>
         </section>
-        <div class="modal-actions"><a class="button" href="{{ $record ? route($monitoringPrefix.'.workspace', [$record, $section]) : route($monitoringPrefix.'.index') }}">Cancel</a><button type="submit" class="button button-primary">Save Monitoring Record</button></div>
+        <div class="modal-actions monitoring-form-actions"><a class="button" href="{{ $record ? route($monitoringPrefix.'.workspace', [$record, $section]) : route($monitoringPrefix.'.index') }}">Cancel</a><button type="submit" class="button button-primary">Save Monitoring Record</button></div>
         <p role="status" data-monitoring-submit-status></p>
     </form>
 </section>

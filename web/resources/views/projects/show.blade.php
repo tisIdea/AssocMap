@@ -1,25 +1,27 @@
 @extends($prefix === 'admin' ? 'layouts.admin' : 'layouts.field-officer')
 
 @section('content')
-<section data-workspace-module="projects" data-workspace-title="Project Details">
+<section class="program-management" data-workspace-module="projects" data-workspace-title="Project Details">
     <a class="back-link" href="{{ route($prefix.'.projects.index') }}"><x-icon name="back" />Back to Projects</a>
-    <header class="page-header" style="flex-wrap: wrap; align-items: flex-start;">
-        <div style="flex: 1 1 240px; min-width: 0; overflow-wrap: anywhere;">
+    <header class="card program-heading">
+        <div>
             <div class="eyebrow">Project Management</div>
             <h1 tabindex="-1">Project Details</h1>
             <p>{{ $project->title }}</p>
         </div>
-        @if($canEdit)<a class="button button-primary" style="flex-shrink: 0; margin-left: auto;" href="{{ route($prefix.'.projects.edit', $project) }}"><x-icon name="pencil" />Edit Project</a>@endif
+        @if($canEdit)<a class="button button-primary" href="{{ route($prefix.'.projects.edit', $project) }}"><x-icon name="pencil" />Edit Project</a>@endif
     </header>
     @php($closureErrors = $errors->getBag('projectClosure'))
     @php($terminationErrors = $errors->getBag('projectTermination'))
     @if(!$canClose && $closureErrors->any())<div class="notice notice-error" role="alert"><ul>@foreach($closureErrors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>@endif
     @if(!$canClose && $terminationErrors->any())<div class="notice notice-error" role="alert"><ul>@foreach($terminationErrors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>@endif
-    <section class="card form-section">
-        <h2>{{ $project->title }}</h2>
+    <section class="card program-information">
+        <h2>General Information</h2>
+        @if($project->association->archived_at)<p class="notice">Association Archived — Read Only. Project history remains available.</p>@endif
+        @if($project->archived_at)<p class="notice">Project Archived — Read Only.</p>@endif
         <dl class="detail-grid">
             <div><dt>Status</dt><dd><x-status-badge :value="$project->isFinalized() ? strtoupper($project->status) : ucfirst($project->status)" /></dd></div>
-            <div><dt>Association</dt><dd>{{ $project->association->name }}</dd></div>
+            <div><dt>Association</dt><dd><a href="{{ route($prefix.'.associations.show', $project->association_id) }}">{{ $project->association->name }}</a></dd></div>
             <div><dt>Classification</dt><dd>{{ $project->saadActivity?->name ?? 'Not recorded' }}</dd></div>
             <div><dt>Fisheries category</dt><dd>{{ $project->fisheriesCategory?->name ?? 'Not recorded' }}</dd></div>
             <div><dt>Commodity</dt><dd>{{ $project->commodity?->name ?? 'Not recorded' }}</dd></div>
@@ -32,12 +34,13 @@
         </dl>
         @include('projects.partials.location', ['row' => $locationRow])
         @if($project->isFinalized())
+            <h3>Finalization History</h3>
             <p class="notice">This project is permanently read-only. Reopening, editing, archival, and restoration are unavailable.</p>
             <p>{{ $project->status === 'terminated' ? 'Implementation was permanently discontinued.' : 'Implementation was successfully completed.' }}</p>
             @if($project->closed_at)
                 <p>{{ $project->status === 'terminated' ? 'Terminated' : 'Completed' }} <time datetime="{{ $project->closed_at->toIso8601String() }}">{{ $project->closed_at->timezone('Asia/Manila')->format('M j, Y, g:i a T') }}</time></p>
                 <p>Finalized by: {{ $project->closedBy?->display_name ?? 'Deleted or unavailable actor' }}</p>
-                <h3>Final Remarks</h3><p style="white-space: pre-wrap; overflow-wrap: anywhere">{{ $project->closure_remarks }}</p>
+                <h3>Final Remarks</h3><p class="program-preserve-text">{{ $project->closure_remarks }}</p>
             @else
                 <p>Legacy completed project. No formal closure date, actor, or Closure Remarks were recorded.</p>
             @endif
@@ -48,7 +51,7 @@
             <button type="button" class="button button-danger-outline" data-dialog="project-termination-modal" data-project-finalization-open="project-termination-modal">Terminate Project</button>
         @endif
     </section>
-    <div class="card form-section"><h2>Project resources</h2>
+    <div class="card program-information"><h2>Project Resources</h2>
         <h3>Products</h3>
         @forelse($project->products as $product)<div class="repeat-row"><dl class="detail-grid">
             @foreach(['product_name' => 'Product Name', 'product_type' => 'Product Type', 'default_unit' => 'Default Unit', 'description' => 'Description'] as $field => $label)
@@ -66,7 +69,7 @@
         </dl></div>@empty<p>No materials recorded.</p>@endforelse
     </div>
     @foreach(['Monitoring history' => $monitoring, 'Training history' => $trainings, 'Program activity history' => $activities] as $heading => $history)
-        <section class="card form-section"><h2>{{ $heading }}</h2>
+        <section class="card program-information"><h2>{{ $heading }}</h2>
             @if($history === null)<p>This history is unavailable under your existing access scope.</p>
             @else
                 <ul>@forelse($history as $entry)

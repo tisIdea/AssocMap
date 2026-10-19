@@ -1,9 +1,9 @@
 @extends($prefix === 'admin' ? 'layouts.admin' : 'layouts.field-officer')
 
 @section('content')
-<section data-workspace-module="associations" data-workspace-title="Association Officers">
+<section class="association-management association-officers" data-association-ui data-workspace-module="associations" data-workspace-title="Association Officers">
     <a class="back-link" href="{{ route($prefix.'.association-officers.index') }}"><x-icon name="back" />Back to Association Officers</a>
-    @include('partials.page-header', ['title' => 'Association Officers', 'description' => $association->name, 'eyebrow' => 'Association Management'])
+    <header class="card association-heading"><div><p class="eyebrow">Association Management</p><h1 tabindex="-1">Association Officers</h1><p>{{ $association->name }}</p></div><a class="button" href="{{ route($prefix.'.associations.show', $association->id) }}">View Association Details</a></header>
     <p>President: {{ $association->currentPresident ? collect([$association->currentPresident->first_name, $association->currentPresident->middle_name, $association->currentPresident->last_name, $association->currentPresident->suffix])->filter(fn ($part) => filled($part))->implode(' ') : 'No active President assigned' }}</p>
     @php($officerErrors = $errors->getBag('officerPosition'))
     @if($officerErrors->any())<div class="notice notice-error" role="alert"><ul>@foreach($officerErrors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>@endif
@@ -15,7 +15,7 @@
             <caption>Active, nonarchived officeholders</caption>
             <thead><tr><th scope="col">Member</th><th scope="col">Position</th><th scope="col">Actions</th></tr></thead>
             <tbody>@forelse($officers as $officer)
-                <tr><td>{{ $officer->first_name }} {{ $officer->last_name }}</td><td>{{ $officer->position?->name ?? 'Position unavailable' }}{{ $officer->position?->is_active ? '' : ' (inactive position)' }}</td>
+                <tr><td>{{ $officer->first_name }} {{ $officer->last_name }}</td><td><span class="badge badge-blue">{{ $officer->position?->name ?? 'Position unavailable' }}</span>{{ $officer->position?->is_active ? '' : ' (inactive position)' }}</td>
                     <td>@if(!$association->archived_at && $association->status === 'active')
                         @if($officer->position?->is_active)<a class="button" href="{{ route($prefix.'.association-officers.show', ['association' => $association, 'replace' => $officer->id]) }}">Replace</a>
                         @else<p>Inactive positions cannot be assigned to a replacement.</p>@endif
@@ -56,7 +56,7 @@
             <form id="officer-appointment" class="card form-section" method="POST" action="{{ route($prefix.'.association-officers.update', $association) }}" @if($officerErrors->any() && old('member_id') === $selected->id) data-feedback-error-bag="officerPosition" @endif>
                 @csrf @method('PATCH')
                 <h2>{{ $former ? 'Confirm replacement' : 'Assign officer position' }}</h2>
-                <p>{{ $selected->first_name }} {{ $selected->last_name }} — currently {{ $selected->position?->name }}. The new position replaces this member's current position.</p>
+                <p>{{ $selected->first_name }} {{ $selected->last_name }} â€” currently {{ $selected->position?->name }}. The new position replaces this member's current position.</p>
                 <input type="hidden" name="action" value="{{ $former ? 'replace' : 'assign' }}">
                 <input type="hidden" name="member_id" value="{{ $selected->id }}">
                 <input type="hidden" name="expected_position_id" value="{{ $selected->position_id }}">
@@ -72,14 +72,14 @@
                             <option value="">Select officer position</option>
                             @foreach($positions as $position)
                                 @php($unavailable = in_array($position->id, $occupied) || $selected->position_id === $position->id)
-                                <option value="{{ $position->id }}" @disabled($unavailable)>{{ $position->name }}{{ $unavailable ? ' — occupied or already assigned' : '' }}</option>
+                                <option value="{{ $position->id }}" @disabled($unavailable)>{{ $position->name }}{{ $unavailable ? ' â€” occupied or already assigned' : '' }}</option>
                             @endforeach
                         </select>
                     </div>
                     <p>Use Replace on the current officer row to change an occupied executive office.</p>
                     @if($positions->isEmpty())<p class="notice" role="status">No active officer positions are available. Contact the administrator.</p>@endif
                 @endif
-                <p><label><input type="checkbox" name="confirm_change" value="1" required> I confirm this position change{{ $former ? ' and the former holder’s return to Member' : '' }}.</label></p>
+                <p><label><input type="checkbox" name="confirm_change" value="1" required> I confirm this position change{{ $former ? ' and the former holderâ€™s return to Member' : '' }}.</label></p>
                 <div class="form-actions"><a class="button" href="{{ route($prefix.'.association-officers.show', $association) }}">Cancel</a><button class="button button-primary" type="submit">Save officer position</button></div>
             </form>
         @endif

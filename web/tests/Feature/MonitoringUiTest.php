@@ -198,6 +198,86 @@ class MonitoringUiTest extends TestCase
         }
     }
 
+    public function test_archived_monitoring_history_is_read_only_and_cannot_be_enumerated_by_officers(): void
+    {
+        DB::table('associations')->update(['archived_at' => '2026-01-20']);
+        DB::table('monitoring_visit_reports')->insert(['id' => self::PRODUCT, 'monitoring_record_id' => self::RECORD,
+            'monitoring_date' => '2026-01-16', 'conducted_by' => 'Historical observer']);
+        $tables = ['associations', 'projects', 'monitoring_records', 'monitoring_production', 'monitoring_income',
+            'monitoring_materials', 'monitoring_visit_reports'];
+        $snapshot = fn () => array_map(fn ($table) => DB::table($table)->orderBy('id')->get()->toJson(), $tables);
+        $before = $snapshot();
+        foreach (['overview', 'production', 'income', 'materials'] as $section) {
+            $page = $this->get(route('admin.monitoring.workspace', [self::RECORD, $section]))->assertOk()
+                ->assertSee('Association Archived — Read Only')->assertDontSee('Edit Overview')->assertDontSee('Manage '.$section);
+            $this->assertFalse($page->viewData('canManage'));
+            if ($section !== 'overview') $this->patchJson(route('admin.monitoring.section.update', [self::RECORD, $section]), [])->assertUnprocessable();
+        }
+        $this->get(route('admin.monitoring.visits', self::RECORD))->assertOk()->assertSee('Historical observer')
+            ->assertDontSee('Add Visit Report')->assertDontSee('Edit Visit Report');
+        $this->get(route('admin.monitoring.visit.create', self::RECORD))->assertRedirect()->assertSessionHasErrors('association_id');
+        $this->identity = self::OFFICER;
+        $this->get(route('field-officer.monitoring.index'))->assertOk()->assertDontSee('Synthetic Project');
+        foreach (['overview', 'production', 'income', 'materials'] as $section) {
+            $this->get(route('field-officer.monitoring.workspace', [self::RECORD, $section]))->assertNotFound();
+        }
+        $this->get(route('field-officer.monitoring.visits', self::RECORD))->assertNotFound();
+        $this->identity = self::ACCOUNT;
+        DB::table('association_accounts')->insert(['id' => self::RECORD, 'association_id' => self::ASSOCIATION,
+            'user_id' => self::ACCOUNT, 'is_active' => true]);
+        $this->get(route('association.monitoring.workspace', [self::RECORD, 'income']))->assertOk();
+        $this->patchJson(route('admin.monitoring.section.update', [self::RECORD, 'income']), [])->assertForbidden();
+        $this->assertSame($before, $snapshot());
+    }
+
+    public function test_monitoring_history_and_visits_are_bounded_and_search_applies_before_pagination(): void
+    {
+        DB::table('monitoring_records')->update(['created_at' => '2026-01-15 00:00:00']);
+        for ($number = 1; $number <= 27; $number++) {
+            $id = sprintf('99999999-9999-4999-8999-%012d', $number);
+            DB::table('projects')->insert(['id' => $id, 'association_id' => self::ASSOCIATION,
+                'title' => $number === 27 ? 'Unique 100%_! Project' : 'Extra Project '.$number, 'program_year' => 2026, 'status' => 'ongoing']);
+            DB::table('monitoring_records')->insert(['id' => $id, 'project_id' => $id, 'year' => 2026, 'quarter_id' => 11,
+                'monitoring_date' => '2026-01-15', 'monitored_by' => self::OFFICER, 'updated_by' => self::ADMIN,
+                'site_validated' => true, 'project_status' => 'ongoing', 'created_at' => '2026-01-15 00:00:00']);
+            DB::table('monitoring_visit_reports')->insert(['id' => $id, 'monitoring_record_id' => self::RECORD,
+                'monitoring_date' => '2026-01-16', 'conducted_by' => 'Visit '.$number]);
+        }
+        foreach ([self::ADMIN => 'admin', self::OFFICER => 'field-officer'] as $identity => $prefix) {
+            $this->identity = $identity;
+            $url = route($prefix.'.monitoring.index', ['year' => 2026]);
+            $page = $this->get($url)->assertOk();
+            $this->assertSame(28, $page->viewData('projects')->total());
+            $this->assertCount(25, $page->viewData('projects'));
+            $this->assertCount(3, $this->get($page->viewData('projects')->nextPageUrl())->assertOk()->viewData('projects'));
+            foreach (['100%_!', 'Project Synthetic Association', 'Jan 15, 2026', 'Q1', 'Synthetic Actor', '2026'] as $search) {
+                $filtered = $this->get($url.'&'.http_build_query(['search' => $search]))->assertOk();
+                $expected = match ($search) { '100%_!' => 1, 'Project Synthetic Association' => 2, default => 28 };
+                $this->assertSame($expected, $filtered->viewData('projects')->total(), $search);
+                if ($filtered->viewData('projects')->hasMorePages()) {
+                    $this->assertStringContainsString('search=', $filtered->viewData('projects')->nextPageUrl());
+                }
+            }
+            $visits = $this->get(route($prefix.'.monitoring.visits', self::RECORD))->assertOk();
+            $this->assertCount(25, $visits->viewData('reports'));
+            $this->assertSame(27, $visits->viewData('reports')->total());
+            $this->assertCount(2, $this->get($visits->viewData('reports')->nextPageUrl())->assertOk()->viewData('reports'));
+        }
+    }
+
+    public function test_archived_monitoring_tolerates_empty_optional_history_relations(): void
+    {
+        DB::table('associations')->update(['archived_at' => '2026-01-20']);
+        DB::table('project_products')->delete();
+        DB::table('user_profiles')->where('id', self::OFFICER)->delete();
+        foreach (['overview', 'production', 'income', 'materials'] as $section) {
+            $page = $this->get(route('admin.monitoring.workspace', [self::RECORD, $section]))->assertOk();
+            $this->assertFalse($page->viewData('canManage'));
+        }
+        $this->get(route('admin.monitoring.visits', self::RECORD))->assertOk()->assertSee('No Visit Reports recorded.');
+        $this->assertDatabaseCount('monitoring_production', 1);
+    }
+
     public function test_monitoring_pages_have_unique_dom_identifiers_and_income_dialog_is_scoped(): void
     {
         foreach (['income', 'production'] as $section) {

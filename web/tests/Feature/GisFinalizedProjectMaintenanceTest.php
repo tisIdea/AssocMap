@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Http\Controllers\GisWorkspaceController;
 use App\Models\GisLocation;
+use App\Models\Association;
 use App\Models\Project;
 use App\Models\UserProfile;
 use App\Services\GisAddressResolver;
@@ -12,6 +13,7 @@ use App\Services\GisGeometry;
 use App\Services\GisLocationService;
 use App\Services\GisQueryService;
 use App\Services\ProjectLifecycleService;
+use App\Services\SupabaseAuthService;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -36,6 +38,7 @@ class GisFinalizedProjectMaintenanceTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        config(['app.key' => 'base64:'.base64_encode(str_repeat('g', 32))]);
         Http::preventStrayRequests();
         $this->withoutVite();
         $this->assertInstanceOf(IsolatedDatabaseManager::class, DB::getFacadeRoot());
@@ -53,7 +56,10 @@ class GisFinalizedProjectMaintenanceTest extends TestCase
         foreach (['admin' => 1, 'assigned' => 2, 'other' => 2, 'account' => 3] as $id => $role) {
             DB::table('user_profiles')->insert(['id' => $id, 'role_id' => $role, 'display_name' => $id, 'is_active' => true]);
         }
-        DB::table('associations')->insert(['id' => 'association', 'status' => 'active', 'primary_field_officer_id' => 'assigned']);
+        DB::table('municipalities')->insert(['id' => 'municipality']);
+        DB::table('barangays')->insert(['id' => 'barangay', 'municipality_id' => 'municipality']);
+        DB::table('areas')->insert(['id' => 'area', 'barangay_id' => 'barangay']);
+        DB::table('associations')->insert(['id' => 'association', 'area_id' => 'area', 'status' => 'active', 'primary_field_officer_id' => 'assigned']);
         foreach (['project', 'other-project'] as $id) {
             DB::table('projects')->insert(['id' => $id, 'association_id' => 'association', 'status' => 'ongoing', 'title' => $id]);
         }
@@ -62,13 +68,17 @@ class GisFinalizedProjectMaintenanceTest extends TestCase
         {
             public function detail(UserProfile $user, string $id): array
             {
-                $location = GisLocation::findOrFail($id);
+                $location = $this->scoped($user, null)->where('g.id', $id)->select('g.*')->firstOrFail();
                 $project = Project::findOrFail($location->project_id);
-                $location->forceFill(['geometry_json' => $location->geom, 'version' => (string) $location->updated_at,
+                $association = Association::findOrFail($project->association_id);
+                $location->forceFill(['geometry_json' => $location->geom, 'version' => $location->getRawOriginal('updated_at'),
                     'project_status' => $project->status, 'project_closed_at' => $project->closed_at,
+                    'project_archived_at' => $project->getRawOriginal('archived_at'),
+                    'association_status' => $association->status, 'association_archived_at' => $association->getRawOriginal('archived_at'),
+                    'association_name' => 'Synthetic association', 'project_title' => $project->title,
                     'parent_association_id' => $project->association_id]);
 
-                return (new GisFeatureSerializer)->make($location, false, true);
+                return (new GisFeatureSerializer)->make($location, false, true, $user->role->code === 'system_admin');
             }
         };
         $geometry = Mockery::mock(GisGeometry::class)->makePartial();
@@ -86,8 +96,11 @@ class GisFinalizedProjectMaintenanceTest extends TestCase
             $t->string('auth_user_id')->nullable(); $t->string('status'); $t->string('last_error_code')->nullable();
             $t->timestamp('accepted_at')->nullable(); $t->timestamp('last_attempt_at')->nullable(); $t->timestamps();
         });
+        Schema::create('municipalities', function (Blueprint $t) { $t->string('id')->primary(); });
+        Schema::create('barangays', function (Blueprint $t) { $t->string('id')->primary(); $t->string('municipality_id'); });
+        Schema::create('areas', function (Blueprint $t) { $t->string('id')->primary(); $t->string('barangay_id'); });
         Schema::create('associations', function (Blueprint $t) {
-            $t->string('id')->primary(); $t->string('status'); $t->string('primary_field_officer_id'); $t->timestamp('archived_at')->nullable();
+            $t->string('id')->primary(); $t->string('area_id'); $t->string('status'); $t->string('primary_field_officer_id'); $t->timestamp('archived_at')->nullable();
         });
         Schema::create('projects', function (Blueprint $t) {
             $t->string('id')->primary(); $t->string('association_id'); $t->string('title'); $t->string('status');
@@ -318,6 +331,165 @@ class GisFinalizedProjectMaintenanceTest extends TestCase
         } catch (RuntimeException $exception) { $this->assertSame('Synthetic audit failure.', $exception->getMessage()); }
         $this->assertNotNull(GisLocation::findOrFail($id));
         $this->assertSame(1, DB::table('audit_logs')->count());
+    }
+
+    #[DataProvider('historicalGeometryCases')]
+    public function test_admin_geometry_correction_preserves_lifecycles_ownership_publication_and_history(string $status, string $archival): void
+    {
+        $this->finalize($status);
+        $feature = $this->gis->store($this->payload(), $this->actor(), Request::create('/gis'))['feature'];
+        $id = $feature['id'];
+        $this->gis->lifecycle($id, 'publish', $feature['properties']['version'], $this->actor(), Request::create('/gis'));
+        if ($archival === 'association') DB::table('associations')->update(['archived_at' => now()]);
+        elseif ($archival === 'inactive archived association') DB::table('associations')->update(['status' => 'inactive', 'archived_at' => now()]);
+        elseif ($archival === 'project') DB::table('projects')->where('id', 'project')->update(['archived_at' => now()]);
+        else DB::table('gis_locations')->where('id', $id)->update(['archived_at' => now()]);
+        $before = $this->snapshot();
+        $associations = DB::table('associations')->get()->toJson();
+        $saved = GisLocation::findOrFail($id);
+        $attributes = $saved->getRawOriginal();
+        $geometry = ['type' => 'Point', 'coordinates' => [124.2, 10.8]];
+        $result = $this->gis->correctGeometry($id, ['version' => (string) $saved->updated_at, 'geometry' => $geometry],
+            $this->actor(), Request::create('/gis'));
+        $this->assertSame($geometry, $result['geometry']);
+        $this->assertTrue($result['properties']['can_correct_geometry']);
+        $this->assertSame($associations, DB::table('associations')->get()->toJson());
+        $this->assertSame($before, $this->snapshot());
+        $fresh = $saved->fresh();
+        foreach (array_diff(array_keys($attributes), ['geom', 'updated_by', 'updated_at']) as $field) {
+            $this->assertSame($attributes[$field], $fresh->getRawOriginal($field));
+        }
+        $this->assertSame('admin', $fresh->updated_by);
+        $event = DB::table('audit_logs')->where('action_type', 'CORRECT GIS GEOMETRY')->sole();
+        $this->assertSame('admin', $event->actor_user_id);
+        $this->assertSame($id, $event->entity_id);
+        $this->assertSame($geometry, json_decode($event->new_values, true)['geometry']);
+        $this->assertSame(['association_id', 'project_id', 'location_type', 'geometry'], array_keys(json_decode($event->old_values, true)));
+    }
+
+    public static function historicalGeometryCases(): array
+    {
+        $cases = [];
+        foreach (['ongoing', 'completed', 'terminated'] as $status) {
+            foreach (['association', 'inactive archived association', 'project', 'location'] as $archival) $cases[] = [$status, $archival];
+        }
+
+        return $cases;
+    }
+
+    public function test_geometry_correction_rejects_unauthorized_and_revoked_actors(): void
+    {
+        $feature = $this->gis->store($this->payload(), $this->actor(), Request::create('/gis'))['feature'];
+        DB::table('associations')->update(['archived_at' => now()]);
+        $data = ['geometry' => ['type' => 'Point', 'coordinates' => [124, 10]], 'version' => $feature['properties']['version']];
+        $before = GisLocation::findOrFail($feature['id'])->getRawOriginal();
+        foreach (['assigned', 'other', 'account'] as $id) {
+            $this->denied(fn () => $this->gis->correctGeometry($feature['id'], $data, $this->actor($id), Request::create('/gis')));
+        }
+        $cached = $this->actor(); $cached->canAccessApplication();
+        DB::table('user_profiles')->where('id', 'admin')->update(['is_active' => false]);
+        $this->denied(fn () => $this->gis->correctGeometry($feature['id'], $data, $cached, Request::create('/gis')));
+        DB::table('user_profiles')->where('id', 'admin')->update(['is_active' => true, 'role_id' => 2]);
+        $this->denied(fn () => $this->gis->correctGeometry($feature['id'], $data, $cached, Request::create('/gis')));
+        DB::table('user_profiles')->where('id', 'admin')->update(['role_id' => 1]);
+        DB::table('roles')->where('id', 1)->update(['is_active' => false]);
+        $this->denied(fn () => $this->gis->correctGeometry($feature['id'], $data, $cached, Request::create('/gis')));
+        $this->assertSame($before, GisLocation::findOrFail($feature['id'])->getRawOriginal());
+        $this->assertSame(0, DB::table('audit_logs')->where('action_type', 'CORRECT GIS GEOMETRY')->count());
+    }
+
+    public function test_geometry_correction_rejects_stale_invalid_or_extra_fields_and_requires_audit_success(): void
+    {
+        $feature = $this->gis->store($this->payload(), $this->actor(), Request::create('/gis'))['feature'];
+        $id = $feature['id'];
+        $data = ['geometry' => ['type' => 'Point', 'coordinates' => [124, 10]], 'version' => $feature['properties']['version']];
+        $this->denied(fn () => $this->gis->correctGeometry($id, $data, $this->actor(), Request::create('/gis')));
+        DB::table('associations')->update(['archived_at' => now()]);
+        $before = GisLocation::findOrFail($id)->getRawOriginal();
+        foreach ([['version' => 'stale'], ['geometry' => ['type' => 'Point', 'coordinates' => [181, 10]]],
+            ['geometry' => ['type' => 'Polygon', 'coordinates' => []]], ['project_id' => 'other-project'],
+            ['is_published' => true], ['association_id' => 'other'], ['status' => 'active']] as $change) {
+            $this->denied(fn () => $this->gis->correctGeometry($id, array_replace($data, $change), $this->actor(), Request::create('/gis')));
+            $this->assertSame($before, GisLocation::findOrFail($id)->getRawOriginal());
+        }
+        $this->connection->rejectAudit = true;
+        try {
+            $this->gis->correctGeometry($id, $data, $this->actor(), Request::create('/gis'));
+            $this->fail('Corrections require an audit event.');
+        } catch (RuntimeException $exception) { $this->assertSame('Synthetic audit failure.', $exception->getMessage()); }
+        $this->assertSame($before, GisLocation::findOrFail($id)->getRawOriginal());
+        $this->connection->rejectAudit = false;
+        $this->gis->correctGeometry($id, $data, $this->actor(), Request::create('/gis'));
+        $saved = GisLocation::findOrFail($id)->getRawOriginal();
+        $this->denied(fn () => $this->gis->correctGeometry($id, $data, $this->actor(), Request::create('/gis')));
+        $this->assertSame($saved, GisLocation::findOrFail($id)->getRawOriginal());
+        $this->assertSame(1, DB::table('audit_logs')->where('action_type', 'CORRECT GIS GEOMETRY')->count());
+        $current = $this->queries->detail($this->actor(), $id);
+        $this->gis->correctGeometry($id, array_replace($data, ['version' => $current['properties']['version']]), $this->actor(), Request::create('/gis'));
+        $this->assertSame(2, DB::table('audit_logs')->where('action_type', 'CORRECT GIS GEOMETRY')->count());
+    }
+
+    public function test_geometry_correction_http_is_admin_only_strict_and_keeps_general_editing_blocked(): void
+    {
+        $feature = $this->gis->store($this->payload(), $this->actor(), Request::create('/gis'))['feature'];
+        $id = $feature['id'];
+        DB::table('associations')->update(['archived_at' => now()]);
+        $this->app->instance(GisQueryService::class, $this->queries);
+        $this->app->instance(GisLocationService::class, $this->gis);
+        $identity = 'admin';
+        $auth = Mockery::mock(SupabaseAuthService::class);
+        $auth->shouldReceive('getUser')->andReturnUsing(function () use (&$identity) { return ['id' => $identity]; });
+        $this->app->instance(SupabaseAuthService::class, $auth);
+        $data = ['geometry' => ['type' => 'Point', 'coordinates' => [124, 10]], 'version' => $feature['properties']['version']];
+        $this->get('/admin/gis/'.$id.'/coordinates')->assertRedirect(route('login'));
+        $this->patchJson('/admin/gis/'.$id.'/coordinates', $data)->assertRedirect(route('login'));
+        $this->withSession(['supabase_access_token' => 'synthetic-token']);
+        foreach (['assigned', 'other', 'account'] as $identity) {
+            $this->get('/admin/gis/'.$id.'/coordinates')->assertForbidden();
+            $this->patchJson('/admin/gis/'.$id.'/coordinates', $data)->assertForbidden();
+        }
+        $identity = 'assigned';
+        $this->getJson('/field-officer/gis/'.$id.'?association_id=association')->assertNotFound();
+        $identity = 'admin';
+        $this->getJson('/admin/gis/'.$id)->assertOk()->assertJsonPath('properties.can_correct_geometry', true);
+        $this->get('/admin/gis/'.$id.'/edit')->assertConflict();
+        $page = $this->get('/admin/gis/'.$id.'/coordinates')->assertOk()->assertSee('Correct historical GIS geometry')
+            ->assertSee('data-gis-correction="true"', false)->assertSee('<fieldset disabled>', false);
+        $this->assertSame($id, $page->viewData('gisFeature')['id']);
+        $this->patchJson('/admin/gis/'.$id.'/coordinates', $data + ['project_id' => 'other-project'])
+            ->assertUnprocessable()->assertJsonValidationErrors('project_id');
+        $this->patchJson('/admin/gis/'.$id.'/coordinates', $data + ['is_published' => true])
+            ->assertUnprocessable()->assertJsonValidationErrors('is_published');
+        foreach (['association_id', 'location_type', 'location_name', 'archived_at', 'public_title', 'status'] as $field) {
+            $this->patchJson('/admin/gis/'.$id.'/coordinates', $data + [$field => 'tampered'])
+                ->assertUnprocessable()->assertJsonValidationErrors($field);
+        }
+        $this->patchJson('/admin/gis/'.$id.'/coordinates', array_replace($data, ['geometry' => ['type' => 'Point', 'coordinates' => [181, 10]]]))
+            ->assertUnprocessable();
+        $this->patchJson('/admin/gis/'.$id.'/coordinates', $data)->assertOk()->assertJsonPath('geometry', $data['geometry']);
+        $this->patchJson('/admin/gis/'.$id.'/coordinates', $data)->assertConflict();
+        $this->assertNotNull(Association::findOrFail('association')->archived_at);
+        $this->assertSame(1, DB::table('audit_logs')->where('action_type', 'CORRECT GIS GEOMETRY')->count());
+        $this->app->bind(\Illuminate\Foundation\Http\Middleware\ValidateCsrfToken::class, function ($app) {
+            return new class($app, $app['encrypter']) extends \Illuminate\Foundation\Http\Middleware\ValidateCsrfToken {
+                protected function runningUnitTests() { return false; }
+            };
+        });
+        $this->patchJson('/admin/gis/'.$id.'/coordinates', $data)->assertStatus(419);
+        $this->assertSame(1, DB::table('audit_logs')->where('action_type', 'CORRECT GIS GEOMETRY')->count());
+    }
+
+    public function test_geometry_correction_preserves_saved_boundary_type_and_polygon_parts(): void
+    {
+        $outer = [[123, 10], [124, 10], [124, 11], [123, 10]];
+        $feature = $this->gis->store($this->payload(['location_type' => 'project_boundary',
+            'geometry' => ['type' => 'Polygon', 'coordinates' => [$outer]]]), $this->actor(), Request::create('/gis'))['feature'];
+        DB::table('associations')->update(['archived_at' => now()]);
+        $geometry = ['type' => 'MultiPolygon', 'coordinates' => [[$outer], [[[125, 10], [126, 10], [126, 11], [125, 10]]]]];
+        $result = $this->gis->correctGeometry($feature['id'], ['version' => $feature['properties']['version'], 'geometry' => $geometry],
+            $this->actor(), Request::create('/gis'));
+        $this->assertSame($geometry, $result['geometry']);
+        $this->assertSame('project_boundary', $result['properties']['location_type']);
     }
 
     private function denied(callable $operation): void

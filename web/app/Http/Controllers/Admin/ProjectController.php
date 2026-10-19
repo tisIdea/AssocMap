@@ -5,12 +5,13 @@ namespace App\Http\Controllers\Admin;
 use Illuminate\Support\Carbon;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreProjectRequest;
+use App\Http\Requests\ProgramDirectoryRequest;
+use App\Services\ProgramDirectoryQueryService;
+use App\Services\ProgramEditorQueryService;
+use Illuminate\Http\JsonResponse;
 use App\Models\Association;
-use App\Models\Commodity;
-use App\Models\FisheriesProjectCategory;
 use App\Models\Project;
 use App\Services\ProjectService;
-use App\Services\GisQueryService;
 use App\Services\AssociationLifecycleService;
 use App\Services\ProjectLifecycleService;
 use Illuminate\Http\RedirectResponse;
@@ -19,135 +20,26 @@ use Illuminate\View\View;
 
 class ProjectController extends Controller
 {
-    public function index(Request $request, GisQueryService $gis): View|RedirectResponse
+    public function index(ProgramDirectoryRequest $request, ProgramDirectoryQueryService $directory, ProgramEditorQueryService $editor): View|RedirectResponse|JsonResponse
     {
-        if ($request->boolean('from_monitoring') && \Illuminate\Support\Str::isUuid($request->query('project_id', ''))
-            && in_array($request->query('resource_section'), ['products', 'materials'], true)) {
+        if ($request->filled('lookup')) return response()->json($editor->lookup($request));
+        if ($request->boolean('from_monitoring') && $request->filled('project_id') && $request->filled('resource_section')) {
             return redirect()->route('admin.projects.edit', ['project' => $request->query('project_id')]
                 + $request->only('from_monitoring', 'resource_section', 'monitoring_record'));
         }
-        $catalog = require resource_path('ui/admin.php');
+        $actor = $request->attributes->get('current_user');
+        $prefix = 'admin';
+        $filters = $request->filters();
+        $summary = $directory->summary($actor, 'projects');
+        $projects = $directory->records($actor, 'projects', $filters, $summary);
+        $showEditor = $request->validated('editor') === 'create'
+            || ($request->old('project_form') === 'editor' && !$request->old('project_record_id'));
+        $editorData = $showEditor ? $editor->projectData($request) : [];
 
-        $statusFilter = $request->query('status', '');
-
-        $statusFilter = in_array(
-            $statusFilter,
-            [
-                'planned',
-                'ongoing',
-                'completed',
-                'terminated',
-                'suspended',
-                'cancelled',
-                'archived',
-            ],
-            true
-        )
-            ? $statusFilter
-            : '';
-
-        $projects = Project::query()
-            ->with([
-                'association.area.barangay.municipality',
-                'saadActivity',
-                'fisheriesCategory',
-                'commodity',
-                'materials',
-                'products',
-            ])
-            ->when(
-                $statusFilter === 'archived',
-                fn ($query) =>
-                    $query->whereNotNull('archived_at'),
-                fn ($query) =>
-                    $query->whereNull('archived_at')
-            )
-            ->when(
-                in_array(
-                    $statusFilter,
-                    [
-                        'planned',
-                        'ongoing',
-                        'completed',
-                        'terminated',
-                        'suspended',
-                        'cancelled',
-                    ],
-                    true
-                ),
-                fn ($query) =>
-                    $query->where('status', $statusFilter)
-            )
-            ->orderByDesc('program_year')
-            ->orderBy('title')
-            ->get();
-
-        $associations = Association::query()
-            ->whereNull('archived_at')
-            ->where('status', 'active')
-            ->orderBy('name')
-            ->get();
-
-        $categories = FisheriesProjectCategory::query()
-            ->where('is_active', true)
-            ->orderBy('name')
-            ->get();
-
-        $commodities = Commodity::query()
-            ->where('is_active', true)
-            ->orderBy('name')
-            ->get();
-
-        $catalog['options']['association_records'] =
-            $associations
-                ->map(fn (Association $association) => [
-                    'value' => $association->id,
-                    'label' => $association->name,
-                ])
-                ->values()
-                ->all();
-
-        $catalog['options']['fisheries_category_records'] =
-            $categories
-                ->map(fn (FisheriesProjectCategory $category) => [
-                    'value' => $category->id,
-                    'label' => $category->name,
-                ])
-                ->values()
-                ->all();
-
-        $catalog['options']['commodity_records'] =
-            $commodities
-                ->map(fn (Commodity $commodity) => [
-                    'value' => $commodity->id,
-                    'label' => $commodity->name,
-                    'category_id' => $commodity->category_id,
-                    'source' => $commodity->source,
-                ])
-                ->values()
-                ->all();
-
-        $module = $catalog['modules']['projects'];
-        $module['status_filter'] = $statusFilter;
-        $locations = $gis->projectLocations($request->attributes->get('current_user'), $projects->modelKeys());
-
-        $module['rows'] = $projects
-            ->map(fn (Project $project) =>
-                $this->mapProjectRow($project) + ['gis_locations' => $locations[$project->id] ?? [], 'gis_locations_available' => $locations !== null]
-            )
-            ->values()
-            ->all();
-
-        return view(
-            'admin.projects.index',
-            [
-                'catalog' => $catalog,
-                'module' => $module,
-            ]
-        );
+        return view('projects.register', compact('prefix', 'filters', 'summary', 'projects', 'showEditor') + $editorData);
     }
 
-    public function edit(Request $request, Project $project, ProjectLifecycleService $lifecycle, AssociationLifecycleService $associations): View
+    public function edit(Request $request, Project $project, ProjectLifecycleService $lifecycle, AssociationLifecycleService $associations, ProgramEditorQueryService $editor): View
     {
         $project->load(['association.area.barangay.municipality', 'saadActivity', 'fisheriesCategory', 'commodity', 'materials', 'products']);
         abort_unless($project->association, 404);
@@ -156,17 +48,7 @@ class ProjectController extends Controller
         abort_unless($associations->isOperational($project->association)
             && $project->archived_at === null && !$project->isFinalized(), 403, 'This project is read-only.');
         $prefix = $actor->role->code === 'system_admin' ? 'admin' : 'field-officer';
-        $catalog = require resource_path('ui/admin.php');
-        $catalog['options'] = array_replace($catalog['options'], [
-            'association_records' => Association::whereNull('archived_at')->where('status', 'active')
-                ->when($prefix === 'field-officer', fn ($query) => $query->where('primary_field_officer_id', $actor->id))
-                ->orderBy('name')->get()->map(fn ($association) => ['value' => $association->id, 'label' => $association->name])->all(),
-            'fisheries_category_records' => FisheriesProjectCategory::where('is_active', true)->orderBy('name')->get()
-                ->map(fn ($category) => ['value' => $category->id, 'label' => $category->name])->all(),
-            'commodity_records' => Commodity::where('is_active', true)->orderBy('name')->get()
-                ->map(fn ($commodity) => ['value' => $commodity->id, 'label' => $commodity->name,
-                    'category_id' => $commodity->category_id, 'source' => $commodity->source])->all(),
-        ]);
+        $catalog = $editor->projectData($request, $project)['catalog'];
         $editRow = $this->mapProjectRow($project);
         $editRow['update_url'] = route($prefix.'.projects.update', $project);
 

@@ -5,7 +5,9 @@ namespace App\Services;
 use App\Models\Association;
 use App\Models\AssociationRegistration;
 use App\Models\RegistrationAgency;
+use App\Models\Role;
 use App\Models\UserProfile;
+use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
@@ -13,7 +15,9 @@ use Illuminate\Validation\ValidationException;
 
 class AssociationService
 {
-    public function __construct(private AssociationLifecycleService $lifecycle) {}
+    private const LIFECYCLE_AUDIT_FIELDS = ['association_id', 'status', 'archived_at', 'archived_by', 'updated_by'];
+
+    public function __construct(private AssociationLifecycleService $lifecycle, private AuditLogService $audit) {}
 
     public function create(
         array $data,
@@ -85,14 +89,17 @@ class AssociationService
         UserProfile $currentUser
     ): Association {
         return DB::transaction(function () use ($association, $currentUser) {
+            $actor = $this->lockAdministrator($currentUser);
             $association = Association::whereKey($association->id)->lockForUpdate()->firstOrFail();
             if ($association->archived_at !== null) {
                 throw ValidationException::withMessages(['association' => 'This association has already been archived.']);
             }
+            $before = $this->lifecycleSnapshot($association);
             $association->archived_at = Carbon::now();
-            $association->archived_by = $currentUser->id;
-            $association->updated_by = $currentUser->id;
+            $association->archived_by = $actor->id;
+            $association->updated_by = $actor->id;
             $association->save();
+            $this->recordLifecycleChange($actor, $association, $before, 'ARCHIVE ASSOCIATION');
 
             return $association;
         });
@@ -103,17 +110,45 @@ class AssociationService
         UserProfile $currentUser
     ): Association {
         return DB::transaction(function () use ($association, $currentUser) {
+            $actor = $this->lockAdministrator($currentUser);
             $association = Association::whereKey($association->id)->lockForUpdate()->firstOrFail();
             if ($association->archived_at === null) {
                 throw ValidationException::withMessages(['association' => 'This association is not archived.']);
             }
+            $before = $this->lifecycleSnapshot($association);
             $association->archived_at = null;
             $association->archived_by = null;
-            $association->updated_by = $currentUser->id;
+            $association->updated_by = $actor->id;
             $association->save();
+            $this->recordLifecycleChange($actor, $association, $before, 'RESTORE ASSOCIATION');
 
             return $association;
         });
+    }
+
+    private function lockAdministrator(UserProfile $user): UserProfile
+    {
+        $actor = UserProfile::whereKey($user->id)->sharedLock()->first();
+        abort_unless($actor, 403);
+        $actor->setRelation('role', Role::whereKey($actor->role_id)->sharedLock()->first());
+        abort_unless($actor->canAccessApplication() && $actor->role?->code === 'system_admin', 403);
+
+        return $actor;
+    }
+
+    private function lifecycleSnapshot(Association $association): array
+    {
+        return ['association_id' => $association->id, 'status' => $association->status,
+            'archived_at' => $association->archived_at?->toIso8601String(),
+            'archived_by' => $association->archived_by, 'updated_by' => $association->updated_by];
+    }
+
+    private function recordLifecycleChange(UserProfile $actor, Association $association, array $before, string $action): void
+    {
+        $request = new Request;
+        $request->attributes->set('current_user', $actor);
+        $this->audit->record($request, $action, 'Association Management', 'association_lifecycle', $association->id,
+            $before, $this->lifecycleSnapshot($association), self::LIFECYCLE_AUDIT_FIELDS);
     }
 
     private function ensureUniqueName(

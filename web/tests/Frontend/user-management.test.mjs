@@ -36,7 +36,11 @@ function fixture() {
     const root = { dataset: {}, querySelectorAll: () => menus };
     const document = events({
         dialogOpen: false,
-        querySelector(selector) { return selector === 'dialog[open]' ? this.dialogOpen : root; },
+        selectors: [],
+        querySelector(selector) {
+            this.selectors.push(selector);
+            return selector === 'dialog[open]' ? this.dialogOpen : root;
+        },
     });
     const window = events({ innerWidth: 480, innerHeight: 600 });
     globalThis.document = document;
@@ -52,6 +56,17 @@ test('initialization is scoped, safe without a register, and idempotent', () => 
     initUserMenus(root);
     assert.equal(document.handlers.get('click').length, 1);
     assert.equal(document.handlers.get('keydown').length, 1);
+});
+
+test('the existing initializer discovers Project action menus without another page module', () => {
+    const { root, menus, document, open } = fixture();
+    initUserMenus();
+    assert.equal(document.selectors[0], '[data-user-management], [data-project-actions]');
+    assert.equal(root.dataset.userMenusInitialized, 'true');
+    open(menus[0]);
+    assert.equal(menus[0].panel.style.left, '200px');
+    document.dispatch('click', { target: {} });
+    assert.equal(menus[0].open, false);
 });
 
 test('opening a menu closes its sibling and keeps the panel inside a narrow viewport', () => {
@@ -118,4 +133,27 @@ test('viewport resize and scrolling dismiss floating menus', () => {
         assert.equal(menus[0].open, false);
     }
     assert.equal(window.handlers.get('scroll')[0].capture, true);
+});
+
+test('a short Project menu can scroll internally while table scrolling still dismisses it', () => {
+    const { root, menus, window, open } = fixture();
+    root.dataset.projectActions = '';
+    window.innerHeight = 220;
+    menus[0].panel.offsetHeight = 196;
+    menus[0].summary.getBoundingClientRect = () => ({ right: 460, bottom: 190, top: 146 });
+    initUserMenus(root);
+    open(menus[0]);
+    assert.equal(menus[0].panel.style.top, '12px');
+    window.dispatch('scroll', { target: menus[0].panel });
+    assert.equal(menus[0].open, true);
+    window.dispatch('scroll', { target: {} });
+    assert.equal(menus[0].open, false);
+});
+
+test('internal scrolling retains the existing dismissal behavior outside Project registers', () => {
+    const { root, menus, window, open } = fixture();
+    initUserMenus(root);
+    open(menus[0]);
+    window.dispatch('scroll', { target: menus[0].panel });
+    assert.equal(menus[0].open, false);
 });

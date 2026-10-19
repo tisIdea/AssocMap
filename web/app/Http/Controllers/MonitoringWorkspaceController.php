@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Controllers\Admin\MonitoringController;
+use App\Http\Requests\MonitoringIndexRequest;
 use App\Http\Requests\StoreMonitoringVisitReportRequest;
 use App\Http\Requests\UpdateMonitoringSectionRequest;
 use App\Models\AssociationAccount;
@@ -13,7 +14,9 @@ use App\Models\UserProfile;
 use App\Services\AssociationLifecycleService;
 use App\Services\IncomeMonitoringService;
 use App\Services\MaterialsMonitoringService;
+use App\Services\MonitoringDirectoryQueryService;
 use App\Services\MonitoringService;
+use App\Services\ProductionMonitoringService;
 use App\Services\ProjectLifecycleService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
@@ -58,7 +61,9 @@ class MonitoringWorkspaceController extends MonitoringController
         } elseif ($role === 'association_account') {
             $account = AssociationAccount::query()->where('user_id', $user->id)->where('is_active', true)
                 ->has('association')->first();
-            abort_unless($account, 403, 'No active association relationship is available.');
+            if ($account === null) {
+                abort(403, 'No active association relationship is available.');
+            }
             $query->where('association_id', $account->association_id);
         }
         return $query;
@@ -83,31 +88,31 @@ class MonitoringWorkspaceController extends MonitoringController
 
     public function index(Request $request): View
     {
-        $filters = $request->validate(['search' => ['nullable', 'string', 'max:255']]);
-        $search = trim($filters['search'] ?? '');
-        $query = MonitoringRecord::query()->whereIn('project_id', $this->projectsFor($request)->select('id'));
-        $years = (clone $query)->select('year')->distinct()->orderByDesc('year')->pluck('year');
-        $selectedYear = $years->contains((int) $request->query('year')) ? (int) $request->query('year') : $years->first();
-        $records = $selectedYear === null ? collect() : $query->where('year', $selectedYear)
-            ->with(['project.association', 'quarter', 'monitoredBy'])->orderByDesc('created_at')->get();
-        if ($search !== '') {
-            $records = $records->filter(fn ($record) => str_contains(mb_strtolower(implode(' ', [
-                $record->project?->title, $record->project?->association?->name, $record->year,
-                'Q'.$record->quarter?->quarter_number, $record->monitoredBy?->display_name,
-                $record->created_at?->format('M d, Y'), $record->project_status,
-            ])), mb_strtolower($search)));
-        }
-        return view('monitoring.dashboard', $this->context($request) + compact('records', 'years', 'selectedYear', 'search'));
+        $input = app(MonitoringIndexRequest::class);
+        $filters = $input->filters();
+        $directory = app(MonitoringDirectoryQueryService::class)->records($this->projectsFor($request), $filters);
+
+        return view('monitoring.dashboard', $this->context($request) + $directory + [
+            'filters' => $filters, 'sortOptions' => $input->sortOptions(),
+        ]);
     }
 
     public function workspace(Request $request, MonitoringRecord $monitoringRecord, string $section = 'overview'): View
     {
         abort_unless(in_array($section, ['overview', 'production', 'income', 'materials'], true), 404);
         $record = $this->accessibleRecord($request, $monitoringRecord);
-        if ($section === 'production') $record->load(['production.projectProduct', 'production.monthlyDetails']);
+        $monthlyReconciled = [];
+        if ($section === 'production') {
+            $record->load(['production.projectProduct', 'production.monthlyDetails']);
+            $productionService = app(ProductionMonitoringService::class);
+            foreach ($record->production as $production) {
+                $production->setRelation('monitoringRecord', $record);
+                $monthlyReconciled[$production->id] = $productionService->canEditMonthly($production);
+            }
+        }
         if ($section === 'income') $record->load(['production.projectProduct', 'production.income']);
         if ($section === 'materials') $record->load('materials.projectMaterial');
-        return view('monitoring.workspace', $this->context($request, $record) + compact('record', 'section'));
+        return view('monitoring.workspace', $this->context($request, $record) + compact('record', 'section', 'monthlyReconciled'));
     }
 
     public function editOverview(Request $request, MonitoringRecord $monitoringRecord): View
@@ -190,11 +195,15 @@ class MonitoringWorkspaceController extends MonitoringController
             ->with('success', ucfirst($section).' updated.');
     }
 
-    public function visits(Request $request, MonitoringRecord $monitoringRecord): View
+    public function visits(MonitoringIndexRequest $request, MonitoringRecord $monitoringRecord): View
     {
         $record = $this->accessibleRecord($request, $monitoringRecord);
-        $reports = $record->visitReports()->with('conductedByUser:id,display_name')->get();
-        return view('monitoring.visits', $this->context($request, $record) + compact('record', 'reports'));
+        $filters = $request->filters();
+        $reports = app(MonitoringDirectoryQueryService::class)->visits($record, $filters);
+
+        return view('monitoring.visits', $this->context($request, $record) + compact('record', 'reports', 'filters') + [
+            'sortOptions' => $request->sortOptions(),
+        ]);
     }
 
     public function visitPage(Request $request, MonitoringRecord $monitoringRecord, ?string $reportId = null): View|RedirectResponse

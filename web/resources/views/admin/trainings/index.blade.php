@@ -21,7 +21,7 @@
         @foreach($rows as $row)
             <tr>@foreach($columns as $key => $label)<td @class(['primary-cell' => $key === 'title'])>@if($key === 'title')<a href="{{ route($trainingPrefix.'.show', $row['id']) }}">{{ $row['title'] }}</a>@else{{ filled($row[$key] ?? null) ? $row[$key] : '—' }}@endif</td>@endforeach
                 <td><span class="badge badge-{{ $row['archived'] ? 'neutral' : ($row['status_value'] === 'completed' ? 'success' : ($row['status_value'] === 'cancelled' ? 'danger' : 'warning')) }}">{{ $row['archived'] ? 'Archived' : $row['status'] }}</span></td><td>{{ $row['participant_count'] }}</td>
-                <td><div class="row-actions"><a class="text-button" href="{{ route($trainingPrefix.'.show', $row['id']) }}" aria-label="View {{ $row['title'] }}">View</a>@if(!$row['project_finalized'])@if(!$row['archived'])<a class="text-button" href="{{ route($trainingPrefix.'.edit', $row['id']) }}" aria-label="Edit {{ $row['title'] }}">Edit</a>@endif<button type="button" class="text-button {{ !$row['archived'] ? 'text-danger' : '' }}" data-dialog="training-action-{{ $row['id'] }}">{{ $row['archived'] ? 'Unarchive' : 'Archive' }}</button>@else<span>Read-only: project finalized</span>@endif</div></td>
+                <td><div class="row-actions"><a class="text-button" href="{{ route($trainingPrefix.'.show', $row['id']) }}" aria-label="View {{ $row['title'] }}">View</a>@if($row['parents_operational'] && !$row['project_finalized'])@if(!$row['archived'])<a class="text-button" href="{{ route($trainingPrefix.'.edit', $row['id']) }}" aria-label="Edit {{ $row['title'] }}">Edit</a>@endif<button type="button" class="text-button {{ !$row['archived'] ? 'text-danger' : '' }}" data-dialog="training-action-{{ $row['id'] }}">{{ $row['archived'] ? 'Unarchive' : 'Archive' }}</button>@else<span>{{ $row['association_archived'] ? 'Association Archived — Read Only' : ($row['project_finalized'] ? 'Read-only: project finalized' : 'Read-only: association unavailable or inactive') }}</span>@endif</div></td>
             </tr>
         @endforeach
         </tbody></table></div>
@@ -32,7 +32,7 @@
     @if($activities->isEmpty())<p class="notice">No active SAAD training activities are available.</p>@endif
 </div>
 @foreach($rows as $row)
-    @if(!$row['project_finalized'])
+    @if($row['parents_operational'] && !$row['project_finalized'])
     <x-modal :id="'training-action-'.$row['id']" :title="$row['archived'] ? 'Unarchive Training' : 'Archive Training'">
         <p>{{ $row['archived'] ? 'Restore' : 'Archive' }} <strong>{{ $row['title'] }}</strong>? {{ $row['archived'] ? 'The training will return to the current list.' : 'Its details and attendance will remain available for viewing.' }}</p>
         <form method="POST" action="{{ $row['archived'] ? $row['unarchive_url'] : $row['archive_url'] }}">@csrf @method('PATCH')<div class="modal-actions"><button type="button" class="button" data-close-dialog>Cancel</button><button type="submit" class="button {{ $row['archived'] ? 'button-primary' : 'button-danger' }}">{{ $row['archived'] ? 'Unarchive Training' : 'Archive Training' }}</button></div></form>

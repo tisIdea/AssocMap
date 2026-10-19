@@ -5,12 +5,18 @@ namespace Tests\Feature;
 use App\Models\MemberApplication;
 use App\Models\UserProfile;
 use App\Services\MemberApplicationService;
+use App\Services\MemberApplicationPhotoService;
 use App\Services\SupabaseAuthService;
+use App\Services\SupabaseStorageService;
+use App\Exceptions\MemberApplicationPhotoUnavailableException;
+use Illuminate\Database\Events\TransactionCommitted;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Bootstrap\HandleExceptions;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Mockery;
@@ -86,6 +92,12 @@ class MemberApplicationSubmissionTest extends TestCase
         Schema::create('association_positions', function (Blueprint $table) {
             $table->id(); $table->string('code'); $table->string('name');
             $table->boolean('is_officer'); $table->boolean('is_active'); $table->timestamps();
+        });
+        Schema::create('members', function (Blueprint $table) {
+            $table->uuid('id')->primary(); $table->uuid('association_id'); $table->unsignedBigInteger('position_id');
+            $table->string('member_status'); $table->timestamp('archived_at')->nullable();
+            $table->foreign('association_id')->references('id')->on('associations');
+            $table->foreign('position_id')->references('id')->on('association_positions');
         });
         Schema::create('sex_categories', function (Blueprint $table) {
             $table->id(); $table->string('name'); $table->boolean('is_active'); $table->timestamps();
@@ -258,5 +270,103 @@ class MemberApplicationSubmissionTest extends TestCase
         $this->assertDatabaseCount('member_applications', 0);
         $this->assertDatabaseCount('member_application_classifications', 0);
         $this->assertSame([], Storage::disk('member_application_photos')->allFiles());
+    }
+
+    public function test_confirmed_photo_is_discarded_only_after_the_application_transaction_rolls_back(): void
+    {
+        if (! extension_loaded('gd')) $this->markTestSkipped('PHP GD is required.');
+        $events = [];
+        $photos = Mockery::mock(MemberApplicationPhotoService::class, [new SupabaseStorageService])->makePartial();
+        $photos->shouldReceive('store')->once()->withArgs(function ($photo, $applicationId) use (&$events) {
+            $events[] = 'store';
+            $this->assertSame(1, DB::transactionLevel());
+
+            return $photo instanceof UploadedFile && is_string($applicationId);
+        })->passthru();
+        $photos->shouldReceive('discard')->once()->withArgs(function ($path, $applicationId) use (&$events) {
+            $events[] = 'discard';
+            $this->assertSame(0, DB::transactionLevel());
+            Storage::disk('member_application_photos')->assertExists($path);
+
+            return str_starts_with($path, 'photos/'.$applicationId.'/');
+        })->passthru();
+        $this->app->instance(MemberApplicationPhotoService::class, $photos);
+        $failure = new RuntimeException('Synthetic application persistence failure');
+        MemberApplication::created(function ($application) use (&$events, $failure) {
+            $events[] = 'application saved';
+            $this->assertSame(1, DB::transactionLevel());
+            Storage::disk('member_application_photos')->assertExists($application->applicant_photo_path);
+            throw $failure;
+        });
+        try {
+            $this->app->make(MemberApplicationService::class)->submit($this->applicationData() + [
+                'applicant_photo' => UploadedFile::fake()->image('portrait.png', 8, 8)], UserProfile::with('role')->findOrFail(self::ACCOUNT));
+            $this->fail('The synthetic transaction failure did not propagate.');
+        } catch (RuntimeException $exception) {
+            $this->assertSame($failure, $exception);
+        }
+        $this->assertSame(['store', 'application saved', 'discard'], $events);
+        $this->assertDatabaseCount('member_applications', 0);
+        $this->assertDatabaseCount('member_application_classifications', 0);
+        $this->assertSame([], Storage::disk('member_application_photos')->allFiles());
+    }
+
+    public function test_failure_after_commit_retains_photo_and_database_history_for_reconciliation(): void
+    {
+        if (! extension_loaded('gd')) $this->markTestSkipped('PHP GD is required.');
+        Log::spy();
+        $failure = new RuntimeException('Synthetic post-commit failure');
+        Event::listen(TransactionCommitted::class, static function () use ($failure): never { throw $failure; });
+        try {
+            try {
+                $this->app->make(MemberApplicationService::class)->submit($this->applicationData() + [
+                    'applicant_photo' => UploadedFile::fake()->image('portrait.png', 8, 8)], UserProfile::with('role')->findOrFail(self::ACCOUNT));
+                $this->fail('The synthetic post-commit failure did not propagate.');
+            } catch (RuntimeException $exception) {
+                $this->assertSame($failure, $exception);
+            }
+        } finally {
+            Event::forget(TransactionCommitted::class);
+        }
+        $this->assertSame(0, DB::transactionLevel());
+        $this->assertDatabaseCount('member_applications', 1);
+        $this->assertDatabaseCount('member_application_classifications', 1);
+        $application = MemberApplication::firstOrFail();
+        Storage::disk('member_application_photos')->assertExists($application->applicant_photo_path);
+        Log::shouldHaveReceived('warning')->once()->with('Member application submission requires reconciliation.',
+            ['application_id' => $application->id, 'code' => 'submission_outcome_uncertain']);
+    }
+
+    public function test_unconfirmed_photo_upload_rolls_back_without_a_second_cleanup_attempt(): void
+    {
+        $failure = new MemberApplicationPhotoUnavailableException('Synthetic uncertain photo upload');
+        $photos = Mockery::mock(MemberApplicationPhotoService::class);
+        $photos->shouldReceive('store')->once()->andThrow($failure);
+        $photos->shouldNotReceive('discard');
+        $this->app->instance(MemberApplicationPhotoService::class, $photos);
+        try {
+            $this->app->make(MemberApplicationService::class)->submit($this->applicationData() + [
+                'applicant_photo' => UploadedFile::fake()->createWithContent('portrait.png', 'synthetic image placeholder')],
+                UserProfile::with('role')->findOrFail(self::ACCOUNT));
+            $this->fail('The uncertain photo upload was accepted.');
+        } catch (MemberApplicationPhotoUnavailableException $exception) {
+            $this->assertSame($failure, $exception);
+        }
+        $this->assertSame(0, DB::transactionLevel());
+        $this->assertDatabaseCount('member_applications', 0);
+        $this->assertSame([], Storage::disk('member_application_photos')->allFiles());
+    }
+
+    public function test_guest_photo_routes_require_authentication_before_opening_storage(): void
+    {
+        $application = $this->app->make(MemberApplicationService::class)->submit($this->applicationData(),
+            UserProfile::with('role')->findOrFail(self::ACCOUNT));
+        $photos = Mockery::mock(MemberApplicationPhotoService::class);
+        $photos->shouldNotReceive('open');
+        $this->app->instance(MemberApplicationPhotoService::class, $photos);
+        $this->flushSession();
+        foreach (['association', 'field-officer'] as $prefix) {
+            $this->get('/'.$prefix.'/member-applications/'.$application->id.'/photo')->assertRedirect(route('login'));
+        }
     }
 }

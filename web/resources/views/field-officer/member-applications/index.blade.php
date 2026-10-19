@@ -1,23 +1,27 @@
 @extends('layouts.field-officer')
+@php
+    $applicationRegister = true;
+    $indexRoute = 'field-officer.member-applications.index';
+    $cards = ['pending' => ['Pending Review', 'pending', 'clipboard-check'], 'approved' => ['Approved', 'approved', 'check'], 'rejected' => ['Rejected', 'rejected', 'close']];
+    $summaryNote = 'Applications from your assigned associations, including read-only association history.';
+@endphp
 
 @section('content')
-    <header class="page-header"><div><div class="eyebrow">Field Officer</div><h1 tabindex="-1">Member Applications</h1><p>Review applications from your assigned associations.</p></div></header>
-    <section class="card list-card" aria-label="Member applications">
-        <div class="table-toolbar">
-            <nav class="area-list-switch" aria-label="Application status">
-                @foreach(['pending' => 'Pending', 'approved' => 'Approved', 'rejected' => 'Rejected'] as $status => $label)
-                    <a class="button {{ $statusFilter === $status ? 'button-primary' : '' }}" href="{{ route('field-officer.member-applications.index', ['status' => $status]) }}" @if($statusFilter === $status) aria-current="page" @endif>{{ $label }}</a>
-                @endforeach
-            </nav>
-        </div>
+<section class="member-management" data-workspace-module="member-applications" data-workspace-title="Member Applications">
+    <header class="card member-heading"><div><p class="eyebrow">Field Officer</p><h1 tabindex="-1">Member Applications</h1><p>Review applicants and application evidence from your assigned associations.</p></div><a class="button" href="{{ route('field-officer.members.index') }}"><x-icon name="users" />Member Register</a></header>
+    @include('members.partials.summary')
+    <section class="card member-register" aria-labelledby="application-register-title">
+        <div class="member-section-heading"><div><h2 id="application-register-title">{{ ucfirst($statusFilter) }} applications</h2><p>{{ number_format($applications->total()) }} matching application(s)</p></div><p>Review the applicant details and evidence before deciding.</p></div>
+        @include('members.partials.filters')
         <div class="table-scroll" role="region" aria-label="{{ ucfirst($statusFilter) }} member applications" tabindex="0">
-            <table class="data-table">
+            <table class="data-table member-register-table">
                 <caption class="sr-only">{{ ucfirst($statusFilter) }} member applications from assigned associations</caption>
-                <thead><tr>@foreach(['Applicant Name', 'Association', 'Municipality', 'Barangay', 'Position', 'FishR Registration Number', 'Submitted Date', 'Status', 'Actions'] as $heading)<th scope="col">{{ $heading }}</th>@endforeach</tr></thead>
+                <thead><tr>@foreach(['Applicant', 'Association', 'Position', 'Submitted', 'Status', 'Actions'] as $heading)<th scope="col">{{ $heading }}</th>@endforeach</tr></thead>
                 <tbody>
                     @foreach($applications as $application)
                         @php
                             $fullName = collect([$application->first_name, $application->middle_name, $application->last_name, $application->suffix])->filter(fn ($part) => filled($part))->implode(' ');
+                            $reviewable = $application->association && !$application->association->archived_at && $application->association->status === 'active';
                             $area = $application->association?->area;
                             $barangay = $area?->barangay;
                             $tone = match ($application->status) { 'approved' => 'success', 'rejected' => 'danger', default => 'warning' };
@@ -45,29 +49,30 @@
                             if ($application->status === 'rejected') $details['Rejection Reason'] = $application->rejection_reason;
                         @endphp
                         <tr>
-                            <td class="primary-cell">{{ $fullName }}</td>
-                            <td>{{ $application->association?->name ?? '—' }}</td>
-                            <td>{{ $barangay?->municipality?->name ?? '—' }}</td>
-                            <td>{{ $barangay?->name ?? '—' }}</td>
+                            <th scope="row">{{ $fullName }}<small>FishR: {{ $application->fishr_registration_number ?: '—' }}</small></th>
+                            <td>{{ $application->association?->name ?? '—' }}<small>{{ $barangay?->name ?? '—' }} · {{ $barangay?->municipality?->name ?? '—' }}</small>@if(!$reviewable)<small>Association read only</small>@endif</td>
                             <td>{{ $application->position?->name ?? '—' }}</td>
-                            <td>{{ $application->fishr_registration_number ?? '—' }}</td>
                             <td>{{ $application->created_at?->format('M j, Y') ?? '—' }}</td>
                             <td><span class="badge badge-{{ $tone }}">{{ ucfirst($application->status) }}</span></td>
-                            <td><div class="row-actions">
-                                <button type="button" class="text-button" data-dialog="application-{{ $application->id }}" aria-label="View application for {{ $fullName }}">View</button>
-                                @if($application->status === 'pending')
-                                    <button type="button" class="text-button" data-dialog="approve-{{ $application->id }}" aria-label="Approve application for {{ $fullName }}">Approve</button>
-                                    <button type="button" class="text-button text-danger" data-dialog="reject-{{ $application->id }}" aria-label="Reject application for {{ $fullName }}">Reject</button>
+                            <td><div class="row-actions member-row-actions">
+                                <button type="button" class="button button-quiet" data-dialog="application-{{ $application->id }}" aria-label="View application for {{ $fullName }}"><x-icon name="eye" />{{ $application->status === 'pending' && $reviewable ? 'Review' : 'View' }}</button>
+                                @if($application->status === 'pending' && $reviewable)
+                                    <button type="button" class="button button-outline" data-dialog="approve-{{ $application->id }}" aria-label="Approve application for {{ $fullName }}">Approve</button>
+                                    <button type="button" class="button button-danger-outline" data-dialog="reject-{{ $application->id }}" aria-label="Reject application for {{ $fullName }}">Reject</button>
                                 @endif
                             </div></td>
                         </tr>
                         @push('dialogs')
                             <x-modal :id="'application-'.$application->id" title="Application Details">
+                                <div class="member-record-dialog">
+                                <div class="member-detail-banner"><span class="member-avatar"><x-icon name="user" /></span><div><h3>{{ $fullName }}</h3><p>{{ $application->association?->name }}</p></div><span class="badge badge-{{ $tone }}">{{ ucfirst($application->status) }}</span></div>
+                                @if(!$reviewable)<p class="notice">This association is archived or inactive. Application history is read-only.</p>@endif
                                 <dl class="detail-grid">@foreach($details as $label => $value)<div><dt>{{ $label }}</dt><dd>{{ filled($value) ? $value : '—' }}</dd></div>@endforeach</dl>
                                 @include('partials.member-application-evidence', ['photoRoute' => 'field-officer.member-applications.photo'])
                                 <div class="modal-actions"><button type="button" class="button" data-close-dialog>Close</button></div>
+                                </div>
                             </x-modal>
-                            @if($application->status === 'pending')
+                            @if($application->status === 'pending' && $reviewable)
                                 <x-modal :id="'approve-'.$application->id" title="Approve Application">
                                     <p>Approve the application for <strong>{{ $fullName }}</strong>? Approval will create an active member record for this association.</p>
                                     <form method="POST" action="{{ route('field-officer.member-applications.approve', $application) }}">
@@ -102,7 +107,8 @@
                 </tbody>
             </table>
         </div>
-        @if($applications->isEmpty())<x-empty-state :title="'No '.$statusFilter.' member applications were found.'" message="" />@endif
-        <footer class="table-footer"><span>{{ $applications->count() }} {{ $applications->count() === 1 ? 'application' : 'applications' }}</span></footer>
+        @if($applications->isEmpty())<x-empty-state title="No matching applications" message="Try another search, status, or assigned association, or reset the filters." />@endif
+        @include('members.partials.pagination', ['paginator' => $applications, 'recordLabel' => 'applications'])
     </section>
+</section>
 @endsection

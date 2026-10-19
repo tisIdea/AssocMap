@@ -3,10 +3,12 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\ChangeAssociationOfficerRequest;
+use App\Http\Requests\AssociationIndexRequest;
 use App\Models\Association;
 use App\Models\AssociationPosition;
 use App\Models\Member;
 use App\Services\AssociationOfficerService;
+use App\Services\AssociationDirectoryQueryService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -14,23 +16,25 @@ use Illuminate\Validation\ValidationException;
 
 class AssociationOfficerController extends Controller
 {
-    public function index(Request $request, AssociationOfficerService $service): View
+    public function index(AssociationIndexRequest $request, AssociationOfficerService $service, AssociationDirectoryQueryService $directory): View
     {
         $actor = $request->attributes->get('current_user');
         $service->authorize($actor);
         $prefix = $actor->role->code === 'system_admin' ? 'admin' : 'field-officer';
-        $associations = Association::query()
-            ->with('currentPresident')
-            ->when($prefix === 'field-officer', fn ($query) => $query->where('primary_field_officer_id', $actor->id))
-            ->orderBy('name')->paginate(25);
+        $filters = $request->filters(true);
+        $associations = $directory->officerRecords($actor, $filters);
+        $officerDirectory = true;
+        $summary = null;
+        $choices = [];
 
-        return view('associations.officers-index', compact('associations', 'prefix'));
+        return view('associations.officers-index', compact('associations', 'prefix', 'filters', 'officerDirectory', 'summary', 'choices'));
     }
 
     public function show(Request $request, Association $association, AssociationOfficerService $service): View
     {
         $actor = $request->attributes->get('current_user');
         $service->authorize($actor, $association);
+        abort_if($actor->role->code === 'field_officer' && $association->archived_at !== null, 403);
         $association->load('currentPresident');
         $request->validateWithBag('officerPosition', ['member' => ['nullable', 'uuid'], 'replace' => ['nullable', 'uuid']]);
         $prefix = $actor->role->code === 'system_admin' ? 'admin' : 'field-officer';

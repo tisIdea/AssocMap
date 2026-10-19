@@ -34,6 +34,8 @@
         @csrf
         <input type="hidden" name="training_form" value="editor"><input type="hidden" name="training_record_id" value="{{ $editing['id'] ?? '' }}"><input type="hidden" name="_method" value="PATCH" @disabled(!$editing)>
         <p>Fields marked * are required.</p>
+        @if($associations->isEmpty() || $activities->isEmpty())<p class="notice">An active association and SAAD training activity are required. No eligible choices are currently available for one of these fields.</p>@endif
+        @include('program-management.partials.lookup', ['kind' => 'associations', 'target' => 'association_id', 'lookupRoute' => $trainingPrefix.'.index', 'label' => 'Find an association'])
         @if($restore)<div class="notice notice-error" role="alert" data-training-errors>@foreach($errors->all() as $error)<p>{{ $error }}</p>@endforeach</div>@endif
         @foreach($sections as $heading => $fields)
             <section class="form-section"><div class="section-heading"><h3>{{ $heading }}</h3></div><div class="form-grid">
@@ -53,15 +55,21 @@
                     @if($restore) @error($field['name'])<span class="field-error" id="training-{{ $field['name'] }}-error">{{ $message }}</span>@enderror @endif
                 </div>
             @endforeach
-            </div></section>
+            </div>
+            @if($heading === 'Classification')@include('program-management.partials.lookup', ['kind' => 'projects', 'target' => 'related_project_id', 'lookupRoute' => $trainingPrefix.'.index', 'label' => 'Find a related project'])@endif
+            </section>
         @endforeach
         <p class="notice" id="training-choice-notice" role="status" hidden></p>
         <section class="form-section"><div class="section-heading"><h3>Participants and Attendance</h3></div><p class="section-help">Select an association first. Each member can be included once. Recorded participants remain available even if their membership is now inactive or archived. Attendance and remarks can be corrected. Remove Participant explicitly removes that participation when saved; to replace a recorded member, remove their row and add the correct member.</p>
+            @if(isset($participants))<p class="notice">Showing participation records {{ $participants->firstItem() ?? 0 }}–{{ $participants->lastItem() ?? 0 }} of {{ $participants->total() }}. Save changes before opening another page. Participants on other pages are retained.</p>@endif
+            @include('program-management.partials.lookup', ['kind' => 'members', 'target' => 'participant_choices', 'lookupRoute' => $trainingPrefix.'.index', 'label' => 'Find a member to add'])
             <input type="hidden" name="expected_updated_at" value="{{ $initialValues['expected_updated_at'] ?? '' }}"><input type="hidden" name="participants" value=""><div id="training-removed-participants"></div><div id="training-participants"></div><p id="training-participants-empty" class="participant-empty muted">No participants selected.</p>
             <button type="button" class="button" id="training-add-participant"><x-icon name="plus" />Add Participant</button>
         </section>
         <div class="modal-actions">@if($editing)<a class="button" href="{{ route($trainingPrefix.'.show', $editing['id']) }}">Cancel</a>@else<button type="button" class="button" data-close-dialog>Cancel</button>@endif<button type="submit" class="button button-primary">Save Training</button></div>
     </form>
+@if(isset($participants))@include('program-management.partials.pagination', ['paginator' => $participants, 'label' => 'participants', 'guardUnsaved' => true])@endif
+<x-confirmation-modal :navigation="true" />
 <template id="training-participant-template"><fieldset class="repeat-row"><legend>Participant</legend><div class="repeat-row-heading"><strong data-participant-heading></strong><button type="button" class="text-button text-danger" data-remove-participant>Remove Participant</button></div><div class="form-grid">
     <div class="field"><label data-participant-label="member_id">Member *</label><select data-participant-input="member_id" required><option value="">Select member</option></select></div>
     <div class="field"><label data-participant-label="attendance_status">Attendance Status *</label><select data-participant-input="attendance_status" required><option value="present">Present</option><option value="absent">Absent</option></select></div>
@@ -69,10 +77,11 @@
 </div></fieldset></template>
 <script type="module">
     const editingRecord = {{ Illuminate\Support\Js::from($editing) }};
-    const projects = {{ Illuminate\Support\Js::from($projectOptions) }};
-    const members = {{ Illuminate\Support\Js::from($memberOptions) }};
+    let projects = {{ Illuminate\Support\Js::from($projectOptions) }};
+    let members = {{ Illuminate\Support\Js::from($memberOptions) }};
     const initial = {{ Illuminate\Support\Js::from($initialValues) }};
     const restore = {{ Illuminate\Support\Js::from($restore) }};
+    const choicesAvailable = {{ Illuminate\Support\Js::from($associations->isNotEmpty() && $activities->isNotEmpty()) }};
     const createUrl = {{ Illuminate\Support\Js::from(route($trainingPrefix.'.store')) }};
     const form = document.getElementById('training-form');
     const association = form.elements.association_id;
@@ -93,8 +102,10 @@
         document.getElementById('training-participants-empty').hidden = selects.length > 0;
     }
     function memberChoices(select, selected = '') {
+        const previous = Array.from(select.options).find(option => option.value === String(selected));
         select.replaceChildren(new Option('Select member', ''));
         matchingMembers().forEach(member => select.add(new Option(member.label, member.value)));
+        if (selected && previous && !Array.from(select.options).some(option => option.value === String(selected))) select.add(previous.cloneNode(true));
         select.value = String(selected);
         if (select.selectedIndex < 0) select.value = '';
         return Boolean(selected && select.value !== String(selected));
@@ -102,9 +113,14 @@
     function projectChoices(selected = '') {
         relatedProject.replaceChildren(new Option('No related project', ''));
         projects.filter(project => String(project.association_id) === association.value).forEach(project => relatedProject.add(new Option(project.label, project.value)));
+        const unavailable = Boolean(selected && !Array.from(relatedProject.options).some(option => option.value === String(selected)));
+        if (unavailable) {
+            const retained = editingRecord && String(editingRecord.related_project_id) === String(selected);
+            const label = retained ? `${editingRecord.related_project} (retained; unavailable for new selection)` : 'Unavailable Project selection (review required)';
+            relatedProject.add(new Option(label, selected));
+        }
         relatedProject.value = String(selected);
-        if (relatedProject.selectedIndex < 0) relatedProject.value = '';
-        return Boolean(selected && relatedProject.value !== String(selected));
+        return unavailable;
     }
     function addParticipant(values = {}, index = nextParticipant++) {
         nextParticipant = Math.max(nextParticipant, Number(index) + 1);
@@ -149,12 +165,13 @@
         form.elements.expected_updated_at.value = values.expected_updated_at ?? '';
         form.elements.expected_updated_at.disabled = !record;
         const unavailableEdit = Boolean(values.training_record_id && !record);
-        form.querySelector('button[type="submit"]').disabled = unavailableEdit;
+        form.querySelector('button[type="submit"]').disabled = unavailableEdit || !choicesAvailable;
         if (!editingRecord) document.getElementById('training-editor-title').textContent = 'Add Training';
         for (const key of ['association_id', 'title', 'description', 'saad_activity_id', 'program_year', 'start_date', 'end_date', 'venue', 'conducted_by', 'training_cost', 'status', 'remarks']) {
             form.elements[key].value = values[key] ?? (key === 'status' ? 'scheduled' : '');
         }
-        let unavailable = projectChoices(values.related_project_id ?? '') || Boolean(values.association_id && !association.value) || Boolean(values.saad_activity_id && !form.elements.saad_activity_id.value);
+        const unavailableProject = projectChoices(values.related_project_id ?? '');
+        let unavailable = unavailableProject || Boolean(values.association_id && !association.value) || Boolean(values.saad_activity_id && !form.elements.saad_activity_id.value);
         container.replaceChildren();
         removals.replaceChildren();
         (Array.isArray(values.removed_participant_ids) ? values.removed_participant_ids : []).forEach(addRemoval);
@@ -165,7 +182,9 @@
             unavailable = addParticipant({...recorded, ...participant}, index) || unavailable;
         });
         notice.hidden = !unavailable;
-        notice.textContent = 'Some previous selections are no longer available. Review the association, activity, project, and participants before saving.';
+        notice.textContent = unavailableProject
+            ? 'The previous Project selection has been preserved but is unavailable for new selection. Saving must still pass server validation. To change the relationship, choose an eligible Project or explicitly select No related project. Review the association, activity, and participants before saving.'
+            : 'Some previous selections are no longer available. Review the association, activity, project, and participants before saving.';
         if (unavailableEdit) {
             notice.hidden = false;
             notice.textContent = 'This training is no longer available for editing in the current list. Close this dialog and reopen an available training.';
@@ -184,6 +203,13 @@
         container.lastElementChild.querySelector('select').focus();
     });
     container.addEventListener('change', refreshParticipants);
+    form.addEventListener('assocmap:lookup-results', event => {
+        if (event.detail.kind === 'projects') projects = event.detail.options;
+        if (event.detail.kind !== 'members') return;
+        members = event.detail.options;
+        container.querySelectorAll('[data-participant-input="member_id"]:not(:disabled)').forEach(select => memberChoices(select, select.value));
+        refreshParticipants();
+    });
     function addRemoval(id) {
         const input = document.createElement('input');
         input.type = 'hidden'; input.name = 'removed_participant_ids[]'; input.value = id;
@@ -208,5 +234,5 @@
         association.focus();
     });
     populate(initial, editingRecord);
-    if (restore && !editingRecord) document.getElementById('training-editor').dataset.feedbackRestore = 'true';
+    if ((restore || {{ Illuminate\Support\Js::from($showEditor ?? false) }}) && !editingRecord) document.getElementById('training-editor').dataset.feedbackRestore = 'true';
 </script>

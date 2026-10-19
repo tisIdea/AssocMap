@@ -199,6 +199,9 @@ Route::middleware([
         [AssociationController::class, 'index']
     )->name('admin.associations.index');
 
+    Route::get('/admin/associations/{association}', [AssociationController::class, 'show'])
+        ->whereUuid('association')->name('admin.associations.show');
+
     Route::get('/admin/association-officers', [AssociationOfficerController::class, 'index'])
         ->name('admin.association-officers.index');
     Route::get('/admin/associations/{association}/officers', [AssociationOfficerController::class, 'show'])
@@ -444,6 +447,10 @@ Route::middleware([
 
     Route::get('/field-officer/association-officers', [AssociationOfficerController::class, 'index'])
         ->name('field-officer.association-officers.index');
+    Route::get('/field-officer/associations', [\App\Http\Controllers\FieldOfficer\AssociationController::class, 'index'])
+        ->name('field-officer.associations.index');
+    Route::get('/field-officer/associations/{association}', [\App\Http\Controllers\FieldOfficer\AssociationController::class, 'show'])
+        ->whereUuid('association')->name('field-officer.associations.show');
     Route::get('/field-officer/associations/{association}/officers', [AssociationOfficerController::class, 'show'])
         ->whereUuid('association')->name('field-officer.association-officers.show');
     Route::patch('/field-officer/associations/{association}/officers', [AssociationOfficerController::class, 'update'])
@@ -705,6 +712,11 @@ foreach (['admin' => 'system_admin', 'field-officer' => 'field_officer', 'associ
             Route::get('/', [$controller, 'index'])->name('index');
             Route::get('/data', [$controller, 'data'])->name('data');
             Route::get('/parents', [$controller, 'parents'])->name('parents');
+            if ($role === 'system_admin') {
+                Route::get('/{location}/coordinates', [$controller, 'correction'])->whereUuid('location')->name('coordinates.edit');
+                Route::patch('/{location}/coordinates', [$controller, 'correctGeometry'])->whereUuid('location')
+                    ->middleware('throttle:gis-write')->name('coordinates.update');
+            }
             if ($role !== 'association_account') {
                 Route::get('/create', [$controller, 'create'])->name('create');
                 Route::get('/{location}/edit', [$controller, 'edit'])->whereUuid('location')->name('edit');

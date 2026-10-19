@@ -79,7 +79,7 @@ class GisScopedReadsTest extends TestCase
     public function test_administrator_reads_all_eligible_locations_and_archived_register_is_separate(): void
     {
         $admin = $this->principal('admin', 'system_admin');
-        $this->assertEqualsCanonicalizing(['a-project', 'a-boundary', 'b-project'], $this->ids($admin));
+        $this->assertEqualsCanonicalizing(['a-project', 'a-boundary', 'b-project', 'parent-archived', 'project-archived'], $this->ids($admin));
         $this->assertSame(['gis-archived'], $this->ids($admin, true));
         $this->assertTrue(DB::table('gis_locations')->where('id', 'a-point')->exists());
         $this->assertTrue(DB::table('gis_locations')->where('id', 'legacy-archived')->exists());
@@ -92,6 +92,16 @@ class GisScopedReadsTest extends TestCase
         DB::table('associations')->where('id', 'association-a')->update(['primary_field_officer_id' => 'officer-b']);
         $this->assertSame([], $this->ids($officer));
         $this->assertCount(3, $this->ids($this->principal('officer-b', 'field_officer')));
+    }
+
+    public function test_archived_parent_history_is_admin_only_even_when_the_current_officer_or_account_is_linked(): void
+    {
+        DB::table('associations')->where('id', 'association-a')->update(['archived_at' => now(), 'status' => 'inactive']);
+        $this->assertContains('a-project', $this->ids($this->principal('admin', 'system_admin')));
+        $this->assertSame([], $this->ids($this->principal('officer-a', 'field_officer')));
+        $this->assertSame([], $this->ids($this->principal('account-a', 'association_account')));
+        $this->assertSame([], $this->gis->scoped($this->principal('officer-b', 'field_officer'))
+            ->where('a.id', 'association-a')->pluck('g.id')->all());
     }
 
     public function test_association_scope_follows_only_current_active_link(): void

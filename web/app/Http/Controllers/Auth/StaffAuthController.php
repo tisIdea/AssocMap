@@ -22,51 +22,29 @@ class StaffAuthController extends Controller
             $credentials['password']
         );
 
-        if (! $result['success']) {
-            return back()
-                ->withErrors([
-                    'email' => 'Invalid email or password.',
-                ])
-                ->onlyInput('email');
+        if (! ($result['success'] ?? false)) {
+            return $this->rejectLogin($request, $result['message'] ?? 'Unable to verify this account. Please try again.');
         }
 
-        $authData = $result['data'];
-
-        $supabaseUser = $authData['user'] ?? null;
-
-        if (! $supabaseUser || empty($supabaseUser['id'])) {
-            return back()
-                ->withErrors([
-                    'email' => 'Unable to verify this account.',
-                ])
-                ->onlyInput('email');
+        $authData = $supabaseAuth->validatedBrowserSession($result['data'] ?? null);
+        if (! $authData) {
+            return $this->rejectLogin($request, 'Unable to verify this account. Please try again.');
         }
+        $supabaseUser = $authData['user'];
 
         $profile = UserProfile::with('role')
             ->find($supabaseUser['id']);
 
         if (! $profile) {
-            return back()
-                ->withErrors([
-                    'email' => 'This account is not registered in AssocMap.',
-                ])
-                ->onlyInput('email');
+            return $this->rejectLogin($request, 'This account is not registered in AssocMap.');
         }
 
         if (! $profile->canAccessApplication($supabaseUser)) {
-            return back()
-                ->withErrors([
-                    'email' => 'This AssocMap account or role is unavailable.',
-                ])
-                ->onlyInput('email');
+            return $this->rejectLogin($request, 'This AssocMap account or role is unavailable.');
         }
 
         if (! $profile->role) {
-            return back()
-                ->withErrors([
-                    'email' => 'No system role is assigned to this account.',
-                ])
-                ->onlyInput('email');
+            return $this->rejectLogin($request, 'No system role is assigned to this account.');
         }
 
         if (! in_array(
@@ -78,11 +56,7 @@ class StaffAuthController extends Controller
             ],
             true
         )) {
-            return back()
-                ->withErrors([
-                    'email' => 'This account is not authorized for web access.',
-                ])
-                ->onlyInput('email');
+            return $this->rejectLogin($request, 'This account is not authorized for web access.');
         }
 
         $request->session()->regenerate();
@@ -109,6 +83,13 @@ class StaffAuthController extends Controller
         }
 
         return redirect()->route('home');
+    }
+
+    private function rejectLogin(StaffLoginRequest $request, string $message): RedirectResponse
+    {
+        $request->session()->forget(['supabase_access_token', 'supabase_refresh_token', 'user_profile_id', 'user_role']);
+
+        return back()->withErrors(['email' => $message])->onlyInput('email');
     }
 
     public function destroy(Request $request): RedirectResponse

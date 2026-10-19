@@ -27,8 +27,13 @@ export async function initGis(root) {
 
     function clearSelection() {
         selected = null; selection.clearLayers();
+        map.closePopup();
         root.querySelector('[data-gis-details]').replaceChildren();
         root.querySelector('[data-gis-record-actions]').replaceChildren();
+        root.querySelector('[data-gis-selection-title]').textContent = 'No location selected';
+        root.querySelector('[data-gis-dismiss]').disabled = true;
+        const history = root.querySelector('[data-gis-history]');
+        if (history) { history.hidden = true; history.open = false; root.querySelector('[data-gis-history-details]').replaceChildren(); }
         root.querySelector('[data-gis-selection-note]').textContent = 'Select a map feature or a location from the list.';
     }
 
@@ -38,7 +43,11 @@ export async function initGis(root) {
         const actions = root.querySelector('[data-gis-record-actions]');
         details.replaceChildren(); actions.replaceChildren();
         const p = feature.properties;
-        root.querySelector('[data-gis-selection-note]').textContent = feature.geometry ? '' : 'Geometry is unavailable or exceeds the supported limit.';
+        root.querySelector('[data-gis-selection-title]').textContent = p.title || 'Location';
+        root.querySelector('[data-gis-dismiss]').disabled = false;
+        root.querySelector('[data-gis-selection-note]').textContent = feature.geometry
+            ? `${p.title || 'Location'} selected. ${manager ? 'Available actions follow your current permissions.' : 'Read-only location. Geographic changes are unavailable in this viewer.'}`
+            : `${p.title || 'Location'} selected. Geometry is unavailable or exceeds the supported limit.`;
         addDetail(details, 'Location', p.title);
         addDetail(details, 'Type', locationLabels[p.location_type]);
         addDetail(details, publicView ? 'Public address' : 'Project Site Address', p.address);
@@ -53,33 +62,55 @@ export async function initGis(root) {
             addDetail(details, 'Longitude', feature.geometry.coordinates[0]); addDetail(details, 'Latitude', feature.geometry.coordinates[1]);
         }
         if (manager) {
-            [['Publication', p.is_published ? 'Published' : 'Unpublished'], ['Public title', p.public_title], ['Public address', p.public_address],
+            if (p.association_archived_at) addDetail(details, 'Association lifecycle', 'Archived; operational records are read-only.');
+            if (p.project_archived_at) addDetail(details, 'Project lifecycle', 'Archived');
+            addDetail(details, 'Publication', p.is_published ? 'Published' : 'Unpublished');
+            addDetail(details, 'GIS lifecycle', p.archived_at ? 'Archived; regular editing is unavailable.' : 'Active');
+            const history = root.querySelector('[data-gis-history]');
+            const historyDetails = root.querySelector('[data-gis-history-details]');
+            history.hidden = false;
+            historyDetails.replaceChildren();
+            [['Public title', p.public_title], ['Public address', p.public_address],
                 ['Created', p.created_at], ['Updated', p.updated_at], ['Published', p.published_at], ['Archived', p.archived_at],
                 ['Created by', actorName(p.created_by_name)], ['Updated by', actorName(p.updated_by_name)],
                 ['Published by', actorName(p.published_by_name, Boolean(p.published_at || p.published_by))],
                 ['Archived by', actorName(p.archived_by_name, Boolean(p.archived_at || p.archived_by))]]
-                .forEach(([label, value]) => addDetail(details, label, value));
-            if (p.project_finalized) {
+                .forEach(([label, value]) => addDetail(historyDetails, label, value));
+            if (p.project_finalized && !p.can_correct_geometry) {
                 addDetail(details, 'Project status', p.project_status === 'terminated' ? 'Terminated'
                     : (p.project_status === 'completed' ? 'Completed' : p.project_status));
                 addDetail(details, 'Lifecycle', 'Operational history is read-only. GIS details and publication may be maintained; ownership and deletion are protected.');
             }
-            if (!p.archived_at) {
-                const edit = document.createElement('a'); edit.className = 'button'; edit.textContent = 'Edit location';
-                edit.href = `${base}/${encodeURIComponent(feature.id)}/edit`; actions.append(edit);
-                const lifecycle = [p.is_published ? 'unpublish' : 'publish', 'archive'];
-                lifecycle.forEach(action => {
-                    const button = document.createElement('button'); button.type = 'button'; button.className = 'button';
-                    button.textContent = action === 'publish' ? 'Publish' : (action === 'unpublish' ? 'Unpublish' : 'Archive');
-                    button.addEventListener('click', () => confirmAction(action, feature, button)); actions.append(button);
-                });
-            }
-            if (!p.project_finalized) {
-                const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'button';
-                remove.textContent = 'Delete permanently';
-                remove.addEventListener('click', () => confirmAction('delete', feature, remove)); actions.append(remove);
-            }
+            renderRecordActions(feature, actions);
         }
+    }
+
+    function renderRecordActions(feature, actions) {
+        const p = feature.properties;
+        if (p.can_correct_geometry) {
+            const correct = document.createElement('a'); correct.className = 'button'; correct.textContent = 'Correct geometry';
+            correct.href = `${base}/${encodeURIComponent(feature.id)}/coordinates`; actions.append(correct);
+        }
+        if (!p.archived_at && !p.association_archived_at && !p.project_archived_at) {
+            const edit = document.createElement('a'); edit.className = 'button button-primary'; edit.textContent = 'Edit location';
+            edit.href = `${base}/${encodeURIComponent(feature.id)}/edit`; actions.append(edit);
+            const lifecycle = [p.is_published ? 'unpublish' : 'publish', 'archive'];
+            lifecycle.forEach(action => {
+                const button = document.createElement('button'); button.type = 'button'; button.className = 'button';
+                button.textContent = action === 'publish' ? 'Publish' : (action === 'unpublish' ? 'Unpublish' : 'Archive');
+                button.addEventListener('click', () => confirmAction(action, feature, button)); actions.append(button);
+            });
+        }
+        if (!p.project_finalized && !p.association_archived_at && !p.project_archived_at) {
+            const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'button button-danger';
+            remove.textContent = 'Delete permanently';
+            remove.addEventListener('click', () => confirmAction('delete', feature, remove)); actions.append(remove);
+        }
+    }
+
+    function updateFilterSummary() {
+        const count = Object.entries(filters()).filter(([key, value]) => key !== 'q' && !(key === 'lifecycle' && value === 'active')).length;
+        root.querySelector('[data-gis-filter-summary]').textContent = count ? `${count} active ${count === 1 ? 'filter' : 'filters'}` : 'No additional filters';
     }
 
     function filters() {
@@ -134,6 +165,7 @@ export async function initGis(root) {
                 setView('map', false); selectFeature(feature); selection.clearLayers();
                 if (feature.geometry) { const layer = featureLayer(feature, selectFeature).addTo(selection); fitLayer(map, layer); }
                 else showStatus(status, 'This record has no displayable geometry. Managers can supply replacement geometry.', true);
+                root.querySelector('[data-gis-selection-title]').focus();
             });
             card.append(heading, type, address, button); list.append(card);
         });
@@ -154,6 +186,7 @@ export async function initGis(root) {
         const isCurrent = () => controller === requestController && !controller.signal.aborted
             && requestedView === view && requestedFilters === JSON.stringify(filters());
         retryFit = fit; retry.hidden = true;
+        updateFilterSummary();
         showStatus(status, 'Loading GIS records…'); root.setAttribute('aria-busy', 'true');
         try {
             if (fit && view === 'map') {
@@ -201,6 +234,7 @@ export async function initGis(root) {
     }
 
     function setView(next, reload = true) {
+        if (next === view && reload) return;
         requestController?.abort(); view = next;
         root.querySelector('[data-gis-map-panel]').hidden = view !== 'map';
         root.querySelector('[data-gis-list-panel]').hidden = view !== 'list';
@@ -233,13 +267,15 @@ export async function initGis(root) {
                     if (kind === 'project') parameters.association_id = values.association_id;
                 }
                 const data = await gisRequest(queryUrl(publicView ? `${base}/associations` : `${base}/parents`, parameters), { signal: controller.signal });
-                if (!isCurrent()) return false;
                 if (!Array.isArray(data.options)) throw new Error('Invalid GIS filter lookup response.');
-                const previous = select.value; fillOptions(select, data);
-                reconciled ||= previous !== select.value; return data.truncated;
+                return { select, data };
             }));
             if (!isCurrent()) return;
-            root.querySelector('[data-gis-option-note]').textContent = results.some(Boolean)
+            results.forEach(({ select, data }) => {
+                const previous = select.value; fillOptions(select, data);
+                reconciled ||= previous !== select.value;
+            });
+            root.querySelector('[data-gis-option-note]').textContent = results.some(({ data }) => data.truncated)
                 ? 'More options are available. Refine the parent search.' : 'Options reflect the current eligible scope.';
             if (reconciled) { page = 1; clearSelection(); await load({ fit: true }); }
         } catch (error) {
@@ -322,6 +358,7 @@ export async function initGis(root) {
     }
 
     root.querySelectorAll('[data-gis-view]').forEach(button => button.addEventListener('click', () => setView(button.dataset.gisView)));
+    root.querySelector('[data-gis-dismiss]').addEventListener('click', () => { clearSelection(); root.querySelector(`[data-gis-view="${view}"]`).focus(); });
     root.querySelector('[data-gis-reload]').addEventListener('click', event => { clearSelection(); loadOptions(); load({ fit: true, notifyFailure: true, returnFocus: event.currentTarget }); });
     retry.addEventListener('click', () => load({ fit: retryFit, notifyFailure: true, returnFocus: retry }));
     form.addEventListener('submit', event => { event.preventDefault(); page = 1; clearSelection(); load({ fit: true }); });
@@ -330,7 +367,9 @@ export async function initGis(root) {
         const children = { municipality: ['barangay', 'area', 'association', 'project'], barangay: ['area', 'association', 'project'],
             area: ['association', 'project'], association: ['project'] }[event.target.dataset.gisParent] || [];
         children.forEach(kind => { const child = root.querySelector(`[data-gis-parent="${kind}"]`); if (child) child.value = ''; });
-        page = 1; clearSelection(); loadOptions(); load({ fit: true });
+        page = 1; clearSelection();
+        if (event.target.dataset.gisParent) loadOptions();
+        load({ fit: true });
     });
     form.addEventListener('reset', () => {
         requestController?.abort(); optionController?.abort();

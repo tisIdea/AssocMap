@@ -5,6 +5,8 @@ namespace App\Http\Controllers\AssociationAccount;
 use App\Exceptions\MemberApplicationPhotoUnavailableException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreMemberApplicationRequest;
+use App\Http\Requests\MemberRegisterRequest;
+use App\Services\MemberDirectoryQueryService;
 use App\Models\AssociationAccount;
 use App\Models\AssociationPosition;
 use App\Models\MemberApplication;
@@ -12,7 +14,6 @@ use App\Models\MemberClassification;
 use App\Models\SexCategory;
 use App\Services\MemberApplicationService;
 use App\Services\MemberExecutivePositionService;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
@@ -21,7 +22,7 @@ use Symfony\Component\HttpFoundation\Response;
 
 class MemberApplicationController extends Controller
 {
-    public function index(Request $request, MemberExecutivePositionService $executivePositions): View
+    public function index(MemberRegisterRequest $request, MemberExecutivePositionService $executivePositions, MemberDirectoryQueryService $directory): View
     {
         $currentUser = $request->attributes->get('current_user');
 
@@ -38,43 +39,13 @@ class MemberApplicationController extends Controller
             ]);
         }
 
-        $statusFilter = $request->query('status', '');
-
-        $statusFilter = in_array(
-            $statusFilter,
-            [
-                'pending',
-                'approved',
-                'rejected',
-            ],
-            true
-        )
-            ? $statusFilter
-            : '';
-
-        $applications = MemberApplication::query()
-            ->with([
-                'sex',
-                'position',
-                'classifications',
-                'reviewedBy',
-                'member.classifications',
-            ])
-            ->where(
-                'association_id',
-                $associationAccount->association_id
-            )
-            ->where(
-                'submitted_by_user_id',
-                $currentUser->id
-            )
-            ->when(
-                $statusFilter !== '',
-                fn ($query) =>
-                    $query->where('status', $statusFilter)
-            )
-            ->orderByDesc('created_at')
-            ->get();
+        $filters = $request->filters();
+        $statusFilter = $filters['status'];
+        $scope = MemberApplication::query()->useWritePdo()
+            ->where('association_id', $associationAccount->association_id)
+            ->where('submitted_by_user_id', $currentUser->id);
+        $summary = $directory->applicationSummary($scope);
+        $applications = $directory->applications($scope, $filters, false, $summary);
 
         $sexCategories = SexCategory::query()
             ->where('is_active', true)
@@ -114,8 +85,9 @@ class MemberApplicationController extends Controller
                 'classifications' =>
                     $classifications,
 
-                'statusFilter' =>
-                    $statusFilter,
+                'statusFilter' => $statusFilter,
+                'filters' => $filters,
+                'summary' => $summary,
             ]
         );
     }

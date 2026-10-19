@@ -9,6 +9,7 @@ use App\Models\Training;
 use App\Models\UserProfile;
 use App\Services\AssociationLifecycleService;
 use App\Services\AssociationService;
+use App\Services\AuditLogService;
 use App\Services\ProgramActivityService;
 use App\Services\ProjectService;
 use App\Services\TrainingService;
@@ -19,7 +20,9 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
 use LogicException;
+use Mockery;
 use PHPUnit\Framework\Attributes\DataProvider;
+use RuntimeException;
 use Tests\Support\IsolatedDatabaseManager;
 use Tests\TestCase;
 
@@ -76,6 +79,11 @@ class AssociationLifecycleTest extends TestCase
             $table->uuid('primary_field_officer_id'); $table->string('status');
             $table->timestamp('archived_at')->nullable(); $table->uuid('archived_by')->nullable();
             $table->uuid('created_by')->nullable(); $table->uuid('updated_by')->nullable(); $table->timestamps();
+        });
+        Schema::create('audit_logs', function (Blueprint $table) {
+            $table->uuid('id')->primary(); $table->uuid('actor_user_id'); $table->string('action_type');
+            $table->string('module'); $table->string('entity_type'); $table->string('entity_id');
+            $table->text('old_values')->nullable(); $table->text('new_values')->nullable(); $table->timestamp('performed_at');
         });
         Schema::create('saad_activities', function (Blueprint $table) {
             $table->id(); $table->string('code'); $table->string('name'); $table->boolean('is_active'); $table->timestamps();
@@ -206,6 +214,128 @@ class AssociationLifecycleTest extends TestCase
     {
         return ['inactive' => ['inactive', null], 'archived' => ['active', '2026-01-01'],
             'both' => ['inactive', '2026-01-01']];
+    }
+
+    #[DataProvider('associationStatuses')]
+    public function test_admin_archive_and_restore_audit_each_transition_without_changing_history(string $status): void
+    {
+        DB::table('associations')->where('id', self::ASSOCIATION)->update(['status' => $status]);
+        DB::table('members')->insert(['id' => self::ADMIN, 'association_id' => self::ASSOCIATION, 'member_status' => 'active']);
+        DB::table('monitoring_records')->insert(['id' => self::ADMIN, 'project_id' => self::PROJECT]);
+        $tables = ['members', 'projects', 'trainings', 'training_participants', 'program_activity_records',
+            'monitoring_records', 'association_registrations', 'project_products', 'project_materials'];
+        $snapshot = fn () => collect($tables)->mapWithKeys(fn ($table) => [$table => DB::table($table)->orderBy('id')->get()->toJson()])->all();
+        $before = $snapshot();
+        $service = app(AssociationService::class);
+        $association = Association::findOrFail(self::ASSOCIATION);
+        $archived = $service->archive($association, $this->actor());
+        $this->assertSame($status, $archived->status);
+        $this->assertNotNull($archived->archived_at);
+        $this->assertSame(self::ADMIN, $archived->archived_by);
+        $this->assertSame(self::ADMIN, $archived->updated_by);
+        $restored = $service->unarchive($association, $this->actor());
+        $this->assertSame($status, $restored->status);
+        $this->assertNull($restored->archived_at);
+        $this->assertNull($restored->archived_by);
+        $this->assertSame($before, $snapshot());
+        $events = DB::table('audit_logs')->orderBy('performed_at')->get();
+        $this->assertSame(['ARCHIVE ASSOCIATION', 'RESTORE ASSOCIATION'], $events->pluck('action_type')->all());
+        foreach ($events as $event) {
+            $this->assertSame(self::ADMIN, $event->actor_user_id);
+            $this->assertSame(self::ASSOCIATION, $event->entity_id);
+            $this->assertSame('association_lifecycle', $event->entity_type);
+            $this->assertNotEmpty($event->performed_at);
+            $new = json_decode($event->new_values, true);
+            $this->assertSame(['association_id', 'status', 'archived_at', 'archived_by', 'updated_by'], array_keys($new));
+            $this->assertSame($status, $new['status']);
+            $this->assertNotNull(app(AuditLogService::class)->formatSnapshot($new, $event->entity_type)['json']);
+        }
+        $this->assertNull(json_decode($events[0]->old_values, true)['archived_at']);
+        $this->assertNotNull(json_decode($events[1]->old_values, true)['archived_at']);
+        $this->assertNull(json_decode($events[1]->new_values, true)['archived_at']);
+    }
+
+    public static function associationStatuses(): array
+    {
+        return [['active'], ['inactive']];
+    }
+
+    #[DataProvider('revokedLifecycleActors')]
+    public function test_archive_and_restore_revalidate_the_actor_inside_the_transaction(string $operation, string $revocation): void
+    {
+        if ($operation === 'unarchive') DB::table('associations')->where('id', self::ASSOCIATION)
+            ->update(['archived_at' => '2026-01-01', 'archived_by' => self::ADMIN]);
+        $actor = $this->actor();
+        $actor->canAccessApplication();
+        match ($revocation) {
+            'inactive profile' => DB::table('user_profiles')->where('id', self::ADMIN)->update(['is_active' => false]),
+            'inactive role' => DB::table('roles')->where('id', 1)->update(['is_active' => false]),
+            'changed role' => DB::table('user_profiles')->where('id', self::ADMIN)->update(['role_id' => 2]),
+            'missing profile' => DB::table('user_profiles')->where('id', self::ADMIN)->delete(),
+            'unaccepted invitation' => DB::table('user_invitations')->insert(['id' => self::ADMIN,
+                'auth_user_id' => self::ADMIN, 'status' => 'sent']),
+        };
+        $before = Association::findOrFail(self::ASSOCIATION)->getRawOriginal();
+        try {
+            app(AssociationService::class)->{$operation}(Association::findOrFail(self::ASSOCIATION), $actor);
+            $this->fail('Revoked administrators must not change association lifecycle.');
+        } catch (\Symfony\Component\HttpKernel\Exception\HttpException $exception) {
+            $this->assertSame(403, $exception->getStatusCode());
+        }
+        $this->assertSame($before, Association::findOrFail(self::ASSOCIATION)->getRawOriginal());
+        $this->assertDatabaseCount('audit_logs', 0);
+    }
+
+    public static function revokedLifecycleActors(): array
+    {
+        $cases = [];
+        foreach (['archive', 'unarchive'] as $operation) foreach (['inactive profile', 'inactive role', 'changed role',
+            'missing profile', 'unaccepted invitation'] as $revocation) $cases[] = [$operation, $revocation];
+
+        return $cases;
+    }
+
+    #[DataProvider('lifecycleOperations')]
+    public function test_lifecycle_audit_failure_rolls_back_the_association(string $operation): void
+    {
+        if ($operation === 'unarchive') DB::table('associations')->where('id', self::ASSOCIATION)
+            ->update(['archived_at' => '2026-01-01', 'archived_by' => self::ADMIN]);
+        $before = Association::findOrFail(self::ASSOCIATION)->getRawOriginal();
+        $audit = Mockery::mock(AuditLogService::class);
+        $audit->shouldReceive('record')->once()->andThrow(new RuntimeException('Synthetic audit failure'));
+        $this->app->instance(AuditLogService::class, $audit);
+        try {
+            app(AssociationService::class)->{$operation}(Association::findOrFail(self::ASSOCIATION), $this->actor());
+            $this->fail('Lifecycle changes require a successful audit.');
+        } catch (RuntimeException $exception) {
+            $this->assertSame('Synthetic audit failure', $exception->getMessage());
+        }
+        $this->assertSame($before, Association::findOrFail(self::ASSOCIATION)->getRawOriginal());
+        $this->assertDatabaseCount('audit_logs', 0);
+    }
+
+    public static function lifecycleOperations(): array
+    {
+        return [['archive'], ['unarchive']];
+    }
+
+    public function test_repeated_lifecycle_requests_keep_existing_errors_and_do_not_add_audits(): void
+    {
+        $service = app(AssociationService::class);
+        $association = Association::findOrFail(self::ASSOCIATION);
+        foreach (['archive', 'unarchive'] as $operation) {
+            $service->{$operation}($association, $this->actor());
+            $before = $association->fresh()->getRawOriginal();
+            try {
+                $service->{$operation}($association, $this->actor());
+                $this->fail('Repeated lifecycle requests must preserve existing rejection behavior.');
+            } catch (ValidationException $exception) {
+                $this->assertArrayHasKey('association', $exception->errors());
+                $this->assertSame(422, $exception->status);
+            }
+            $this->assertSame($before, $association->fresh()->getRawOriginal());
+        }
+        $this->assertDatabaseCount('audit_logs', 2);
     }
 
     #[DataProvider('readOnlyStates')]
@@ -370,14 +500,15 @@ class AssociationLifecycleTest extends TestCase
             foreach (['first_name', 'middle_name', 'last_name', 'suffix'] as $column) $table->string($column)->nullable();
         });
         DB::table('associations')->where('id', self::DESTINATION)->update(['status' => 'inactive', 'archived_at' => '2026-01-01']);
-        $controller = app(\App\Http\Controllers\Admin\AssociationController::class);
+        $directory = app(\App\Services\AssociationDirectoryQueryService::class);
+        $filters = ['status' => '', 'q' => '', 'municipality' => '', 'barangay' => '', 'field_officer' => '', 'sort' => 'az'];
         foreach (['' => self::ASSOCIATION, 'active' => self::ASSOCIATION, 'archived' => self::DESTINATION] as $status => $expected) {
-            $view = $controller->index(\Illuminate\Http\Request::create('/admin/associations', 'GET', ['status' => $status]));
-            $this->assertSame([$expected], array_column($view->getData()['module']['rows'], 'id'));
+            $records = $directory->records($this->actor(), array_replace($filters, ['status' => $status]));
+            $this->assertSame([$expected], $records->pluck('id')->all());
         }
         DB::table('associations')->where('id', self::DESTINATION)->update(['archived_at' => null]);
-        $view = $controller->index(\Illuminate\Http\Request::create('/admin/associations', 'GET', ['status' => 'inactive']));
-        $this->assertSame([self::DESTINATION], array_column($view->getData()['module']['rows'], 'id'));
+        $records = $directory->records($this->actor(), array_replace($filters, ['status' => 'inactive']));
+        $this->assertSame([self::DESTINATION], $records->pluck('id')->all());
         $this->assertFalse(app('router')->has('admin.associations.terminate'));
         $this->assertFalse(app('router')->has('field-officer.associations.terminate'));
         $this->assertFalse(Schema::hasColumn('associations', 'terminated_at'));

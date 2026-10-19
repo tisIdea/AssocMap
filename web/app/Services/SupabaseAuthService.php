@@ -8,232 +8,112 @@ use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
-use Carbon\CarbonImmutable;
-use Carbon\Exceptions\InvalidFormatException;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 
 class SupabaseAuthService
 {
+    public function __construct(private SupabaseInvitationProvider $invitations)
+    {
+    }
+
     public function invitationConfigurationAvailable(): bool
     {
-        return $this->invitationConfigurationProblems() === [];
+        return $this->invitations->invitationConfigurationAvailable();
     }
 
     public function invitationConfigurationProblems(): array
     {
-        $problems = [];
-        $names = ['url' => 'SUPABASE_URL', 'invitation_redirect_url' => 'SUPABASE_INVITATION_REDIRECT_URL'];
-        foreach (['url', 'invitation_redirect_url'] as $setting) {
-            $value = config('services.supabase.'.$setting);
-            if (! is_string($value) || ! filter_var($value, FILTER_VALIDATE_URL)) {
-                $problems[] = $names[$setting].' is missing or is not a valid URL.';
-                continue;
-            }
-            $parts = parse_url($value);
-            if (($parts['scheme'] ?? '') !== 'https' || isset($parts['user'])
-                || isset($parts['pass']) || isset($parts['fragment'])) {
-                $problems[] = $names[$setting].' must use HTTPS without embedded credentials or a fragment.';
-            }
-            if ($setting === 'url' && (isset($parts['query']) || ! in_array($parts['path'] ?? '', ['', '/'], true))) {
-                $problems[] = 'SUPABASE_URL must be the project origin, without an API path or query.';
-            }
-        }
-
-        $key = config('services.supabase.service_role_key');
-
-        // This server-side integration uses the legacy service-role JWT.
-        if (! is_string($key) || preg_match('/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/D', $key) !== 1) {
-            $problems[] = 'SUPABASE_SERVICE_ROLE_KEY is missing or is not in the supported legacy three-part JWT format. This invitation client does not support sb_secret_ keys.';
-        }
-
-        return $problems;
-    }
-
-    private function adminRequest(): PendingRequest
-    {
-        $key = config('services.supabase.service_role_key');
-
-        return Http::withHeaders(['apikey' => $key, 'Authorization' => 'Bearer '.$key])
-            ->acceptJson()->asJson()->connectTimeout(5)->timeout(15)
-            ->withOptions(['allow_redirects' => false]);
+        return $this->invitations->invitationConfigurationProblems();
     }
 
     public function findInvitationIdentity(string $email): array
     {
-        // Filter is a provider search; always compare the returned email exactly.
-        $previousTotal = null;
-        for ($page = 1; $page <= 5; $page++) {
-            try {
-                $response = $this->adminRequest()->get(rtrim(config('services.supabase.url'), '/').'/auth/v1/admin/users', [
-                    'filter' => $email, 'page' => $page, 'per_page' => 100,
-                ]);
-            } catch (ConnectionException $exception) {
-                return ['outcome' => 'failed', 'code' => 'identity_lookup_failed'];
-            }
-            $users = $response->json('users');
-            if (! $response->successful() || ! is_array($users) || ! array_is_list($users)) {
-                return ['outcome' => 'failed', 'code' => 'identity_lookup_failed'];
-            }
-            foreach ($users as $user) {
-                if (! is_array($user) || ! array_key_exists('email', $user)) {
-                    return ['outcome' => 'failed', 'code' => 'identity_lookup_failed'];
-                }
-                if ($user['email'] === null) continue;
-                if (! is_string($user['email'])) return ['outcome' => 'failed', 'code' => 'identity_lookup_failed'];
-                if (mb_strtolower(trim($user['email'])) === $email) {
-                    return ['outcome' => 'existing', 'code' => 'existing_identity'];
-                }
-            }
-            $total = $response->header('X-Total-Count');
-            if (! is_string($total) || ! ctype_digit($total)
-                || ($previousTotal !== null && $previousTotal !== $total)) {
-                return ['outcome' => 'failed', 'code' => 'identity_lookup_inconclusive'];
-            }
-            $previousTotal = $total;
-            $lastPage = (int) ceil((int) $total / 100);
-            $links = [];
-            preg_match_all('/<([^>]+)>;\s*rel="(next|last)"/', $response->header('Link') ?? '', $matches, PREG_SET_ORDER);
-            foreach ($matches as $match) {
-                $parts = parse_url($match[1]);
-                if (! is_array($parts)) return ['outcome' => 'failed', 'code' => 'identity_lookup_inconclusive'];
-                parse_str($parts['query'] ?? '', $query);
-                if (isset($links[$match[2]]) || ! is_string($query['page'] ?? null) || ! ctype_digit($query['page'])
-                    || ($query['filter'] ?? null) !== $email || ($query['per_page'] ?? null) !== '100') {
-                    return ['outcome' => 'failed', 'code' => 'identity_lookup_inconclusive'];
-                }
-                // Read pagination metadata; never follow a provider-supplied URL.
-                $links[$match[2]] = (int) $query['page'];
-            }
-            $expectedCount = max(0, min(100, (int) $total - (($page - 1) * 100)));
-            if (($links['last'] ?? null) !== $lastPage || count($users) !== $expectedCount
-                || ($page < $lastPage ? ($links['next'] ?? null) !== $page + 1 : isset($links['next']))) {
-                return ['outcome' => 'failed', 'code' => 'identity_lookup_inconclusive'];
-            }
-            if ($page >= $lastPage) return ['outcome' => 'absent'];
-        }
-
-        return ['outcome' => 'failed', 'code' => 'identity_lookup_limit'];
+        return $this->invitations->findInvitationIdentity($email);
     }
 
     public function inviteUser(string $email, string $displayName): array
     {
-        $url = rtrim(config('services.supabase.url'), '/').'/auth/v1/invite?'.http_build_query([
-            'redirect_to' => config('services.supabase.invitation_redirect_url'),
-        ]);
-        try {
-            // Never retry this write: a timeout may follow successful provisioning.
-            $response = $this->adminRequest()->post($url, ['email' => $email, 'data' => ['display_name' => $displayName]]);
-        } catch (ConnectionException $exception) {
-            return ['outcome' => 'uncertain', 'code' => 'provider_outcome_unknown'];
-        }
-        if ($response->successful()) {
-            $body = $response->json();
-            if (! is_array($body) || array_is_list($body) || array_key_exists('code', $body) || array_key_exists('error_code', $body)) {
-                return ['outcome' => 'uncertain', 'code' => 'provider_response_invalid'];
-            }
-            $id = $response->json('id');
-            $returnedEmail = $response->json('email');
-            $createdAt = $response->json('created_at');
-            if (! is_string($id) || ! Str::isUuid($id) || ! is_string($returnedEmail)
-                || mb_strtolower(trim($returnedEmail)) !== $email) {
-                return ['outcome' => 'uncertain', 'code' => 'provider_response_invalid'];
-            }
-            $invalidIdentityResponse = ['outcome' => 'uncertain', 'code' => 'provider_response_invalid', 'reconciliation_auth_user_id' => strtolower($id)];
-            if (! is_string($createdAt)
-                || ! preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/D', $createdAt)
-                || ! checkdate((int) substr($createdAt, 5, 2), (int) substr($createdAt, 8, 2), (int) substr($createdAt, 0, 4))
-                || (int) substr($createdAt, 11, 2) > 23 || (int) substr($createdAt, 14, 2) > 59
-                || (int) substr($createdAt, 17, 2) > 59) return $invalidIdentityResponse;
-
-            try {
-                $createdAt = CarbonImmutable::parse($createdAt);
-            } catch (InvalidFormatException $exception) {
-                return $invalidIdentityResponse;
-            }
-
-            return ['outcome' => 'sent', 'auth_user_id' => strtolower($id), 'auth_created_at' => $createdAt];
-        }
-        $errorCode = $this->invitationErrorCode($response);
-        if (in_array($response->status(), [400, 401, 403], true)
-            && in_array($errorCode, ['bad_jwt', 'not_admin'], true)) {
-            return ['outcome' => 'failed', 'code' => 'provider_auth_rejected'];
-        }
-        if ($response->status() === 429
-            && in_array($errorCode, ['over_request_rate_limit', 'over_email_send_rate_limit'], true)) {
-            return ['outcome' => 'failed', 'code' => 'provider_rate_limited'];
-        }
-        if ($response->clientError()) {
-            if (in_array($errorCode, ['email_exists', 'user_already_exists'], true)) {
-                return ['outcome' => 'failed', 'code' => 'existing_identity'];
-            }
-            // Custom Auth hooks can fail after provisioning; do not assume rollback.
-            return ['outcome' => 'uncertain', 'code' => 'provider_request_rejected'];
-        }
-
-        return ['outcome' => 'uncertain', 'code' => 'provider_outcome_unknown'];
-    }
-
-    private function invitationErrorCode(Response $response): ?string
-    {
-        $body = $response->json();
-        if (! is_array($body) || array_is_list($body)) return null;
-        $codes = [];
-        foreach (['code', 'error_code'] as $field) {
-            if (! array_key_exists($field, $body)) continue;
-            if ($field === 'code' && is_int($body[$field]) && $body[$field] === $response->status()) continue;
-            if (! is_string($body[$field]) || $body[$field] === '') return null;
-            $codes[] = $body[$field];
-        }
-        $headerCode = $response->header('x-sb-error-code');
-        if (is_string($headerCode) && $headerCode !== '') $codes[] = $headerCode;
-        $codes = array_values(array_unique($codes));
-        $known = [
-            'bad_jwt' => [400, 401, 403], 'not_admin' => [403],
-            'over_request_rate_limit' => [429], 'over_email_send_rate_limit' => [429],
-            'email_exists' => [422], 'user_already_exists' => [422],
-        ];
-
-        return count($codes) === 1 && isset($known[$codes[0]])
-            && in_array($response->status(), $known[$codes[0]], true) ? $codes[0] : null;
+        return $this->invitations->inviteUser($email, $displayName);
     }
 
     public function signIn(string $email, string $password): array
     {
-        $response = Http::withHeaders([
-            'apikey' => config('services.supabase.publishable_key'),
-            'Content-Type' => 'application/json',
-        ])->post(
-            config('services.supabase.url') . '/auth/v1/token?grant_type=password',
-            [
-                'email' => $email,
-                'password' => $password,
-            ]
-        );
-
-        if ($response->failed()) {
-            return [
-                'success' => false,
-                'message' => 'Invalid email or password.',
-            ];
+        try {
+            $response = Http::withHeaders([
+                'apikey' => config('services.supabase.publishable_key'),
+                'Content-Type' => 'application/json',
+            ])->connectTimeout(5)->timeout(15)->withoutRedirecting()->post(
+                rtrim(config('services.supabase.url'), '/').'/auth/v1/token?grant_type=password',
+                ['email' => $email, 'password' => $password]
+            );
+        } catch (ConnectionException | \GuzzleHttp\Exception\GuzzleException $exception) {
+            return $this->signInFailure('provider_unavailable');
         }
 
-        return [
-            'success' => true,
-            'data' => $response->json(),
-        ];
+        if ($response->status() === 429 || $response->serverError()) {
+            return $this->signInFailure('provider_unavailable');
+        }
+        $body = SupabaseAuthResponse::jsonObject($response);
+        if (! $body) return $this->signInFailure('invalid_provider_response');
+
+        if (in_array($response->status(), [400, 401, 403], true)) {
+            foreach (['error_code', 'code', 'error', 'msg'] as $field) {
+                if (is_string($body->$field ?? null) && trim($body->$field) !== '') {
+                    return $this->signInFailure('authentication_rejected');
+                }
+            }
+        }
+        if ($response->status() !== 200) return $this->signInFailure('invalid_provider_response');
+
+        $session = $this->validatedBrowserSession($response->json());
+        if (! $session) return $this->signInFailure('invalid_provider_response');
+
+        return ['success' => true, 'data' => $session];
     }
 
-    public function getUser(string $accessToken): ?array
+    private function signInFailure(string $code): array
     {
-        $response = Http::withHeaders([
-            'apikey' => config('services.supabase.publishable_key'),
-            'Authorization' => 'Bearer ' . $accessToken,
-        ])->get(
-            config('services.supabase.url') . '/auth/v1/user'
-        );
+        $message = match ($code) {
+            'authentication_rejected' => 'Invalid email or password.',
+            'provider_unavailable' => 'Sign-in is temporarily unavailable. Please try again.',
+            default => 'Unable to verify this account. Please try again.',
+        };
 
-        return $response->successful()
-            ? $response->json()
-            : null;
+        return ['success' => false, 'code' => $code, 'message' => $message];
+    }
+
+    /** Validate locally before successful browser session mutation. */
+    public function validatedBrowserSession(mixed $data): ?array
+    {
+        return SupabaseAuthResponse::browserSession($data);
+    }
+
+    /** Null means rejected credentials; provider failures stop the request with 502/503. */
+    public function getUser(mixed $accessToken): ?array
+    {
+        if (! SupabaseAuthResponse::isBearerToken($accessToken)) return null;
+        try {
+            $response = Http::withHeaders([
+                'apikey' => config('services.supabase.publishable_key'),
+                'Authorization' => 'Bearer '.$accessToken,
+            ])->connectTimeout(5)->timeout(15)->withoutRedirecting()
+                ->get(rtrim(config('services.supabase.url'), '/').'/auth/v1/user');
+        } catch (ConnectionException | \GuzzleHttp\Exception\GuzzleException $exception) {
+            throw new HttpException(503, 'Account verification is temporarily unavailable. Please try again.');
+        }
+
+        if ($response->status() === 429 || $response->serverError()) {
+            throw new HttpException(503, 'Account verification is temporarily unavailable. Please try again.');
+        }
+        $body = SupabaseAuthResponse::jsonObject($response);
+        if ($body && $response->status() !== 200
+            && in_array($this->apiIdentityErrorOutcome($response, $body), ['invalid', 'denied'], true)) {
+            return null;
+        }
+        $identity = $body && $response->status() === 200 ? SupabaseAuthResponse::browserIdentity($response->json()) : null;
+        if (! $identity) throw new HttpException(502, 'Unable to verify this account. Please try again.');
+
+        return $identity;
     }
 
     public function verifyApiIdentity(string $accessToken): array

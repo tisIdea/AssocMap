@@ -1,8 +1,8 @@
 @extends($monitoringLayout)
 @section('content')
-@include('monitoring.partials.styles')
+<div class="monitoring-management" data-workspace-module="monitoring" data-workspace-title="Monitoring">
 @include('monitoring.partials.context', ['section' => 'overview'])
-<section class="card" style="padding:20px"><h2>Edit Quarterly Overview</h2>
+<section class="card monitoring-form-card"><h2>Edit Quarterly Overview</h2>
 @if($errors->any())<div class="notice notice-error" role="alert">@foreach($errors->all() as $error)<p>{{ $error }}</p>@endforeach</div>@endif
 <form method="POST" action="{{ route($monitoringPrefix.'.overview.update', $record) }}" data-feedback-error-bag="default">@csrf @method('PATCH')
     <div class="form-grid">
@@ -15,4 +15,5 @@
     </div>
     <div class="monitoring-actions"><a class="button" href="{{ route($monitoringPrefix.'.workspace', $record) }}">Cancel</a><button class="button button-primary" type="submit">Save Overview</button></div>
 </form></section>
+</div>
 @endsection

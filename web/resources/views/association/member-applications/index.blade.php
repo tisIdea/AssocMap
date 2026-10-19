@@ -2,7 +2,13 @@
 
 @php
     /** @var \Illuminate\Database\Eloquent\Collection<int, \App\Models\AssociationPosition> $positions */
+    $applicationRegister = true;
+    $indexRoute = 'association.member-applications.index';
+    $cards = ['total' => ['All Applications', '', 'users'], 'pending' => ['Pending Review', 'pending', 'clipboard-check'], 'approved' => ['Approved', 'approved', 'check'], 'rejected' => ['Rejected', 'rejected', 'close']];
+    $summaryNote = 'Applications submitted by your account for the linked association.';
     $association = $associationAccount->association;
+    $canSubmit = $association && !$association->archived_at && $association->status === 'active';
+    $submissionErrors = $errors->any() && !$errors->hasAny(['q', 'status', 'sort', 'page', 'association']);
     $area = $association?->area;
     $barangay = $area?->barangay;
     $otherPositionId = $positions->firstWhere('code', 'OTHER')?->id;
@@ -10,28 +16,26 @@
 @endphp
 
 @section('content')
-    <header class="page-header"><div><div class="eyebrow">Association Account</div><h1 tabindex="-1">Member Applications</h1><p>Submit member applications and monitor their review status.</p></div></header>
-    <section class="card form-section" aria-labelledby="linked-association-title">
-        <div class="section-heading"><h2 id="linked-association-title">Linked Association</h2></div>
+<section class="member-management" data-workspace-module="member-applications" data-workspace-title="Member Applications">
+    <header class="card member-heading"><div><p class="eyebrow">Association Account</p><h1 tabindex="-1">Member Applications</h1><p>Submit applications for your association and follow each review decision.</p></div>
+        @if($canSubmit)<button type="button" class="button button-primary" data-dialog="submit-member-application"><x-icon name="plus" />Submit Member Application</button>@else<span class="badge badge-neutral">Association read only</span>@endif
+    </header>
+    @include('members.partials.summary')
+    @if(!$canSubmit)<p class="notice">This association is archived or inactive. You can view application history; new applications are unavailable.</p>@endif
+    <details class="card member-association-context"><summary>Linked association: {{ $association?->name ?? 'Unavailable' }}<x-icon name="chevron-down" /></summary>
         <dl class="detail-grid">
             @foreach(['Association Name' => $association?->name, 'Acronym' => $association?->acronym, 'Municipality / City' => $barangay?->municipality?->name, 'Barangay' => $barangay?->name, 'Specific Area' => $area?->address] as $label => $value)
                 <div><dt>{{ $label }}</dt><dd>{{ filled($value) ? $value : '—' }}</dd></div>
             @endforeach
         </dl>
-    </section>
-    <section class="card list-card" aria-label="Member applications">
-        <div class="table-toolbar">
-            <nav class="area-list-switch" aria-label="Application status">
-                @foreach(['' => 'All', 'pending' => 'Pending', 'approved' => 'Approved', 'rejected' => 'Rejected'] as $status => $label)
-                    <a class="button {{ $statusFilter === $status ? 'button-primary' : '' }}" href="{{ route('association.member-applications.index', $status === '' ? [] : ['status' => $status]) }}" @if($statusFilter === $status) aria-current="page" @endif>{{ $label }}</a>
-                @endforeach
-            </nav>
-            <button type="button" class="button button-primary" data-dialog="submit-member-application"><x-icon name="plus" />Submit Member Application</button>
-        </div>
+    </details>
+    <section class="card member-register" aria-labelledby="application-register-title">
+        <div class="member-section-heading"><div><h2 id="application-register-title">Application register</h2><p>{{ number_format($applications->total()) }} matching application(s)</p></div><p>Only submissions from this account are shown.</p></div>
+        @include('members.partials.filters')
         <div class="table-scroll" role="region" aria-label="Submitted member applications" tabindex="0">
-            <table class="data-table">
+            <table class="data-table member-register-table">
                 <caption class="sr-only">Member applications submitted by this Association Account</caption>
-                <thead><tr>@foreach(['Applicant Name', 'Position', 'FishR Registration Number', 'Submitted Date', 'Status', 'Reviewed Date', 'Actions'] as $heading)<th scope="col">{{ $heading }}</th>@endforeach</tr></thead>
+                <thead><tr>@foreach(['Applicant', 'Association', 'Position', 'Submitted', 'Status', 'Actions'] as $heading)<th scope="col">{{ $heading }}</th>@endforeach</tr></thead>
                 <tbody>
                     @foreach($applications as $application)
                         @php
@@ -39,6 +43,7 @@
                             $tone = match ($application->status) { 'approved' => 'success', 'rejected' => 'danger', default => 'warning' };
                             $details = [
                                 'Full Name' => $fullName,
+                                'Association' => $association?->name,
                                 'Birth Date' => $application->birth_date?->format('M j, Y'),
                                 'Sex' => $application->sex?->name,
                                 'Contact Number' => $application->contact_number,
@@ -54,19 +59,21 @@
                             if ($application->status === 'rejected') $details['Rejection Reason'] = $application->rejection_reason;
                         @endphp
                         <tr>
-                            <td class="primary-cell">{{ $fullName }}</td>
+                            <th scope="row">{{ $fullName }}<small>FishR: {{ $application->fishr_registration_number ?: '—' }}</small></th>
+                            <td>{{ $association?->name ?? '—' }}</td>
                             <td>{{ $application->position?->name ?? '—' }}</td>
-                            <td>{{ $application->fishr_registration_number ?? '—' }}</td>
                             <td>{{ $application->created_at?->format('M j, Y') ?? '—' }}</td>
-                            <td><span class="badge badge-{{ $tone }}">{{ ucfirst($application->status) }}</span></td>
-                            <td>{{ $application->reviewed_at?->format('M j, Y') ?? '—' }}</td>
-                            <td><div class="row-actions"><button type="button" class="text-button" data-dialog="application-{{ $application->id }}" aria-label="View application for {{ $fullName }}">View</button></div></td>
+                            <td><span class="badge badge-{{ $tone }}">{{ ucfirst($application->status) }}</span>@if($application->reviewed_at)<small>Reviewed {{ $application->reviewed_at->format('M j, Y') }}</small>@endif</td>
+                            <td><div class="row-actions"><button type="button" class="button button-quiet" data-dialog="application-{{ $application->id }}" aria-label="View application for {{ $fullName }}"><x-icon name="eye" />View</button></div></td>
                         </tr>
                         @push('dialogs')
                             <x-modal :id="'application-'.$application->id" title="Application Details">
+                                <div class="member-record-dialog">
+                                <div class="member-detail-banner"><span class="member-avatar"><x-icon name="user" /></span><div><h3>{{ $fullName }}</h3><p>{{ $association?->name }}</p></div><span class="badge badge-{{ $tone }}">{{ ucfirst($application->status) }}</span></div>
                                 <dl class="detail-grid">@foreach($details as $label => $value)<div><dt>{{ $label }}</dt><dd>{{ filled($value) ? $value : '—' }}</dd></div>@endforeach</dl>
                                 @include('partials.member-application-evidence', ['photoRoute' => 'association.member-applications.photo'])
                                 <div class="modal-actions"><button type="button" class="button" data-close-dialog>Close</button></div>
+                                </div>
                             </x-modal>
                         @endpush
                     @endforeach
@@ -74,20 +81,23 @@
             </table>
         </div>
         @if($applications->isEmpty())
-            <x-empty-state :title="$statusFilter === '' ? 'No member applications have been submitted yet.' : 'No '.$statusFilter.' member applications were found.'" message="" />
+            <x-empty-state title="No matching applications" message="Try another search or status, or reset the filters. New submissions will appear here." />
         @endif
-        <footer class="table-footer"><span>{{ $applications->count() }} {{ $applications->count() === 1 ? 'application' : 'applications' }}</span></footer>
+        @include('members.partials.pagination', ['paginator' => $applications, 'recordLabel' => 'applications'])
     </section>
+</section>
 @endsection
 
 @push('dialogs')
     <x-modal id="submit-member-application" title="Submit Member Application">
+        <div class="member-record-dialog">
         <p>This application will be submitted for <strong>{{ $association?->name }}</strong> and will await Field Officer review.</p>
-        @if($errors->any())
+        @if($submissionErrors)
             <div class="notice notice-error" role="alert"><div>@foreach($errors->all() as $error)<p>{{ $error }}</p>@endforeach</div></div>
         @endif
         <form method="POST" action="{{ route('association.member-applications.store') }}" id="member-application-form" data-feedback-error-bag="default" enctype="multipart/form-data">
             @csrf
+            <fieldset @disabled(!$canSubmit) class="member-application-fields"><legend>Applicant information</legend><p class="member-form-help">Required fields are marked *. Approval by your assigned Field Officer creates the official member record.</p>
             <div class="form-grid">
                 @foreach([
                     ['name' => 'first_name', 'label' => 'First Name', 'required' => true, 'max' => 120],
@@ -135,7 +145,7 @@
                     <input id="application-other" name="position_other_text" type="text" value="{{ old('position_other_text') }}" maxlength="100" @required($isOtherPosition) @disabled(!$isOtherPosition) aria-describedby="application-other-error" @if($errors->has('position_other_text')) aria-invalid="true" @endif>
                     <span class="field-error" id="application-other-error">@error('position_other_text'){{ $message }}@enderror</span>
                 </div>
-                <div class="field field-wide">
+                <div class="field field-wide"><h3 class="member-form-subheading">Application evidence</h3>
                     <label for="application-endorsement">Endorsement Letter <span class="field-hint">*</span></label>
                     <textarea id="application-endorsement" name="endorsement_letter" rows="8" required maxlength="10000" aria-describedby="application-endorsement-help application-endorsement-error" @if($errors->has('endorsement_letter')) aria-invalid="true" @endif>{{ is_string(old('endorsement_letter')) ? old('endorsement_letter') : '' }}</textarea>
                     <small class="field-help" id="application-endorsement-help">Enter the letter provided by an association officer. Typed content does not verify authorship. Maximum 10,000 characters. This letter is private application information.</small>
@@ -173,8 +183,10 @@
                     </fieldset>
                 </div>
             </div>
-            <div class="modal-actions"><button type="button" class="button" data-close-dialog>Cancel</button><button type="submit" class="button button-primary">Submit Application</button></div>
+            </fieldset>
+            <div class="modal-actions"><button type="button" class="button" data-close-dialog>Cancel</button><button type="submit" class="button button-primary" @disabled(!$canSubmit)>Submit Application</button></div>
         </form>
+        </div>
     </x-modal>
 @endpush
 
@@ -191,7 +203,7 @@
     }
     position.addEventListener('change', () => syncOtherPosition(true));
     syncOtherPosition();
-    @if($errors->any())
+    @if($submissionErrors)
         document.getElementById('submit-member-application').dataset.feedbackRestore = 'true';
     @endif
 @endpush

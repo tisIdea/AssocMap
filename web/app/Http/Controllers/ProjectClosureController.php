@@ -32,6 +32,7 @@ class ProjectClosureController extends Controller
         abort_unless($project->association, 404);
         $actor = $request->attributes->get('current_user');
         $lifecycle->authorize($actor, $project->association);
+        abort_if($actor->role->code === 'field_officer' && $project->association->archived_at !== null, 403);
         $prefix = $actor->role->code === 'system_admin' ? 'admin' : 'field-officer';
         $project->load(['fisheriesCategory', 'commodity', 'saadActivity', 'materials', 'products', 'closedBy']);
         $parentOperational = $associations->isOperational($project->association);

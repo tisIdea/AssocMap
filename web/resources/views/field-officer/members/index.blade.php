@@ -2,6 +2,10 @@
 @php
     $nameOf = fn ($member) => collect([$member->first_name, $member->middle_name, $member->last_name, $member->suffix])->filter(fn ($part) => filled($part))->implode(' ');
     $fields = ['first_name' => ['First Name', 'text', 120, true], 'middle_name' => ['Middle Name', 'text', 120, false], 'last_name' => ['Last Name', 'text', 120, true], 'suffix' => ['Suffix', 'text', 20, false], 'birth_date' => ['Birth Date', 'date', null, true], 'contact_number' => ['Contact Number', 'tel', 30, false], 'fishr_registration_number' => ['FishR Registration Number', 'text', 100, false]];
+    $applicationRegister = false;
+    $indexRoute = 'field-officer.members.index';
+    $cards = ['active' => ['Active Members', 'active', 'check'], 'inactive' => ['Legacy Inactive', 'inactive', 'user'], 'archived' => ['Archived Members', 'archived', 'archive']];
+    $summaryNote = 'Active and Legacy Inactive exclude archived members. Legacy inactive records remain view only.';
     $isLegacyView = $status === 'inactive';
     $listTitle = match ($status) {
         'archived' => 'Archived Members',
@@ -15,83 +19,35 @@
     };
 @endphp
 @section('content')
-<section data-workspace-module="members" data-workspace-title="Member Management">
-    @include('partials.page-header', ['title' => 'Member Management', 'description' => 'Manage active members and archive or reactivate records in your assigned associations.', 'eyebrow' => 'Field Officer'])
-    <section class="card list-card" aria-labelledby="member-list-title">
-        <div class="table-toolbar member-directory-toolbar">
-            <nav class="area-list-switch" aria-label="Membership status">
-                @foreach(['active' => 'Active Members', 'archived' => 'Archived Members'] as $value => $label)
-                    <a class="button {{ $status === $value ? 'button-primary' : '' }}" href="{{ route('field-officer.members.index', array_merge($filters, ['status' => $value])) }}" @if($status === $value) aria-current="page" @endif>{{ $label }}</a>
-                @endforeach
-            </nav>
-        </div>
-        <section class="filter-panel member-filter-panel" aria-labelledby="member-filter-title">
-            <div class="panel-heading"><h2 id="member-filter-title">Filter members</h2><span class="muted">Search within your assigned associations</span></div>
-            <form method="GET" action="{{ route('field-officer.members.index') }}" class="form-grid member-filters">
-                <input type="hidden" name="status" value="{{ $status }}">
-                <div class="field">
-                    <label for="member-association-filter">Association</label>
-                    <select id="member-association-filter" name="association">
-                        <option value="">All assigned associations</option>
-                        @foreach($associations as $association)
-                            <option value="{{ $association->id }}" @selected(($filters['association'] ?? '') === $association->id)>{{ $association->name }}{{ $association->archived_at ? ' (archived)' : '' }}</option>
-                        @endforeach
-                    </select>
-                </div>
-                <div class="field">
-                    <label for="member-search">Member name or FishR number</label>
-                    <input id="member-search" name="q" value="{{ $filters['q'] ?? '' }}" maxlength="120" type="search" placeholder="Enter a member name or FishR number">
-                </div>
-                <div class="form-actions"><button type="submit" class="button button-primary"><x-icon name="filter" />Apply Filters</button><a class="button" href="{{ route('field-officer.members.index', ['status' => $status]) }}">Clear Filters</a></div>
-            </form>
-        </section>
-        <div class="member-results-heading">
-            <div><h2 id="member-list-title">{{ $listTitle }}</h2><p id="member-list-help">{{ $listDescription }}</p></div>
-            <span class="badge badge-blue">{{ $members->total() }} {{ $members->total() === 1 ? 'member' : 'members' }}</span>
-        </div>
-        @if($isLegacyView)
-            <div class="notice member-legacy-notice"><x-icon name="info" /><p>These records have not been archived. They remain view-only and are separate from the normal archive and reactivate workflow.</p></div>
-        @endif
-        <div class="table-scroll" role="region" aria-labelledby="member-list-title" aria-describedby="member-list-help" tabindex="0"><table class="data-table member-directory-table"><caption class="sr-only">{{ $listTitle }} in assigned associations</caption>
-            <thead><tr><th scope="col">Member Name</th><th scope="col">Association</th><th scope="col">Position</th><th scope="col">FishR Registration Number</th><th scope="col">Status</th><th scope="col">Actions</th></tr></thead>
-            <tbody>@foreach($members as $member)
+<section class="member-management" data-workspace-module="members" data-workspace-title="Member Management">
+    <header class="card member-heading"><div><p class="eyebrow">Field Officer</p><h1 tabindex="-1">Member Management</h1><p>Manage member profiles and membership records in your assigned associations.</p></div><a class="button button-primary" href="{{ route('field-officer.member-applications.index') }}"><x-icon name="clipboard-check" />Review Applications</a></header>
+    @include('members.partials.summary')
+    <section class="card member-register" aria-labelledby="member-list-title">
+        <div class="member-section-heading"><div><h2 id="member-list-title">{{ $listTitle }}</h2><p id="member-list-help">{{ $listDescription }}</p></div><span class="badge badge-blue">{{ number_format($members->total()) }} matching member(s)</span></div>
+        @include('members.partials.filters')
+        @if($isLegacyView)<p class="notice member-register-notice">These inactive records have not been archived. They remain view only.</p>@endif
+        <div class="table-scroll" role="region" aria-labelledby="member-list-title" aria-describedby="member-list-help" tabindex="0"><table class="data-table member-register-table"><caption class="sr-only">{{ $listTitle }} in assigned associations</caption>
+            <thead><tr><th scope="col">Member</th><th scope="col">Association</th><th scope="col">Position</th><th scope="col">FishR number</th><th scope="col">Status</th><th scope="col">Actions</th></tr></thead><tbody>
+            @forelse($members as $member)
                 @php
-                    $manageable = $member->association && !$member->association->archived_at;
+                    $manageable = $member->association && !$member->association->archived_at && $member->association->status === 'active';
                 @endphp
-                <tr>
-                    <td class="primary-cell">{{ $nameOf($member) }}</td>
-                    <td>{{ $member->association?->name }}@if($member->association?->archived_at)<small class="member-secondary">Archived association &middot; Read-only</small>@endif</td>
-                    <td>{{ $member->position?->name ?? 'Position unavailable' }}</td>
+                <tr><th scope="row">{{ $nameOf($member) }}<small>Registered {{ $member->date_registered?->format('M j, Y') ?? '—' }}</small></th>
+                    <td>{{ $member->association?->name ?? '—' }}@if(!$manageable)<small>Association read only</small>@endif</td>
+                    <td>{{ $member->position?->name ?? 'Position unavailable' }}@if($member->position_other_text)<small>{{ $member->position_other_text }}</small>@endif</td>
                     <td>{{ $member->fishr_registration_number ?: '—' }}</td>
-                    <td>
-                        <span class="badge badge-{{ $member->archived_at ? 'neutral' : ($member->member_status === 'active' ? 'success' : 'warning') }}">{{ $member->archived_at ? 'Archived' : ucfirst($member->member_status) }}</span>
-                        @if($member->archived_at)
-                            <small class="member-secondary">{{ ucfirst($member->member_status) }} membership</small>
-                        @elseif($member->member_status === 'inactive')
-                            <small class="member-secondary">Not archived &middot; View only</small>
-                        @endif
-                    </td>
+                    <td><span class="badge badge-{{ $member->archived_at ? 'neutral' : ($member->member_status === 'active' ? 'success' : 'warning') }}">{{ $member->archived_at ? 'Archived' : ucfirst($member->member_status) }}</span>@if($member->archived_at)<small>{{ ucfirst($member->member_status) }} membership</small>@elseif($member->member_status === 'inactive')<small>Not archived · View only</small>@endif</td>
                     <td><div class="row-actions member-row-actions"><button type="button" class="button button-quiet" data-dialog="member-view-{{ $member->id }}" aria-label="View {{ $nameOf($member) }}"><x-icon name="eye" />View</button>
                         @if($manageable && !$member->archived_at && $member->member_status === 'active')
-                            <button type="button" class="button button-outline" data-dialog="member-profile-{{ $member->id }}" aria-label="Edit {{ $nameOf($member) }}">Edit</button>
+                            <button type="button" class="button button-outline" data-dialog="member-profile-{{ $member->id }}" aria-label="Edit {{ $nameOf($member) }}"><x-icon name="pencil" />Edit</button>
                             <button type="button" class="button button-danger-outline" data-dialog="member-archive-{{ $member->id }}" aria-label="Archive {{ $nameOf($member) }}">Archive</button>
                         @elseif($manageable && $member->archived_at)
                             <button type="button" class="button button-primary" data-dialog="member-reactivate-{{ $member->id }}" aria-label="Reactivate {{ $nameOf($member) }}">Reactivate</button>
                         @endif
                     </div></td></tr>
-            @endforeach</tbody>
-        </table></div>
-        @if($members->isEmpty())
-            <x-empty-state :title="'No '.strtolower($listTitle).' found.'" message="Try clearing the search or selecting another assigned association." />
-        @endif
-        <footer class="table-footer member-directory-footer">
-            <span>Showing {{ $members->firstItem() ?? 0 }}&ndash;{{ $members->lastItem() ?? 0 }} of {{ $members->total() }} members</span>
-            <nav class="member-pagination" aria-label="Member pages">
-                @if($members->previousPageUrl())<a class="button" href="{{ $members->previousPageUrl() }}" rel="prev">Previous</a>@endif
-                <span>Page {{ $members->currentPage() }} of {{ $members->lastPage() }}</span>
-                @if($members->nextPageUrl())<a class="button" href="{{ $members->nextPageUrl() }}" rel="next">Next</a>@endif
-            </nav>
-        </footer>
+            @empty<tr><td colspan="6"><x-empty-state title="No matching members" message="Try another search, status, or assigned association, or reset the filters." /></td></tr>@endforelse
+            </tbody></table></div>
+        @include('members.partials.pagination', ['paginator' => $members, 'recordLabel' => 'members'])
     </section>
 </section>
 @endsection
@@ -99,7 +55,7 @@
 @push('dialogs')
 @foreach($members as $member)
     @php
-        $manageable = $member->association && !$member->association->archived_at;
+        $manageable = $member->association && !$member->association->archived_at && $member->association->status === 'active';
         $restoring = $errors->any() && old('member_record_id') === $member->id;
         $version = $member->updated_at?->format('Y-m-d\TH:i:s.uP');
         $oldVersion = is_string(old('expected_updated_at')) ? old('expected_updated_at') : '';
@@ -107,20 +63,19 @@
         $selectedSex = is_scalar($selectedSex) ? (string) $selectedSex : '';
     @endphp
     <x-modal :id="'member-view-'.$member->id" title="Member Details">
-        <dl class="detail-grid">
-            @foreach(['Member Name' => $nameOf($member), 'Association' => $member->association?->name, 'Municipality / City' => $member->association?->area?->barangay?->municipality?->name, 'Barangay' => $member->association?->area?->barangay?->name, 'Specific Area' => $member->association?->area?->address, 'Birth Date' => $member->birth_date?->format('M j, Y'), 'Sex' => $member->sex?->name, 'Contact Number' => $member->contact_number, 'FishR Registration Number' => $member->fishr_registration_number, 'Position' => $member->position?->name, 'Other Position Text' => $member->position_other_text, 'Classifications' => $member->classifications->pluck('name')->implode(', '), 'Date Registered' => $member->date_registered?->format('M j, Y'), 'Membership Status' => ucfirst($member->member_status), 'Archived' => $member->archived_at ? 'Yes' : 'No', 'Archived At' => $member->archived_at?->format('M j, Y g:i A')] as $label => $value)
-                <div><dt>{{ $label }}</dt><dd>{{ filled($value) ? $value : '—' }}</dd></div>
-            @endforeach
-        </dl>
+        <div class="member-record-dialog">
+        @include('members.partials.details', ['fullName' => $nameOf($member)])
         @if(!$manageable)
-            <p class="notice">This association is archived. Member records are read-only.</p>
+            <p class="notice">This association is archived or inactive. Member records are read-only.</p>
         @elseif(!$member->archived_at && $member->member_status === 'inactive')
             <p class="notice">This member is inactive without an archive record. This legacy record is view-only.</p>
         @endif
         <div class="modal-actions"><button type="button" class="button" data-close-dialog>Close</button></div>
+        </div>
     </x-modal>
     @if($manageable && !$member->archived_at && $member->member_status === 'active')
         <x-modal :id="'member-profile-'.$member->id" title="Edit Member">
+            <div class="member-record-dialog">
             <p>{{ $nameOf($member) }} · {{ $member->association->name }}</p>
             @if($restoring && old('member_action') === 'profile')<div class="notice notice-error" role="alert">@foreach($errors->all() as $error)<p>{{ $error }}</p>@endforeach</div>@endif
             <form method="POST" action="{{ route('field-officer.members.update', $member) }}" @if($restoring && old('member_action') === 'profile') data-feedback-error-bag="default" @endif>
@@ -143,6 +98,7 @@
                 </div>
                 <div class="modal-actions"><button type="button" class="button" data-close-dialog>Cancel</button><button type="submit" class="button button-primary">Save Changes</button></div>
             </form>
+            </div>
         </x-modal>
     @endif
     @if($manageable && ($member->archived_at || $member->member_status === 'active'))

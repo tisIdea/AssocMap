@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\CorrectGisGeometryRequest;
 use App\Http\Requests\DeleteGisLocationRequest;
 use App\Http\Requests\GisLifecycleRequest;
 use App\Http\Requests\GisParentRequest;
@@ -53,6 +54,8 @@ class GisWorkspaceController extends Controller
         abort_unless($this->queries->manager($user), 403);
         $feature = $this->queries->detail($user, $location);
         abort_if($feature['properties']['archived_at'] !== null, 409);
+        abort_if(($feature['properties']['association_archived_at'] ?? null) !== null
+            || ($feature['properties']['project_archived_at'] ?? null) !== null, 409, 'Use the restricted geometry correction for historical locations.');
 
         return view('gis-editor', $this->workspace($user) + ['gisFeature' => $feature, 'gisRequestId' => null]);
     }
@@ -62,6 +65,23 @@ class GisWorkspaceController extends Controller
         $result = $this->locations->store($request->validated(), $this->actor($request), $request);
 
         return response()->json($result['feature'], $result['created'] ? 201 : 200);
+    }
+
+    public function correction(Request $request, string $location): View
+    {
+        $user = $this->actor($request);
+        abort_unless($this->queries->role($user) === 'system_admin', 403);
+        $feature = $this->queries->detail($user, $location);
+        abort_unless($feature['properties']['can_correct_geometry'] ?? false, 409, 'Use the regular editor for an operational GIS location.');
+
+        return view('gis-editor', $this->workspace($user) + [
+            'gisFeature' => $feature, 'gisRequestId' => null, 'gisCorrection' => true,
+        ]);
+    }
+
+    public function correctGeometry(CorrectGisGeometryRequest $request, string $location): JsonResponse
+    {
+        return response()->json($this->locations->correctGeometry($location, $request->validated(), $this->actor($request), $request));
     }
 
     public function update(SaveGisLocationRequest $request, string $location): JsonResponse
@@ -95,7 +115,8 @@ class GisWorkspaceController extends Controller
         $prefixes = ['system_admin' => 'admin', 'field_officer' => 'field-officer', 'association_account' => 'association'];
         $labels = ['system_admin' => 'Administrator GIS Management', 'field_officer' => 'Field Officer GIS Management', 'association_account' => 'Association GIS Viewer'];
 
-        return ['gisPublic' => false, 'gisManager' => $this->queries->manager($user), 'gisLayout' => 'layouts.'.$prefixes[$role],
+        return ['gisPublic' => false, 'gisManager' => $this->queries->manager($user), 'gisAdministrator' => $role === 'system_admin',
+            'gisLayout' => 'layouts.'.$prefixes[$role],
             'gisBaseUrl' => route($prefixes[$role].'.gis.index'), 'gisTitle' => $labels[$role],
             'gisDescription' => $role === 'association_account' ? 'View project locations and boundaries for your active linked association.'
                 : ($role === 'field_officer' ? 'Manage project GIS locations for your currently assigned associations.' : 'Manage eligible project locations and boundaries.')];
