@@ -24,6 +24,7 @@ class MonitoringProduction extends Model
         'actual_output',
         'unit',
         'remarks',
+        'quantity_source',
     ];
 
     protected function casts(): array
@@ -31,6 +32,7 @@ class MonitoringProduction extends Model
         return [
             'target_output' => 'decimal:2',
             'actual_output' => 'decimal:2',
+            'harvest_version' => 'integer',
         ];
     }
 
@@ -59,6 +61,12 @@ class MonitoringProduction extends Model
     public function monthlyDetails(): HasMany
     {
         return $this->hasMany(MonitoringProductionMonthly::class, 'monitoring_production_id')->orderBy('month');
+    }
+
+    public function harvestEntries(): HasMany
+    {
+        return $this->hasMany(MonitoringHarvestEntry::class, 'monitoring_production_id')
+            ->orderBy('harvest_date')->orderBy('id');
     }
 
     public function income(): HasMany

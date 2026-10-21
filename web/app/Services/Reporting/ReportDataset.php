@@ -180,12 +180,18 @@ class ReportDataset
                 $production->where('mp.project_product_id', $filters['product_id']);
             }
             $data['production'] = $this->take($production->orderBy('mp.id'), ['mp.id', 'mp.monitoring_record_id', 'mp.project_product_id',
-                'pp.product_name as product', 'mp.target_output', 'mp.actual_output', 'mp.unit'], 'production');
+                'pp.product_name as product', 'mp.target_output', DB::raw("CASE WHEN mp.quantity_source = 'daily_harvest'
+                    AND NOT EXISTS (SELECT 1 FROM monitoring_harvest_entries h
+                        WHERE h.monitoring_production_id = mp.id AND h.voided_at IS NULL)
+                    THEN NULL ELSE mp.actual_output END AS actual_output"), 'mp.unit'], 'production');
             $productionIds = array_column($data['production'], 'id');
             if ($all || $type === 'production') {
-                $data['monthly'] = $this->take($this->table('monitoring_production_monthly')->whereIn('monitoring_production_id', $productionIds)
-                    ->when(isset($filters['month']), fn ($q) => $q->where('month', $filters['month']))->orderBy('id'),
-                    ['monitoring_production_id as production_id', 'month', 'activity_count', 'total_quantity'], 'monthly');
+                $data['monthly'] = $this->take($this->table('monitoring_production_monthly as monthly')
+                    ->join('monitoring_production as parent', 'parent.id', '=', 'monthly.monitoring_production_id')
+                    ->whereIn('monthly.monitoring_production_id', $productionIds)
+                    ->where(fn ($q) => $q->where('parent.quantity_source', 'aggregate')->orWhere('monthly.activity_count', '>', 0))
+                    ->when(isset($filters['month']), fn ($q) => $q->where('monthly.month', $filters['month']))->orderBy('monthly.id'),
+                    ['monthly.monitoring_production_id as production_id', 'monthly.month', 'monthly.activity_count', 'monthly.total_quantity'], 'monthly');
             }
             if ($all || $type === 'income') {
                 // Keep quarterly rows for coverage notices even when a month is requested.
