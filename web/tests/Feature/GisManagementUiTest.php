@@ -25,7 +25,7 @@ class GisManagementUiTest extends TestCase
         config(['app.key' => 'base64:'.base64_encode(str_repeat('g', 32))]);
         $this->withoutVite();
         $this->assertSame(':memory:', DB::connection()->getConfig('database'));
-        Schema::create('roles', function (Blueprint $t) { $t->id(); $t->string('code'); $t->boolean('is_active'); });
+        Schema::create('roles', function (Blueprint $t) { $t->id(); $t->string('code'); $t->boolean('is_active'); $t->string('name')->nullable(); $t->text('description')->nullable(); $t->timestamps(); });
         Schema::create('user_profiles', function (Blueprint $t) {
             $t->string('id')->primary(); $t->integer('role_id'); $t->string('display_name'); $t->boolean('is_active'); $t->timestamps();
         });

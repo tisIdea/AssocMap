@@ -88,7 +88,7 @@ class GisFinalizedProjectMaintenanceTest extends TestCase
 
     private function schema(): void
     {
-        Schema::create('roles', function (Blueprint $t) { $t->id(); $t->string('code'); $t->boolean('is_active'); });
+        Schema::create('roles', function (Blueprint $t) { $t->id(); $t->string('code'); $t->boolean('is_active'); $t->string('name')->nullable(); $t->text('description')->nullable(); $t->timestamps(); });
         Schema::create('user_profiles', function (Blueprint $t) {
             $t->string('id')->primary(); $t->integer('role_id'); $t->string('display_name'); $t->boolean('is_active'); $t->timestamps();
         });

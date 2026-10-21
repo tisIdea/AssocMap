@@ -44,7 +44,7 @@ class EnsureSupabaseAuthenticated
         }
 
         $profile = LocalRequestTiming::measure($request, 'profile_role',
-            fn () => UserProfile::with('role')->find($supabaseUser['id']));
+            fn () => UserProfile::findWithRole($supabaseUser['id']));
 
         if (! $profile || ! $profile->canAccessApplication($supabaseUser)) {
             $request->session()->invalidate();

@@ -49,7 +49,7 @@ class AssociationProgramReadTest extends TestCase
 
     private function schema(): void
     {
-        Schema::create('roles', function (Blueprint $table) { $table->id(); $table->string('code'); $table->boolean('is_active'); });
+        Schema::create('roles', function (Blueprint $table) { $table->id(); $table->string('code'); $table->boolean('is_active'); $table->string('name')->nullable(); $table->text('description')->nullable(); $table->timestamps(); });
         Schema::create('user_profiles', function (Blueprint $table) {
             $table->uuid('id')->primary(); $table->integer('role_id'); $table->string('display_name');
             $table->boolean('is_active'); $table->timestamp('activated_at')->nullable(); $table->timestamps();

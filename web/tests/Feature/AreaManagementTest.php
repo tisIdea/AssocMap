@@ -59,6 +59,7 @@ class AreaManagementTest extends TestCase
     {
         Schema::create('roles', function (Blueprint $t) {
             $t->id(); $t->string('code'); $t->string('name'); $t->boolean('is_active'); $t->timestamps();
+            $t->text('description')->nullable();
         });
         Schema::create('user_profiles', function (Blueprint $t) {
             $t->uuid('id')->primary(); $t->integer('role_id'); $t->string('display_name'); $t->boolean('is_active'); $t->timestamps();

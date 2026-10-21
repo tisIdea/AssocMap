@@ -57,7 +57,7 @@ class ProgramManagementUiTest extends TestCase
     {
         // Test tables exist only in the guarded SQLite in-memory connection.
         DB::unprepared(<<<'SQL'
-            CREATE TABLE roles (id INTEGER PRIMARY KEY, code TEXT, is_active BOOLEAN);
+            CREATE TABLE roles (id INTEGER PRIMARY KEY, code TEXT, is_active BOOLEAN, name TEXT, description TEXT, created_at TEXT, updated_at TEXT);
             CREATE TABLE user_profiles (id TEXT PRIMARY KEY, role_id INTEGER, display_name TEXT, is_active BOOLEAN, created_at TEXT, updated_at TEXT);
             CREATE TABLE user_invitations (id TEXT PRIMARY KEY, auth_user_id TEXT, status TEXT, last_error_code TEXT, accepted_at TEXT, last_attempt_at TEXT, created_at TEXT);
             CREATE TABLE municipalities (id TEXT PRIMARY KEY, name TEXT);

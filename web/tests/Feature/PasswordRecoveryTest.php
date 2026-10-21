@@ -46,6 +46,7 @@ class PasswordRecoveryTest extends TestCase
         $this->app->instance(InvitationActivationContext::class, $storage);
         Schema::create('roles', function (Blueprint $table) {
             $table->id(); $table->string('code'); $table->boolean('is_active');
+            $table->string('name')->nullable(); $table->text('description')->nullable(); $table->timestamps();
         });
         Schema::create('user_profiles', function (Blueprint $table) {
             $table->uuid('id')->primary(); $table->unsignedBigInteger('role_id'); $table->string('display_name');

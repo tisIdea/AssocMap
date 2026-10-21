@@ -63,6 +63,7 @@ class AssociationLifecycleTest extends TestCase
         // Isolated fixtures exercise service decisions, not PostgreSQL row-lock behavior.
         Schema::create('roles', function (Blueprint $table) {
             $table->id(); $table->string('code'); $table->boolean('is_active'); $table->timestamps();
+            $table->string('name')->nullable(); $table->text('description')->nullable();
         });
         Schema::create('user_profiles', function (Blueprint $table) {
             $table->uuid('id')->primary(); $table->unsignedBigInteger('role_id');

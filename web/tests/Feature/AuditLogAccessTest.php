@@ -28,7 +28,7 @@ class AuditLogAccessTest extends TestCase
         $this->withoutVite();
         Http::fake([]);
         DB::unprepared(<<<'SQL'
-            CREATE TABLE roles (id INTEGER PRIMARY KEY, code TEXT, name TEXT, is_active BOOLEAN);
+            CREATE TABLE roles (id INTEGER PRIMARY KEY, code TEXT, name TEXT, is_active BOOLEAN, description TEXT, created_at TEXT, updated_at TEXT);
             CREATE TABLE user_profiles (id TEXT PRIMARY KEY, role_id INTEGER, display_name TEXT, is_active BOOLEAN, created_at TEXT, updated_at TEXT);
             CREATE TABLE user_invitations (id TEXT PRIMARY KEY, auth_user_id TEXT, email TEXT, status TEXT, last_error_code TEXT, accepted_at TEXT, last_attempt_at TEXT, created_at TEXT);
             CREATE TABLE audit_logs (id TEXT PRIMARY KEY, actor_user_id TEXT REFERENCES user_profiles(id) ON DELETE SET NULL,

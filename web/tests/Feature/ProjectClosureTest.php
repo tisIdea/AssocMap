@@ -64,6 +64,7 @@ class ProjectClosureTest extends TestCase
         // Isolated Laravel decisions only; migration 011 and row locks require PostgreSQL.
         Schema::create('roles', function (Blueprint $table) {
             $table->id(); $table->string('code'); $table->boolean('is_active'); $table->timestamps();
+            $table->string('name')->nullable(); $table->text('description')->nullable();
         });
         Schema::create('user_profiles', function (Blueprint $table) {
             $table->uuid('id')->primary(); $table->unsignedBigInteger('role_id');

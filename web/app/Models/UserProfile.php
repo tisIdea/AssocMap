@@ -36,6 +36,30 @@ class UserProfile extends Model
         ];
     }
 
+    public static function findWithRole(string $id, bool $useWritePdo = false): ?self
+    {
+        $roleColumns = ['id', 'code', 'name', 'description', 'is_active', 'created_at', 'updated_at'];
+        $query = static::query()->select('user_profiles.*')
+            ->leftJoin('roles as profile_role', 'profile_role.id', '=', 'user_profiles.role_id');
+        foreach ($roleColumns as $column) $query->addSelect('profile_role.'.$column.' as auth_role_'.$column);
+        if ($useWritePdo) $query->useWritePdo();
+        $row = $query->whereKey($id)->toBase()->first();
+        if ($row === null) return null;
+
+        $attributes = (array) $row;
+        $roleAttributes = [];
+        foreach ($roleColumns as $column) {
+            $roleAttributes[$column] = $attributes['auth_role_'.$column];
+            unset($attributes['auth_role_'.$column]);
+        }
+        // Hydrate separate models with their normal casts and original attributes.
+        $profile = $query->getModel()->newFromBuilder($attributes, $query->getConnection()->getName());
+        $role = $roleAttributes['id'] === null ? null
+            : (new Role)->newFromBuilder($roleAttributes, $profile->getConnectionName());
+
+        return $profile->setRelation('role', $role);
+    }
+
     public function canAccessApplication(?array $verifiedIdentity = null, bool $throwOnDatabaseError = false): bool
     {
         if (! $this->is_active || $this->role?->is_active !== true) return false;

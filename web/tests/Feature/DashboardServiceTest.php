@@ -33,7 +33,7 @@ class DashboardServiceTest extends TestCase
         config(['database.connections.dashboard_test' => ['driver' => 'sqlite', 'database' => ':memory:', 'prefix' => '', 'foreign_key_constraints' => true]]);
         DB::setDefaultConnection('dashboard_test');
         $this->assertSame(':memory:', DB::connection()->getConfig('database'));
-        Schema::create('roles', function (Blueprint $table) { $table->id(); $table->string('code'); $table->boolean('is_active'); });
+        Schema::create('roles', function (Blueprint $table) { $table->id(); $table->string('code'); $table->boolean('is_active'); $table->string('name')->nullable(); $table->text('description')->nullable(); $table->timestamps(); });
         Schema::create('user_profiles', function (Blueprint $table) {
             $table->uuid('id')->primary(); $table->integer('role_id'); $table->string('display_name'); $table->boolean('is_active'); $table->timestamps();
         });
@@ -239,7 +239,7 @@ class DashboardServiceTest extends TestCase
         $queryCount = 0;
         DB::listen(static function () use (&$queryCount) { $queryCount++; });
         $dashboard = app(DashboardService::class)->load($request);
-        $this->assertSame(match ($roleId) { 2 => 20, 1 => 19, 3 => 26 }, $queryCount);
+        $this->assertSame(match ($roleId) { 2 => 18, 1 => 17, 3 => 20 }, $queryCount);
         $metrics = $this->metrics($dashboard);
         $admin = $roleId === 2;
         $this->assertSame($admin ? 4 : 1, $dashboard['scope_count']);
@@ -329,6 +329,44 @@ class DashboardServiceTest extends TestCase
             $this->assertTrue($changed);
             $this->assertSame(403, $error->getStatusCode());
         }
+    }
+
+    #[DataProvider('finalEligibilityChanges')]
+    public function test_final_dashboard_check_detects_access_changes_after_the_initial_snapshot(string $change): void
+    {
+        $this->completeDashboardTables();
+        DB::table('user_profiles')->where('id', self::USER)->update(['role_id' => 3]);
+        DB::table('association_accounts')->insert(['id' => self::USER, 'user_id' => self::USER,
+            'association_id' => self::OWN, 'is_active' => true]);
+        $request = $this->request();
+        $changed = false;
+        DB::listen(function ($query) use (&$changed, $change) {
+            if ($changed || ! str_contains($query->sql, 'from "members" as "m"')) return;
+            $changed = true;
+            match ($change) {
+                'inactive profile' => DB::table('user_profiles')->where('id', self::USER)->update(['is_active' => false]),
+                'inactive role' => DB::table('roles')->where('id', 3)->update(['is_active' => false]),
+                'changed role' => DB::table('user_profiles')->where('id', self::USER)->update(['role_id' => 2]),
+                'missing role' => DB::table('user_profiles')->where('id', self::USER)->update(['role_id' => 999]),
+                'pending invitation' => DB::table('user_invitations')->insert(['id' => self::USER, 'auth_user_id' => self::USER,
+                    'email' => 'synthetic@example.test', 'status' => 'sent', 'created_at' => '2026-01-01']),
+                'inactive account link' => DB::table('association_accounts')->where('user_id', self::USER)->update(['is_active' => false]),
+            };
+        });
+        try {
+            app(DashboardService::class)->load($request);
+            $this->fail('The final fresh eligibility check must deny the assembled dashboard.');
+        } catch (HttpExceptionInterface $error) {
+            $this->assertTrue($changed);
+            $this->assertSame(403, $error->getStatusCode());
+        }
+    }
+
+    public static function finalEligibilityChanges(): array
+    {
+        return array_map(fn ($change) => [$change], [
+            'inactive profile', 'inactive role', 'changed role', 'missing role', 'pending invitation', 'inactive account link',
+        ]);
     }
 
     public function test_transient_scope_expansion_cannot_enter_dashboard_aggregates(): void
