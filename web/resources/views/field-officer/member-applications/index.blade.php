@@ -23,7 +23,7 @@
                             $fullName = collect([$application->first_name, $application->middle_name, $application->last_name, $application->suffix])->filter(fn ($part) => filled($part))->implode(' ');
                             $reviewable = $application->association && !$application->association->archived_at && $application->association->status === 'active';
                             $area = $application->association?->area;
-                            $barangay = $area?->barangay;
+                            $barangay = $application->association?->locationBarangay();
                             $tone = match ($application->status) { 'approved' => 'success', 'rejected' => 'danger', default => 'warning' };
                             $restoreRejection = old('review_application_id') === $application->id;
                             $details = [

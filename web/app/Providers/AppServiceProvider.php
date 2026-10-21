@@ -53,5 +53,22 @@ class AppServiceProvider extends ServiceProvider
                 Limit::perHour(30)->by('invitations-hour:'.$id),
             ];
         });
+        RateLimiter::for('password-recovery', function (Request $request) {
+            $throttled = fn (Request $request, array $headers) => app(\App\Http\Controllers\Auth\PasswordRecoveryController::class)
+                ->throttled($request, $headers);
+            $limits = [Limit::perMinute(20)->by('recovery-ip:'.$request->ip())->response($throttled)];
+            if ($request->isMethod('post') && $request->is('forgot-password', 'forgot-password/resend')) {
+                $confirmation = $request->session()->get('recovery_request');
+                $email = $request->is('forgot-password/resend')
+                    ? (is_array($confirmation) ? ($confirmation['email'] ?? null) : null) : $request->input('email');
+                $identity = is_string($email) ? mb_strtolower(trim($email)) : '';
+                $limits[] = Limit::perSecond(1, \App\Http\Requests\PasswordRecoveryRequest::COOLDOWN_SECONDS)
+                    ->by('recovery-email-minute:'.hash('sha256', $identity))->response($throttled);
+                $limits[] = Limit::perHour(5)->by('recovery-email-hour:'.hash('sha256', $identity))->response($throttled);
+                $limits[] = Limit::perHour(10)->by('recovery-request-ip:'.$request->ip())->response($throttled);
+            }
+
+            return $limits;
+        });
     }
 }

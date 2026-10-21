@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 enum DataMode { mock, api, invalid }
 
 enum GisDataMode { mock, live, invalid }
@@ -6,6 +8,8 @@ class AppConfig {
   const AppConfig({
     DataMode mode = DataMode.mock,
     this._backendBaseUrl = '',
+    this.supabaseUrl = '',
+    this.supabasePublishableKey = '',
     GisDataMode? gisMode,
   }) : _explicitMode = mode,
        _modeName = null,
@@ -21,12 +25,18 @@ class AppConfig {
       _backendBaseUrl = const String.fromEnvironment(
         'ASSOCMAP_BACKEND_BASE_URL',
       ),
+      supabaseUrl = const String.fromEnvironment('ASSOCMAP_SUPABASE_URL'),
+      supabasePublishableKey = const String.fromEnvironment(
+        'ASSOCMAP_SUPABASE_PUBLISHABLE_KEY',
+      ),
       _explicitGisMode = null,
       _gisModeName = const String.fromEnvironment('ASSOCMAP_GIS_MODE');
 
   final String? _modeName;
   final DataMode? _explicitMode;
   final String _backendBaseUrl;
+  final String supabaseUrl;
+  final String supabasePublishableKey;
   final GisDataMode? _explicitGisMode;
   final String _gisModeName;
 
@@ -62,7 +72,42 @@ class AppConfig {
         'Use an HTTPS backend URL without credentials, query, or fragment.',
       );
     }
+    if (uri.path.split('/').contains('api')) {
+      throw const FormatException(
+        'Use the application origin without the API path.',
+      );
+    }
     return uri;
+  }
+
+  bool get authenticationConfigured {
+    try {
+      final auth = Uri.tryParse(supabaseUrl);
+      if (mode != DataMode.api ||
+          backendBaseUri == null ||
+          auth == null ||
+          auth.scheme != 'https' ||
+          auth.host.isEmpty ||
+          auth.userInfo.isNotEmpty ||
+          auth.hasQuery ||
+          auth.hasFragment ||
+          !['', '/'].contains(auth.path)) {
+        return false;
+      }
+      if (RegExp(
+        r'^sb_publishable_[A-Za-z0-9_-]+$',
+      ).hasMatch(supabasePublishableKey)) {
+        return true;
+      }
+      final parts = supabasePublishableKey.split('.');
+      if (parts.length != 3) return false;
+      final claims = jsonDecode(
+        utf8.decode(base64Url.decode(base64Url.normalize(parts[1]))),
+      );
+      return claims is Map && claims['role'] == 'anon';
+    } catch (_) {
+      return false;
+    }
   }
 
   Uri? get identityUri {

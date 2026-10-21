@@ -229,12 +229,7 @@ void main() {
         expect(repository.canAttemptSignIn, isFalse);
         expect(await login(auth, 'association@demo.invalid'), isFalse);
         expect(auth.session, isNull);
-        expect(
-          auth.failure?.code,
-          mode == DataMode.api
-              ? AuthFailureCode.integrationUnavailable
-              : AuthFailureCode.invalidConfiguration,
-        );
+        expect(auth.failure?.code, AuthFailureCode.invalidConfiguration);
       }
     },
   );

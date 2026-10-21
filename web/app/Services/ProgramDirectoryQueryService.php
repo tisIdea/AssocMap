@@ -84,9 +84,9 @@ class ProgramDirectoryQueryService
             $query->orderBy($date, $filters['sort'] === 'newest' ? 'desc' : 'asc');
         }
         $query->orderByRaw('LOWER(title) '.($filters['sort'] === 'za' ? 'DESC' : 'ASC'))->orderBy('id');
-        $relations = ['association:id,name,area_id,status,archived_at,primary_field_officer_id',
-            'association.area:id,barangay_id,address', 'association.area.barangay:id,municipality_id,name',
-            'association.area.barangay.municipality:id,name'];
+        $geography = app(AssociationGeographyService::class);
+        $relations = ['association:'.implode(',', $geography->associationColumns(['id', 'name', 'area_id', 'status', 'archived_at', 'primary_field_officer_id'])),
+            ...$geography->relations('association')];
         if ($module === 'projects') {
             $query->select(['id', 'association_id', 'title', 'program_year', 'implementation_start_date', 'implementation_end_date',
                 'fisheries_category_id', 'commodity_id', 'status', 'archived_at', 'closed_at'])

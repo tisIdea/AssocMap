@@ -15,8 +15,8 @@ class DataModeBanner extends StatelessWidget {
         const Color(0xFFFDF0D4),
       ),
       DataMode.api => (
-        Icons.cloud_off_outlined,
-        'API mode · Integration awaiting verification',
+        Icons.cloud_outlined,
+        'Live data · Association Account access',
         const Color(0xFFE2EDF7),
       ),
       DataMode.invalid => (

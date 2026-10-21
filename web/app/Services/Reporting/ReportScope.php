@@ -29,10 +29,8 @@ class ReportScope
     {
         abort_unless($actor->canAccessApplication(throwOnDatabaseError: true)
             && in_array($actor->role?->code, ['system_admin', 'field_officer', 'association_account'], true), 403);
-        $query = DB::table('associations as a')->useWritePdo()
-            ->join('areas as ar', 'ar.id', '=', 'a.area_id')
-            ->join('barangays as b', 'b.id', '=', 'ar.barangay_id')
-            ->join('municipalities as mu', 'mu.id', '=', 'b.municipality_id');
+        $query = app(\App\Services\AssociationGeographyService::class)
+            ->joinGeography(DB::table('associations as a')->useWritePdo(), 'mu');
         if ($actor->role->code === 'field_officer') {
             $query->where('a.primary_field_officer_id', $actor->id)
                 ->where('a.status', 'active')->whereNull('a.archived_at');

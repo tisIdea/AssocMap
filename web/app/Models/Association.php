@@ -18,6 +18,8 @@ class Association extends Model
 
     public $incrementing = false;
 
+    protected $hidden = ['specific_address'];
+
     protected $fillable = [
         'name',
         'acronym',
@@ -38,6 +40,17 @@ class Association extends Model
     public function area(): BelongsTo
     {
         return $this->belongsTo(Area::class, 'area_id');
+    }
+
+    public function barangay(): BelongsTo
+    {
+        return $this->belongsTo(Barangay::class, 'barangay_id');
+    }
+
+    public function locationBarangay(): ?Barangay
+    {
+        return app(\App\Services\AssociationGeographyService::class)->usesDirectGeography()
+            ? $this->barangay : $this->area?->barangay;
     }
 
     public function primaryFieldOfficer(): BelongsTo

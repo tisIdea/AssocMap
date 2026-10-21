@@ -2,6 +2,7 @@
 
 namespace App\Services\Reporting;
 
+use App\Exceptions\ReportDatasetLimitException;
 use App\Exceptions\ReportingUnavailableException;
 use App\Models\UserProfile;
 use Illuminate\Database\QueryException;
@@ -62,7 +63,7 @@ class ReportDataset
         $this->rows += $records->count();
         if ($records->count() > $limit || $this->rows > (int) config('reporting.max_total_rows')) {
             Log::notice('Reporting dataset limit reached.', ['stage' => 'resource_limit', 'reason' => 'dataset_row_limit', 'dataset' => $dataset]);
-            throw ValidationException::withMessages(['filters' => 'This report is too large. Select a smaller association, project or period.']);
+            throw ReportDatasetLimitException::withMessages(['filters' => 'This report is too large. Select a smaller association, project or period.']);
         }
 
         return $records->map(fn ($record) => (array) $record)->all();

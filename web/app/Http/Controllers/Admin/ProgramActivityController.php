@@ -51,7 +51,7 @@ class ProgramActivityController extends Controller
     {
         $actor = $request->attributes->get('current_user');
         abort_unless($actor->canAccessApplication() && in_array($actor->role?->code, ['system_admin', 'field_officer'], true), 403);
-        $programActivity->load(['association.area.barangay.municipality', 'relatedProject.association', 'saadActivity']);
+        $programActivity->load([...app(\App\Services\AssociationGeographyService::class)->relations('association'), 'relatedProject.association', 'saadActivity']);
         $prefix = $actor->role->code === 'system_admin' ? 'admin' : 'field-officer';
         $lifecycle = app(AssociationLifecycleService::class);
         if ($prefix === 'field-officer') {
@@ -188,8 +188,8 @@ class ProgramActivityController extends Controller
             'activity_code' => $record->saadActivity?->code,
             'association_id' => $record->association_id,
             'association' => $record->association_id ? ($association?->name ?? 'Association unavailable') : 'Program-wide',
-            'municipality' => $association?->area?->barangay?->municipality?->name ?? 'Not recorded',
-            'barangay' => $association?->area?->barangay?->name ?? 'Not recorded',
+            'municipality' => $association?->locationBarangay()?->municipality?->name ?? 'Not recorded',
+            'barangay' => $association?->locationBarangay()?->name ?? 'Not recorded',
             'related_project_id' => $record->related_project_id,
             'related_project' => $project?->title ?? 'No linked project',
             'title' => $record->title,

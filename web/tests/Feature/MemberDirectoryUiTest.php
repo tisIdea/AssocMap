@@ -66,6 +66,26 @@ class MemberDirectoryUiTest extends TestCase
             SQL);
     }
 
+    public function test_cutover_members_and_applications_keep_geography_and_ownership_without_areas(): void
+    {
+        DB::statement('ALTER TABLE associations ADD COLUMN barangay_id TEXT');
+        DB::statement('UPDATE associations SET barangay_id=(SELECT barangay_id FROM areas WHERE areas.id=associations.area_id), area_id=NULL');
+        config(['associations.geography_schema_ready' => true]);
+        $this->member(101);
+        $this->member(102, ['association_id' => $this->id(12), 'first_name' => 'OutsideOwner']);
+        $this->application(201);
+        $this->application(202, ['association_id' => $this->id(12), 'first_name' => 'OutsideApplicant']);
+        $this->get('/admin/members')->assertOk()->assertSee('Test Municipality')->assertSee('Test Barangay');
+        $this->identity = $this->id(2);
+        $this->get('/field-officer/members')->assertOk()->assertSee('Test Municipality')->assertDontSee('OutsideOwner');
+        $this->get('/field-officer/member-applications')->assertOk()->assertSee('Test Barangay')->assertDontSee('OutsideApplicant');
+        $this->identity = $this->id(4);
+        $this->get('/association/member-applications')->assertOk()->assertSee('Test Municipality')->assertSee('Test Barangay')->assertDontSee('OutsideApplicant');
+        $this->get('/admin/members')->assertForbidden();
+        $this->assertDatabaseCount('members', 2);
+        $this->assertDatabaseHas('member_applications', ['id' => $this->id(201), 'association_id' => $this->id(11), 'submitted_by_user_id' => $this->id(4)]);
+    }
+
     private function fixtures(): void
     {
         foreach ([1 => 'system_admin', 2 => 'field_officer', 3 => 'association_account'] as $id => $code) {

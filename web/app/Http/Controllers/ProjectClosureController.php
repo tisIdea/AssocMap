@@ -28,7 +28,7 @@ class ProjectClosureController extends Controller
 {
     public function show(Request $request, Project $project, ProjectLifecycleService $lifecycle, AssociationLifecycleService $associations, GisQueryService $gis): View
     {
-        $project->load('association.area.barangay.municipality');
+        $project->load(app(\App\Services\AssociationGeographyService::class)->relations('association'));
         abort_unless($project->association, 404);
         $actor = $request->attributes->get('current_user');
         $lifecycle->authorize($actor, $project->association);
@@ -39,8 +39,8 @@ class ProjectClosureController extends Controller
         $canEdit = $parentOperational && $project->archived_at === null && !$project->isFinalized();
         $gisLocations = $gis->projectLocations($actor, [$project->id]);
         $locationRow = ['id' => $project->id, 'area' => $project->association->area?->address,
-            'barangay' => $project->association->area?->barangay?->name,
-            'municipality' => $project->association->area?->barangay?->municipality?->name,
+            'barangay' => $project->association->locationBarangay()?->name,
+            'municipality' => $project->association->locationBarangay()?->municipality?->name,
             'gis_locations' => $gisLocations[$project->id] ?? [], 'gis_locations_available' => $gisLocations !== null];
         $canClose = $parentOperational && $project->archived_at === null
             && $project->status === 'ongoing' && $project->closed_at === null;

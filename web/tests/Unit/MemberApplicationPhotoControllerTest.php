@@ -194,6 +194,23 @@ class MemberApplicationPhotoControllerTest extends TestCase
         Http::assertSentCount(2);
     }
 
+    public function test_incomplete_private_photo_response_returns_safe_unavailable_feedback(): void
+    {
+        $this->scope([self::ASSOCIATION_ID, self::ACTOR_ID], [true], 'associations');
+        $contents = 'Synthetic incomplete private photo bytes';
+        Http::fake([self::URL => Http::response($contents, 200, [
+            'Content-Type' => 'image/png', 'Content-Length' => strlen($contents) + 1,
+        ])]);
+
+        $response = $this->response($this->actor('field_officer'));
+
+        $this->assertSame(503, $response->getStatusCode());
+        $this->assertSame('Photo storage is temporarily unavailable. Refresh the page to retry.', $response->getContent());
+        $this->assertStringNotContainsString($contents, $response->getContent());
+        $this->assertStringContainsString('no-store', $response->headers->get('Cache-Control'));
+        Http::assertSentCount(1);
+    }
+
     public function test_authorized_stream_is_closed_after_the_response_has_sent_its_contents(): void
     {
         $this->scope([self::ASSOCIATION_ID, self::ACTOR_ID], [true], 'associations');

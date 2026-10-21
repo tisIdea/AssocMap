@@ -22,3 +22,13 @@ test('only an Area form with its own restored errors opens, and reinitialization
         assert.equal(handlers.reset.length, 1);
     }
 });
+
+test('Specific Area submission retains its type so missing-parent errors restore the right form', () => {
+    const handlers = {};
+    const type = { value: 'Specific Area', disabled: false };
+    const form = { dataset: {}, matches: selector => selector.includes('[data-area-form]'),
+        addEventListener: (name, callback) => { handlers[name] = callback; } };
+    runInNewContext(binding, { $$: () => [form], $: () => type, syncForm() {} });
+    handlers.submit({ preventDefault() { assert.fail('Native Area submission must be preserved'); } });
+    assert.equal(type.disabled, false);
+});

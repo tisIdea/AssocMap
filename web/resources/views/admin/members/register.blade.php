@@ -17,7 +17,7 @@
             @forelse($members as $member)
                 @php($fullName = collect([$member->first_name, $member->middle_name, $member->last_name, $member->suffix])->filter(fn ($part) => filled($part))->implode(' '))
                 <tr><th scope="row">{{ $fullName }}<small>Registered {{ $member->date_registered?->format('M j, Y') ?? '—' }}</small></th>
-                    <td>{{ $member->association?->name ?? '—' }}<small>{{ $member->association?->area?->barangay?->municipality?->name ?? 'Location unavailable' }}@if($member->association?->archived_at) · Archived association @elseif($member->association?->status !== 'active') · Inactive association @endif</small></td>
+                    <td>{{ $member->association?->name ?? '—' }}<small>{{ $member->association?->locationBarangay()?->municipality?->name ?? 'Location unavailable' }}@if($member->association?->archived_at) · Archived association @elseif($member->association?->status !== 'active') · Inactive association @endif</small></td>
                     <td>{{ $member->position?->name ?? '—' }}@if($member->position_other_text)<small>{{ $member->position_other_text }}</small>@endif</td>
                     <td>{{ $member->fishr_registration_number ?: '—' }}</td>
                     <td><span class="badge badge-{{ $member->archived_at ? 'neutral' : ($member->member_status === 'active' ? 'success' : 'warning') }}">{{ $member->archived_at ? 'Archived' : ucfirst($member->member_status) }}</span>@if($member->archived_at)<small>{{ ucfirst($member->member_status) }} membership</small>@endif</td>

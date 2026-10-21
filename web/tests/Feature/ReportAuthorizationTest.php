@@ -4,7 +4,9 @@ namespace Tests\Feature;
 
 use App\Models\UserProfile;
 use App\Services\SupabaseAuthService;
+use App\Exceptions\ReportDatasetLimitException;
 use App\Exceptions\ReportingUnavailableException;
+use App\Services\Reporting\ReportDataset;
 use App\Services\Reporting\PythonReportEngine;
 use App\Services\Reporting\ReportScope;
 use App\Services\Reporting\ReportService;
@@ -13,8 +15,10 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Validation\ValidationException;
 use Mockery;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 use Tests\TestCase;
 
@@ -30,6 +34,7 @@ class ReportAuthorizationTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        config(['associations.geography_schema_ready' => false, 'associations.direct_geography' => false]);
         config(['database.connections.report_test' => ['driver' => 'sqlite', 'database' => ':memory:', 'prefix' => '', 'foreign_key_constraints' => true]]);
         DB::setDefaultConnection('report_test');
         $this->assertSame(':memory:', DB::connection()->getConfig('database'));
@@ -78,6 +83,23 @@ class ReportAuthorizationTest extends TestCase
     private function actor(): UserProfile
     {
         return UserProfile::with('role')->findOrFail(self::USER);
+    }
+
+    public function test_cutover_report_scope_retains_area_less_associations_and_exact_assignment_isolation(): void
+    {
+        Schema::table('associations', function (Blueprint $table) {
+            $table->uuid('area_id')->nullable()->change(); $table->uuid('barangay_id')->nullable();
+        });
+        DB::statement('UPDATE associations SET barangay_id=(SELECT barangay_id FROM areas WHERE areas.id=associations.area_id), area_id=NULL');
+        foreach ([false, true] as $direct) {
+            config(['associations.geography_schema_ready' => true, 'associations.direct_geography' => $direct]);
+            DB::table('associations')->where('id', self::OWN)->update(['primary_field_officer_id' => self::USER]);
+            $scope = app(ReportScope::class);
+            $this->assertSame([self::OWN], $scope->ids($this->actor(), ['municipality_id' => self::TOWN]));
+            $this->forbidden(fn () => $scope->ids($this->actor(), ['municipality_id' => self::OTHER_TOWN]));
+            DB::table('associations')->where('id', self::OWN)->update(['primary_field_officer_id' => self::OTHER]);
+            $this->assertSame([], $scope->ids($this->actor(), []));
+        }
     }
 
     private function request(): Request
@@ -401,5 +423,146 @@ class ReportAuthorizationTest extends TestCase
         $query = $this->htmlQuery($this->get('/admin/reports')->assertOk()->assertSee('Reporting is temporarily unavailable.')->getContent());
         $this->assertSame(2, $query->query('//form[@data-report-export]/button[@disabled]')->length);
         $this->assertSame(1, $query->query('//button[@data-report-submit and not(@disabled)]')->length);
+    }
+
+    public static function datasetSizeLimits(): array
+    {
+        return ['dataset limit' => [1, 20000], 'total limit' => [5000, 1]];
+    }
+
+    #[DataProvider('datasetSizeLimits')]
+    public function test_dataset_size_limits_raise_the_recoverable_validation_exception(int $rows, int $total): void
+    {
+        DB::table('user_profiles')->where('id', self::USER)->update(['role_id' => 2]);
+        config(['reporting.max_rows' => $rows, 'reporting.max_total_rows' => $total]);
+        $actor = $this->actor();
+        $scope = app(ReportScope::class);
+        try {
+            app(ReportDataset::class)->extract($actor, ['report_type' => 'associations'], $scope->ids($actor, []));
+            $this->fail('Expected a report dataset size rejection.');
+        } catch (ReportDatasetLimitException $exception) {
+            $this->assertSame(422, $exception->status);
+            $this->assertArrayHasKey('filters', $exception->errors());
+        }
+        $this->assertSame(2, DB::table('associations')->count());
+    }
+
+    private function recoveryOptions(): array
+    {
+        $options = array_fill_keys(['municipalities', 'associations', 'projects', 'products', 'components', 'program_years'], []);
+        $options['years'] = [2024];
+        $options['municipalities'] = [['id' => self::TOWN, 'name' => 'Synthetic authorized municipality']];
+        $options['associations'] = [['id' => self::OWN, 'name' => 'Synthetic authorized association', 'municipality_id' => self::TOWN]];
+
+        return $options;
+    }
+
+    #[DataProvider('reportRoles')]
+    public function test_oversized_initial_report_retains_filters_and_disables_exports(string $prefix, int $role, bool $export): void
+    {
+        $this->webIdentity($role);
+        $filters = ['report_type' => 'comprehensive', 'year' => 2024, 'quarter' => 2,
+            'municipality_id' => self::TOWN, 'association_id' => self::OWN];
+        $service = Mockery::mock(ReportService::class);
+        $service->shouldReceive('options')->twice()->andReturn($this->recoveryOptions());
+        $service->shouldReceive('generate')->once()->andThrow(ReportDatasetLimitException::withMessages([
+            'filters' => 'Synthetic internal dataset detail that must not appear in the page.',
+        ]));
+        $this->app->instance(ReportService::class, $service);
+
+        $response = $this->get('/'.$prefix.'/reports?'.http_build_query($filters))->assertUnprocessable()
+            ->assertViewIs('reports.page')->assertViewHas('result', fn ($result) => $result === null)
+            ->assertSee('This report is too large.')->assertDontSee('Synthetic internal dataset detail');
+        $query = $this->htmlQuery($response->getContent());
+        $this->assertSame(1, $query->query('//form[@data-report-form and @method="GET"]')->length);
+        $this->assertSame(1, $query->query('//button[@data-report-submit and not(@disabled)]')->length);
+        $this->assertSame(1, $query->query('//*[@data-report-status and @role="alert"]')->length);
+        $this->assertSame('2024', $query->query('//select[@name="year"]/option[@selected]')->item(0)->getAttribute('value'));
+        $this->assertSame('2', $query->query('//select[@name="quarter"]/option[@selected]')->item(0)->getAttribute('value'));
+        $this->assertSame($export ? 2 : 0, $query->query('//form[@data-report-export]/button[@disabled]')->length);
+        $this->assertSame((int) $export, $query->query('//form[@data-report-export]')->length);
+        if ($export) {
+            $this->assertSame(self::OWN, $query->query('//select[@name="association_id"]/option[@selected]')->item(0)->getAttribute('value'));
+        } else {
+            $this->assertSame(0, $query->query('//select[@name="association_id" or @name="municipality_id"]')->length);
+        }
+        $response->assertDontSee(self::OUTSIDE)->assertDontSee(self::OTHER_TOWN);
+    }
+
+    public function test_oversized_initial_report_can_be_narrowed_and_loaded_again(): void
+    {
+        $this->webIdentity(2);
+        $filters = ['report_type' => 'comprehensive', 'year' => 2024];
+        $narrowed = $filters + ['association_id' => self::OWN];
+        $service = Mockery::mock(ReportService::class);
+        $service->shouldReceive('options')->twice()->andReturn($this->recoveryOptions());
+        $service->shouldReceive('generate')->once()
+            ->withArgs(fn (Request $request, array $selection) => ! isset($selection['association_id']))
+            ->andThrow(ReportDatasetLimitException::withMessages(['filters' => 'Select a smaller report.']));
+        $service->shouldReceive('generate')->once()
+            ->withArgs(fn (Request $request, array $selection) => $selection == $narrowed)
+            ->andReturn(['result' => $this->uiResult($narrowed), 'artifact' => null]);
+        $this->app->instance(ReportService::class, $service);
+
+        $this->get('/admin/reports?'.http_build_query($filters))->assertUnprocessable()->assertViewIs('reports.page');
+        $this->getJson('/admin/reports/data?'.http_build_query($narrowed))->assertOk()
+            ->assertJsonPath('data.meta.filters.association_id', self::OWN);
+    }
+
+    public function test_size_recovery_denies_filters_when_authorization_is_revoked(): void
+    {
+        $this->webIdentity(2);
+        $reads = 0;
+        $service = Mockery::mock(ReportService::class);
+        $service->shouldReceive('options')->twice()->andReturnUsing(function () use (&$reads) {
+            abort_if(++$reads === 2, 403);
+
+            return $this->recoveryOptions();
+        });
+        $service->shouldReceive('generate')->once()
+            ->andThrow(ReportDatasetLimitException::withMessages(['filters' => 'Select a smaller report.']));
+        $this->app->instance(ReportService::class, $service);
+
+        $this->get('/admin/reports')->assertForbidden()->assertViewIs('reports.error')->assertDontSee('data-report-form', false);
+    }
+
+    public static function nonRecoverableReportStatuses(): array
+    {
+        return [[403], [419], [422]];
+    }
+
+    #[DataProvider('nonRecoverableReportStatuses')]
+    public function test_non_size_report_errors_keep_existing_error_handling(int $status): void
+    {
+        $this->webIdentity(2);
+        $failure = $status === 422
+            ? ValidationException::withMessages(['component_id' => 'Choose a recorded program component.'])
+            : new HttpException($status, 'Synthetic internal exception detail.');
+        $service = Mockery::mock(ReportService::class);
+        $service->shouldReceive('options')->once()->andReturn($this->recoveryOptions());
+        $service->shouldReceive('generate')->once()->andThrow($failure);
+        $this->app->instance(ReportService::class, $service);
+
+        $this->get('/admin/reports')->assertStatus($status)->assertViewIs('reports.error')
+            ->assertDontSee('data-report-form', false)->assertDontSee('Synthetic internal exception detail.');
+    }
+
+    public function test_size_rejections_keep_json_and_export_validation_responses(): void
+    {
+        $this->webIdentity(2);
+        $service = Mockery::mock(ReportService::class);
+        $service->shouldReceive('options')->once()->andReturn($this->recoveryOptions());
+        $service->shouldReceive('generate')->times(4)
+            ->andThrow(ReportDatasetLimitException::withMessages(['filters' => 'Select a smaller report.']));
+        $this->app->instance(ReportService::class, $service);
+
+        foreach (['/admin/reports', '/admin/reports/data'] as $url) {
+            $this->getJson($url)->assertUnprocessable()->assertJsonValidationErrors('filters')
+                ->assertJsonPath('error.code', 'reporting_request_failed');
+        }
+        foreach (['pdf', 'xlsx'] as $format) {
+            $this->postJson('/admin/reports/export/'.$format)->assertUnprocessable()
+                ->assertJsonValidationErrors('filters')->assertJsonPath('error.code', 'reporting_request_failed');
+        }
     }
 }

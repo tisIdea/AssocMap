@@ -109,10 +109,10 @@ void main() {
       await tapVisible(tester, find.text('Fill demo credentials'));
       await tapVisible(tester, find.byKey(const ValueKey('sign-in-button')));
       expect(find.byType(AssociationHomeScreen), findsOneWidget);
-      expect(find.text('Demo Harbor Livelihood Association'), findsOneWidget);
-      expect(find.text('Association modules pending'), findsOneWidget);
+      expect(find.text('Dashboard connection unavailable'), findsOneWidget);
       await tester.tap(find.text('Account').last);
       await tester.pumpAndSettle();
+      expect(find.text('Demo Harbor Livelihood Association'), findsOneWidget);
       expect(find.text('DEMO session'), findsOneWidget);
     },
   );
@@ -316,7 +316,7 @@ void main() {
       await openLogin(tester, mode: DataMode.api);
       expect(
         find.text(
-          const AuthFailure(AuthFailureCode.integrationUnavailable).message,
+          const AuthFailure(AuthFailureCode.invalidConfiguration).message,
         ),
         findsOneWidget,
       );

@@ -15,6 +15,7 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->trimStrings(except: ['completion_confirmation', 'termination_confirmation']);
         $middleware->prepend(\App\Http\Middleware\ProtectInvitationActivation::class);
+        $middleware->prepend(\App\Http\Middleware\ProtectPasswordRecovery::class);
         $middleware->prepend(\App\Http\Middleware\LocalRequestTiming::class);
         // Trust the local Cloudflare Tunnel reverse proxy.
         $middleware->trustProxies(
@@ -86,6 +87,23 @@ return Application::configure(basePath: dirname(__DIR__))
             return \App\Http\Middleware\AuditRequestGuard::render($exception, $request);
         });
         $exceptions->dontFlash(['token_hash', 'access_token', 'refresh_token']);
+        $exceptions->dontReportWhen(fn (\Throwable $exception) => \App\Http\Middleware\ProtectPasswordRecovery::applies(request()));
+        $exceptions->render(function (\Throwable $exception, Request $request) {
+            if (! \App\Http\Middleware\ProtectPasswordRecovery::applies($request)) return null;
+            if ($exception instanceof \Illuminate\Http\Exceptions\HttpResponseException) {
+                return \App\Http\Middleware\ProtectInvitationActivation::secure($exception->getResponse(), $request);
+            }
+            $status = $exception instanceof \Symfony\Component\HttpKernel\Exception\HttpExceptionInterface
+                ? $exception->getStatusCode() : 503;
+            $recoveryFailureMessage = match ($status) {
+                429 => 'Too many recovery requests. Wait before trying again.',
+                419 => 'This form has expired. Reload the page and try again.',
+                default => 'Password recovery is temporarily unavailable. Please try again later.',
+            };
+            $headers = $exception instanceof \Symfony\Component\HttpKernel\Exception\HttpExceptionInterface ? $exception->getHeaders() : [];
+            return \App\Http\Middleware\ProtectInvitationActivation::secure(
+                response()->view('auth.password-recovery', ['step' => 'forgot', 'recoveryFailureMessage' => $recoveryFailureMessage], $status, $headers), $request);
+        });
         $exceptions->dontReportWhen(fn (\Throwable $exception) => \App\Http\Middleware\ProtectInvitationActivation::applies(request()));
         $exceptions->render(function (\Throwable $exception, Request $request) {
             if (! \App\Http\Middleware\ProtectInvitationActivation::applies($request)) return null;

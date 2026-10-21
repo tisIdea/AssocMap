@@ -4,6 +4,7 @@ use App\Http\Controllers\Auth\StaffAuthController;
 use App\Http\Controllers\Auth\InvitationActivationController;
 use App\Http\Controllers\Admin\UserInvitationController;
 use App\Http\Controllers\Admin\UserManagementController;
+use App\Http\Controllers\Admin\UserAccessController;
 use App\Http\Controllers\Admin\FieldOfficerAssignmentController;
 
 use App\Http\Controllers\Admin\MunicipalityController;
@@ -74,6 +75,18 @@ Route::post(
     [StaffAuthController::class, 'destroy']
 )->name('logout');
 
+Route::middleware('throttle:password-recovery')->group(function () {
+    $controller = \App\Http\Controllers\Auth\PasswordRecoveryController::class;
+    Route::get('/forgot-password', [$controller, 'showRequest'])->name('password.forgot');
+    Route::get('/forgot-password/email', [$controller, 'editRequest'])->block(120, 3)->name('password.request.edit');
+    Route::post('/forgot-password', [$controller, 'requestLink'])->block(120, 3)->name('password.request');
+    Route::post('/forgot-password/resend', [$controller, 'requestLink'])->block(120, 3)->name('password.resend');
+    Route::get('/password-recovery', [$controller, 'callback'])->block(120, 3)->name('password.recovery');
+    Route::post('/password-recovery/verify', [$controller, 'verify'])->block(120, 3)->name('password.verify');
+    Route::get('/password-recovery/password', [$controller, 'showPassword'])->block(120, 3)->name('password.reset');
+    Route::post('/password-recovery/password', [$controller, 'updatePassword'])->block(120, 3)->name('password.update');
+});
+
 Route::middleware([\App\Http\Middleware\GisRequestGuard::class, 'throttle:gis-read'])->group(function () {
     Route::get('/map', [\App\Http\Controllers\PublicGisController::class, 'index'])->name('public.gis');
     Route::get('/map/data', [\App\Http\Controllers\PublicGisController::class, 'data'])->name('public.gis.data');
@@ -120,6 +133,12 @@ Route::middleware([
 
     Route::get('/admin/users/{userProfile}', [UserManagementController::class, 'show'])
         ->whereUuid('userProfile')->name('admin.users.show');
+
+    Route::patch('/admin/users/{userProfile}/revoke', [UserAccessController::class, 'revoke'])
+        ->whereUuid('userProfile')->name('admin.users.revoke');
+
+    Route::post('/admin/users/{userProfile}/resend-invitation', [\App\Http\Controllers\Admin\UserInvitationResendController::class, 'store'])
+        ->whereUuid('userProfile')->middleware('throttle:user-invitations')->name('admin.users.invitation.resend');
 
     Route::get('/admin/user-invitations/create', [UserInvitationController::class, 'create'])
         ->name('admin.user-invitations.create');
@@ -678,6 +697,17 @@ Route::middleware([
 ])->group(function () {
 
     Route::get('/association/dashboard', [\App\Http\Controllers\DashboardController::class, 'index'])->name('association.dashboard');
+
+    Route::get('/association/projects', [\App\Http\Controllers\AssociationAccount\ProjectController::class, 'index'])->name('association.projects.index');
+    Route::get('/association/projects/{project}', [\App\Http\Controllers\AssociationAccount\ProjectController::class, 'show'])
+        ->whereUuid('project')->name('association.projects.show');
+
+    Route::get('/association/trainings', [\App\Http\Controllers\AssociationAccount\ProgramController::class, 'trainings'])->name('association.trainings.index');
+    Route::get('/association/trainings/{training}', [\App\Http\Controllers\AssociationAccount\ProgramController::class, 'training'])
+        ->whereUuid('training')->name('association.trainings.show');
+    Route::get('/association/program-activities', [\App\Http\Controllers\AssociationAccount\ProgramController::class, 'activities'])->name('association.program-activities.index');
+    Route::get('/association/program-activities/{activity}', [\App\Http\Controllers\AssociationAccount\ProgramController::class, 'activity'])
+        ->whereUuid('activity')->name('association.program-activities.show');
 
     Route::get(
         '/association/member-applications',

@@ -115,6 +115,23 @@ class MobileAuthenticationTest extends TestCase
         return ['id' => self::USER, 'email' => 'synthetic@example.test'];
     }
 
+    #[DataProvider('protectedMobileEndpoints')]
+    public function test_actual_mobile_endpoints_reject_missing_identity_and_currently_inactive_accounts(string $endpoint): void
+    {
+        $this->getJson($endpoint)->assertUnauthorized()->assertJsonPath('error.code', 'unauthenticated');
+        Http::assertNothingSent();
+        DB::table('user_profiles')->update(['is_active' => false]);
+        $response = $this->getJson($endpoint, ['Authorization' => 'Bearer '.self::TOKEN])
+            ->assertForbidden()->assertJsonPath('error.code', 'account_unavailable');
+        $this->assertPrivateResponse($response);
+    }
+
+    public static function protectedMobileEndpoints(): array
+    {
+        return array_map(fn ($path) => ['/api/v1/'.$path],
+            ['me', 'association/dashboard', 'association/reports', 'association/reports/options']);
+    }
+
     private function fakeProvider(mixed $response): void
     {
         // Laravel accumulates fakes; replace the factory while retaining network isolation.
@@ -148,6 +165,41 @@ class MobileAuthenticationTest extends TestCase
         ]]);
         $this->assertPrivateResponse($response);
         Http::assertSentCount(1);
+    }
+
+    public function test_state_four_area_free_association_keeps_mobile_eligibility_privacy_and_scope(): void
+    {
+        config(['associations.geography_schema_ready' => true, 'associations.direct_geography' => true]);
+        Schema::create('municipalities', fn (Blueprint $table) => $table->uuid('id')->primary());
+        Schema::create('barangays', function (Blueprint $table) {
+            $table->uuid('id')->primary(); $table->foreignUuid('municipality_id')->constrained('municipalities');
+        });
+        Schema::create('areas', function (Blueprint $table) {
+            $table->uuid('id')->primary(); $table->foreignUuid('barangay_id')->constrained('barangays');
+            $table->unique(['id', 'barangay_id']);
+        });
+        DB::table('municipalities')->insert(['id' => self::USER]);
+        DB::table('barangays')->insert(['id' => self::LINK, 'municipality_id' => self::USER]);
+        Schema::table('associations', function (Blueprint $table) {
+            $table->uuid('area_id')->nullable(); $table->uuid('barangay_id')->nullable();
+            $table->text('specific_address')->nullable();
+        });
+        DB::table('associations')->update(['barangay_id' => self::LINK, 'specific_address' => 'Private independent address']);
+        Schema::table('associations', function (Blueprint $table) {
+            $table->uuid('barangay_id')->nullable(false)->change();
+            $table->foreign('barangay_id')->references('id')->on('barangays')->restrictOnDelete();
+            $table->foreign(['area_id', 'barangay_id'])->references(['id', 'barangay_id'])->on('areas')->restrictOnDelete()->restrictOnUpdate();
+        });
+        $before = DB::table('associations')->orderBy('id')->get()->toJson();
+        $response = $this->me()->assertOk()->assertJsonPath('data.mobile.eligible', true)
+            ->assertJsonPath('data.mobile.association.id', self::ASSOCIATION);
+        $this->assertPrivateResponse($response);
+        $this->assertStringNotContainsString('Private independent address', $response->getContent());
+        $headers = ['Authorization' => 'Bearer '.self::TOKEN];
+        $this->getJson('/api/v1/_mobile-test/records/'.self::OWN_RECORD.'?association_id='.self::OTHER_ASSOCIATION, $headers)
+            ->assertOk()->assertExactJson(['data' => ['id' => self::OWN_RECORD]]);
+        $this->getJson('/api/v1/_mobile-test/records/'.self::OTHER_RECORD, $headers)->assertNotFound();
+        $this->assertSame($before, DB::table('associations')->orderBy('id')->get()->toJson());
     }
 
     #[DataProvider('otherRoles')]

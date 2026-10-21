@@ -13,8 +13,8 @@ abstract final class RepositoryFactory {
   static AuthRepository authentication(AppConfig config) =>
       switch (config.mode) {
         DataMode.mock => DemoAuthRepository(),
-        DataMode.api => const ApiAuthRepository(),
-        DataMode.invalid => const ApiAuthRepository(invalidConfiguration: true),
+        DataMode.api => ApiAuthRepository(config: config),
+        DataMode.invalid => ApiAuthRepository(config: config),
       };
 
   static PublicProjectsRepository publicProjects(AppConfig config) =>

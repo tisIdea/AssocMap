@@ -36,7 +36,7 @@ class UserInvitationService
                     return $existing;
                 }
                 if (UserInvitation::where('email', $data['email'])->whereNotNull('auth_user_id')->exists()) {
-                    throw ValidationException::withMessages(['email' => 'An earlier invitation is linked to an Auth identity. Reconcile that identity before starting another operation.']);
+                    throw ValidationException::withMessages(['email' => 'An invitation already exists for this email and is bound to an Auth identity. Review the related account details and invitation history before starting another operation.']);
                 }
                 $invitation = new UserInvitation($data);
                 $invitation->invited_by = $administrator->id;
@@ -59,7 +59,7 @@ class UserInvitationService
                 $locked = UserInvitation::whereKey($invitation->id)->lockForUpdate()->firstOrFail();
                 $this->validateSameRequest($locked, $data);
                 if ($locked->status === 'sent') {
-                    return $this->result($locked, 'already_sent', 'Supabase previously accepted this invitation. Email delivery and account activation are not confirmed.', 409);
+                    return $this->result($locked, 'already_sent', 'An invitation already exists for this email. Review its related account details and status. Supabase previously accepted the request; email delivery and activation are not confirmed.', 409);
                 }
                 if ($locked->status === 'processing') {
                     return $this->result($locked, 'processing', 'This operation is processing. If interrupted, reconcile it before sending again.', 409);
@@ -98,7 +98,7 @@ class UserInvitationService
         }
         $lookup = $this->auth->findInvitationIdentity($invitation->email);
         if ($lookup['outcome'] === 'existing') {
-            return $this->recordFailure($invitation, 'existing_identity', 'An Auth identity already exists for this email. Existing accounts are not changed; reconcile the account separately.', 409);
+            return $this->recordFailure($invitation, 'existing_identity', 'The authentication provider reports an existing identity for this email. Review any related account reference; if no local account can be identified, reconciliation is required. Existing accounts were not changed.', 409);
         }
         if ($lookup['outcome'] !== 'absent') {
             return $this->recordFailure($invitation, $lookup['code'], 'Existing-account verification failed. No invitation was sent.', 503);
@@ -212,14 +212,31 @@ class UserInvitationService
             return;
         }
         $association = $associationId ? Association::whereKey($associationId)->lockForUpdate()->first() : null;
-        if (! $association || $association->archived_at || $association->status !== 'active') {
-            throw ValidationException::withMessages(['association_id' => 'Select an active, unarchived association.']);
+        if (! $association) {
+            throw ValidationException::withMessages(['association_id' => 'Select an existing association for this invitation.']);
         }
-        if (AssociationAccount::where('association_id', $associationId)->exists()
-            || UserInvitation::where('association_id', $associationId)->where('email', '!=', $data['email'])
-                ->whereIn('status', UserInvitation::UNRESOLVED_STATUSES)->exists()) {
-            throw ValidationException::withMessages(['association_id' => 'This association has an account link or another unresolved invitation. Reconcile it first.']);
+        if ($association->archived_at || $association->status !== 'active') {
+            throw ValidationException::withMessages(['association_id' => 'This association is not currently eligible for account invitation.']);
         }
+        if ($conflict = $this->associationConflictMessage($association)) {
+            throw ValidationException::withMessages(['association_id' => $conflict]);
+        }
+        if (UserInvitation::where('association_id', $associationId)->where('email', '!=', $data['email'])
+            ->whereIn('status', UserInvitation::UNRESOLVED_STATUSES)->exists()) {
+            throw ValidationException::withMessages(['association_id' => 'This association already has another unresolved invitation: '.$association->name.'. Review that operation before inviting another account.']);
+        }
+    }
+
+    public function associationConflictMessage(Association $association): ?string
+    {
+        $links = AssociationAccount::where('association_id', $association->id)->get(['user_id']);
+        if ($links->isEmpty()) return null;
+        if ($links->count() !== 1 || AssociationAccount::where('user_id', $links->first()->user_id)->count() !== 1
+            || ! UserProfile::whereKey($links->first()->user_id)->whereHas('role', fn ($role) => $role->where('code', 'association_account'))->exists()) {
+            return 'This association has inconsistent account relationships: '.$association->name.'. Review User Management; no account was reassigned.';
+        }
+
+        return 'This association already has an assigned Association Account: '.$association->name.'. Review the existing account details.';
     }
 
     private function validateSameRequest(UserInvitation $invitation, array $data): void
@@ -227,7 +244,7 @@ class UserInvitationService
         if ($invitation->display_name !== $data['display_name']
             || (string) $invitation->role_id !== (string) $data['role_id']
             || $invitation->association_id !== ($data['association_id'] ?? null)) {
-            throw ValidationException::withMessages(['email' => 'An unresolved invitation already exists with different account information. Its role and association were not changed.']);
+            throw ValidationException::withMessages(['email' => 'An invitation already exists for this email with different account information. Review its status and any related account details. Its role and association were not changed.']);
         }
     }
 

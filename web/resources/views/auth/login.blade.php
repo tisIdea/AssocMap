@@ -113,9 +113,7 @@
                             Remember me
                         </label>
 
-                        <a href="#">
-                            Forgot Password?
-                        </a>
+                        <a href="{{ route('password.forgot') }}">Forgot password?</a>
                     </div>
 
                     <button

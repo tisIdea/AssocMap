@@ -1,6 +1,13 @@
 import '../models/analytics_report.dart';
 
-enum AnalyticsFailureKind { integration, offline, expired, denied, unavailable }
+enum AnalyticsFailureKind {
+  integration,
+  offline,
+  expired,
+  denied,
+  unavailable,
+  rateLimited,
+}
 
 class AnalyticsFailure implements Exception {
   const AnalyticsFailure(this.kind);
@@ -13,7 +20,10 @@ class AnalyticsFailure implements Exception {
       'Unable to connect. Check your internet connection and retry. Reports are not available offline.',
     AnalyticsFailureKind.expired => 'Your session expired. Sign in again.',
     AnalyticsFailureKind.denied => 'Your account cannot access these reports.',
-    AnalyticsFailureKind.unavailable => 'Reports are temporarily unavailable. Please retry later.',
+    AnalyticsFailureKind.unavailable =>
+      'Reports are temporarily unavailable. Please retry later.',
+    AnalyticsFailureKind.rateLimited =>
+      'Too many requests. Wait a minute before retrying.',
   };
 }
 

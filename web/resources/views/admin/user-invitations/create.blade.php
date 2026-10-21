@@ -25,9 +25,18 @@
         @php($result = session('invitation_result'))
         <div class="notice" role="status">
             <div>
+                <p>{{ $result['message'] }}</p>
                 @if($result['invitation_id'])<p>Operation reference: {{ $result['invitation_id'] }}. Status: {{ $result['status'] }}.</p>@endif
             </div>
         </div>
+    @endif
+    @if($accountReferences->isNotEmpty())
+        <div class="notice" role="note"><div><strong>Related existing accounts</strong>
+            <ul>@foreach($accountReferences as $reference)
+                <li>{{ $reference['reason'] }}: <a href="{{ route('admin.users.show', $reference['id']) }}">{{ $reference['name'] }} — View account details</a></li>
+            @endforeach</ul>
+            <p>These references identify current matches. Review the validation message and account status before taking another action.</p>
+        </div></div>
     @endif
     @if($errors->any())
         <div class="notice notice-error" role="alert"><div>@foreach($errors->all() as $error)<p>{{ $error }}</p>@endforeach</div></div>

@@ -265,4 +265,21 @@ class MonitoringManagementUiTest extends TestCase
         $this->assertSame($one, $thirty, 'List queries must not grow per displayed row.');
         fwrite(STDOUT, "\nMonitoring {$prefix}: dashboard {$one[0]} -> {$thirty[0]}, visits {$one[1]} -> {$thirty[1]} queries (1 -> 30 records)\n");
     }
+
+    public function test_cutover_monitoring_keeps_area_less_associations_and_quarter_history_accessible(): void
+    {
+        DB::statement('ALTER TABLE associations ADD COLUMN area_id TEXT NULL');
+        DB::statement('ALTER TABLE associations ADD COLUMN barangay_id TEXT');
+        DB::table('associations')->update(['barangay_id' => $this->id(900)]);
+        config(['associations.geography_schema_ready' => true]);
+        $before = DB::table('monitoring_records')->orderBy('id')->get()->toJson();
+        foreach (self::roles() as [$identity, $prefix]) {
+            $this->identity = $identity;
+            $this->get('/'.$prefix.'/monitoring')->assertOk();
+            foreach (['production', 'income', 'materials'] as $section) {
+                $this->get(route($prefix.'.monitoring.workspace', [self::RECORD, $section]))->assertOk();
+            }
+        }
+        $this->assertSame($before, DB::table('monitoring_records')->orderBy('id')->get()->toJson());
+    }
 }

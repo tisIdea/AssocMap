@@ -8,6 +8,7 @@ use App\Models\Association;
 use App\Models\Role;
 use App\Services\UserInvitationService;
 use App\Services\SupabaseAuthService;
+use App\Services\UserManagementQueryService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -15,7 +16,7 @@ use Illuminate\Http\Response;
 
 class UserInvitationController extends Controller
 {
-    public function create(Request $request, SupabaseAuthService $auth): Response
+    public function create(Request $request, SupabaseAuthService $auth, UserManagementQueryService $accounts): Response
     {
         $user = $request->attributes->get('current_user');
         abort_unless($user?->canAccessApplication() && $user->role->code === 'system_admin', 403);
@@ -23,6 +24,7 @@ class UserInvitationController extends Controller
         return response()->view('admin.user-invitations.create', [
             'configurationProblems' => $auth->invitationConfigurationProblems(),
             'configurationCached' => app()->configurationIsCached(),
+            'accountReferences' => $accounts->invitationReferences($request->old('email'), $request->old('association_id')),
             'roles' => Role::where('is_active', true)->whereIn('code', ['field_officer', 'association_account'])
                 ->orderBy('name')->get(['id', 'code', 'name']),
             'associations' => Association::where('status', 'active')->whereNull('archived_at')

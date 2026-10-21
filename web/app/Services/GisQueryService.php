@@ -32,11 +32,9 @@ class GisQueryService
         $administrator = $user !== null && $this->role($user) === 'system_admin';
         $query = GisLocation::query()->from('gis_locations as g')
             ->leftJoin('projects as p', 'p.id', '=', 'g.project_id')
-            ->join('associations as a', 'a.id', '=', DB::raw('COALESCE(g.association_id, p.association_id)'))
-            ->join('areas as ar', 'ar.id', '=', 'a.area_id')
-            ->join('barangays as b', 'b.id', '=', 'ar.barangay_id')
-            ->join('municipalities as m', 'm.id', '=', 'b.municipality_id')
-            ->where(function ($associations) use ($administrator) {
+            ->join('associations as a', 'a.id', '=', DB::raw('COALESCE(g.association_id, p.association_id)'));
+        app(AssociationGeographyService::class)->joinGeography($query);
+        $query->where(function ($associations) use ($administrator) {
                 $associations->where(fn ($active) => $active->where('a.status', 'active')->whereNull('a.archived_at'));
                 if ($administrator) $associations->orWhereNotNull('a.archived_at');
             })
@@ -141,9 +139,7 @@ class GisQueryService
 
     public function parents(UserProfile $user, array $filters): array
     {
-        $query = DB::table('associations as a')->join('areas as ar', 'ar.id', '=', 'a.area_id')
-            ->join('barangays as b', 'b.id', '=', 'ar.barangay_id')
-            ->join('municipalities as m', 'm.id', '=', 'b.municipality_id')
+        $query = app(AssociationGeographyService::class)->joinGeography(DB::table('associations as a'))
             ->where('a.status', 'active')->whereNull('a.archived_at');
         $this->applyRoleScope($query, $user);
         $kind = $filters['kind'];
@@ -152,6 +148,7 @@ class GisQueryService
             'municipality' => ['m.id', 'm.name'], 'barangay' => ['b.id', 'b.name'], 'area' => ['ar.id', 'ar.address'],
         ];
         [$id, $label] = $columns[$kind];
+        if ($kind === 'area') $query->whereNotNull('ar.id');
         if ($kind === 'project') $query->join('projects as p', 'p.association_id', '=', 'a.id')->whereNull('p.archived_at');
         foreach (['association_id' => 'a.id', 'municipality_id' => 'm.id', 'barangay_id' => 'b.id', 'area_id' => 'ar.id'] as $field => $column) {
             if (! empty($filters[$field]) && $column !== $id) $query->where($column, $filters[$field]);

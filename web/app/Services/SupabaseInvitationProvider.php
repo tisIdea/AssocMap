@@ -73,7 +73,8 @@ class SupabaseInvitationProvider
             }
             $body = SupabaseAuthResponse::jsonObject($response);
             $users = $body->users ?? null;
-            if (! $response->successful() || ! is_array($users)) {
+            if (! $response->successful() || ! is_array($users)
+                || property_exists($body, 'error') || property_exists($body, 'error_code') || property_exists($body, 'code')) {
                 return ['outcome' => 'failed', 'code' => 'identity_lookup_failed'];
             }
             $match = $this->lookupMatch($users, $email);
@@ -167,10 +168,49 @@ class SupabaseInvitationProvider
         return ['outcome' => 'uncertain', 'code' => 'provider_request_rejected'];
     }
 
+    public function existingInvitationIdentity(string $id, string $email): array
+    {
+        if (! Str::isUuid($id)) return ['outcome' => 'failed', 'code' => 'identity_mismatch'];
+        try {
+            $response = $this->adminRequest()->get(rtrim(config('services.supabase.url'), '/').'/auth/v1/admin/users/'.$id);
+        } catch (ConnectionException $exception) {
+            return ['outcome' => 'failed', 'code' => 'identity_lookup_failed'];
+        }
+        $body = SupabaseAuthResponse::jsonObject($response);
+        if (! $response->successful() || ! $body || property_exists($body, 'error')
+            || property_exists($body, 'error_code') || property_exists($body, 'code')) {
+            return ['outcome' => 'failed', 'code' => 'identity_lookup_failed'];
+        }
+        if (! is_string($body->id ?? null) || strtolower($body->id) !== strtolower($id)
+            || ! is_string($body->email ?? null) || mb_strtolower(trim($body->email)) !== $email
+            || $this->invitationCreatedAt($body->invited_at ?? null) === null) {
+            return ['outcome' => 'failed', 'code' => 'identity_mismatch'];
+        }
+        if (($body->email_confirmed_at ?? null) !== null) {
+            return ['outcome' => 'failed', 'code' => 'identity_already_confirmed'];
+        }
+
+        return ['outcome' => 'eligible'];
+    }
+
+    public function resendInvitation(string $id, string $email, string $displayName): array
+    {
+        if (! Str::isUuid($id)) return ['outcome' => 'failed', 'code' => 'identity_mismatch'];
+        // The caller must preflight the bound, unconfirmed identity immediately before this write.
+        $result = $this->inviteUser($email, $displayName);
+        if ($result['outcome'] === 'sent' && $result['auth_user_id'] !== strtolower($id)) {
+            return ['outcome' => 'uncertain', 'code' => 'identity_mismatch',
+                'reconciliation_auth_user_id' => $result['auth_user_id']];
+        }
+
+        return $result;
+    }
+
     private function invitationSuccessResult(mixed $body, string $email): array
     {
         $invalidResponse = ['outcome' => 'uncertain', 'code' => 'provider_response_invalid'];
-        if (! is_array($body) || array_is_list($body) || array_key_exists('code', $body) || array_key_exists('error_code', $body)) {
+        if (! is_array($body) || array_is_list($body) || array_key_exists('error', $body)
+            || array_key_exists('code', $body) || array_key_exists('error_code', $body)) {
             return $invalidResponse;
         }
         $id = $body['id'] ?? null;

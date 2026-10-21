@@ -17,7 +17,8 @@ class AssociationService
 {
     private const LIFECYCLE_AUDIT_FIELDS = ['association_id', 'status', 'archived_at', 'archived_by', 'updated_by'];
 
-    public function __construct(private AssociationLifecycleService $lifecycle, private AuditLogService $audit) {}
+    public function __construct(private AssociationLifecycleService $lifecycle, private AuditLogService $audit,
+        private AssociationGeographyService $geography) {}
 
     public function create(
         array $data,
@@ -34,11 +35,11 @@ class AssociationService
             $association = new Association([
                 'name' => $name,
                 'acronym' => $data['acronym'] ?? null,
-                'area_id' => $data['area_id'],
                 'saad_phase2_join_date' => $data['saad_phase2_join_date'],
                 'primary_field_officer_id' => $data['primary_field_officer_id'],
                 'status' => $data['status'],
             ]);
+            $this->geography->apply($association, $data);
             $association->created_by = $currentUser->id;
             $association->updated_by = $currentUser->id;
             $association->save();
@@ -54,34 +55,96 @@ class AssociationService
         UserProfile $currentUser
     ): Association {
         return DB::transaction(function () use ($association, $data, $currentUser) {
+            if (array_key_exists('registration', $data)) $this->lockAdministrator($currentUser);
             $association = Association::whereKey($association->id)->lockForUpdate()->firstOrFail();
             if ($association->archived_at !== null) {
                 throw ValidationException::withMessages(['association' => 'Archived associations cannot be edited.']);
             }
+            $this->geography->assertCurrent($association, $data);
             // The existing administrative status form remains the reactivation workflow.
             if ($data['status'] !== 'active') $this->lifecycle->assertOperational($association, 'association');
 
             $name = trim($data['name']);
             $this->ensureUniqueName($name, $association);
             $this->ensureValidFieldOfficer($data['primary_field_officer_id']);
+            $accreditation = array_key_exists('registration', $data)
+                ? $this->lockAccreditation($association, $data['registration']) : null;
             $primary = $association->registrations()->where('is_primary', true)->first();
             if ($primary) $this->ensurePrimaryRegistrationDate([
-                'is_primary' => true, 'registration_date' => $primary->registration_date->format('Y-m-d'),
+                'is_primary' => true, 'registration_date' => $primary->id === $accreditation?->id
+                    ? $data['registration']['registration_date'] : $primary->registration_date->format('Y-m-d'),
             ], $data['saad_phase2_join_date']);
 
             $association->fill([
                 'name' => $name,
                 'acronym' => $data['acronym'] ?? null,
-                'area_id' => $data['area_id'],
                 'saad_phase2_join_date' => $data['saad_phase2_join_date'],
                 'primary_field_officer_id' => $data['primary_field_officer_id'],
                 'status' => $data['status'],
             ]);
+            $this->geography->apply($association, $data);
             $association->updated_by = $currentUser->id;
             $association->save();
 
+            if ($accreditation) {
+                $this->lifecycle->assertOperational($association, 'registration.id');
+                $changes = array_intersect_key($data['registration'], array_flip([
+                    'registration_number', 'registration_date', 'expiration_date', 'remarks',
+                ]));
+                $changes['registration_number'] = trim($changes['registration_number']);
+                if (array_key_exists('remarks', $changes) && is_string($changes['remarks'])) {
+                    $remarks = trim($changes['remarks']);
+                    $changes['remarks'] = $remarks === '' ? null : $remarks;
+                }
+                $accreditation->forceFill($changes);
+                if ($accreditation->isDirty()) {
+                    try {
+                        $accreditation->save();
+                    } catch (QueryException $exception) {
+                        if ($exception->getCode() === '23505') {
+                            throw ValidationException::withMessages(['registration.registration_number' => 'This document number already exists for the issuing agency.']);
+                        }
+                        throw $exception;
+                    }
+                    // Advance the parent revision even when only its child record changed.
+                    $association->newQuery()->whereKey($association->id)->update(['updated_at' => now()->format('Y-m-d H:i:s.u')]);
+                    $association->refresh();
+                }
+            }
+
             return $association;
         });
+    }
+
+    private function lockAccreditation(Association $association, mixed $input): AssociationRegistration
+    {
+        $this->lifecycle->assertOperational($association, 'registration.id');
+        $data = validator(['registration' => $input], [
+            'registration' => ['required', 'array:id,expected_updated_at,registration_number,registration_date,expiration_date,remarks',
+                'required_array_keys:id,expected_updated_at,registration_number,registration_date'],
+            'registration.id' => ['required', 'uuid'],
+            'registration.expected_updated_at' => ['required', 'string', 'max:50'],
+            'registration.registration_number' => ['required', 'string', 'max:150'],
+            'registration.registration_date' => ['bail', 'required', 'string', 'date_format:Y-m-d'],
+            'registration.expiration_date' => ['bail', 'sometimes', 'nullable', 'string', 'date_format:Y-m-d',
+                ...(is_array($input) && is_string($input['registration_date'] ?? null) ? ['after_or_equal:registration.registration_date'] : [])],
+            'registration.remarks' => ['sometimes', 'nullable', 'string', 'max:4000'],
+        ])->validate()['registration'];
+        $record = AssociationRegistration::query()->where('association_id', $association->id)
+            ->whereKey($data['id'])->lockForUpdate()->first();
+        $agency = $record ? RegistrationAgency::whereKey($record->agency_id)->sharedLock()->first() : null;
+        if (! $agency?->is_active || $agency->registration_kind !== 'accreditation') {
+            throw ValidationException::withMessages(['registration.id' => 'Select an existing accreditation record for this association with an active issuing agency.']);
+        }
+        if ($data['expected_updated_at'] !== $record->updated_at?->format('Y-m-d\TH:i:s.uP')) {
+            throw ValidationException::withMessages(['registration' => 'This accreditation changed after you opened the form. Reload it before saving.']);
+        }
+        if (AssociationRegistration::query()->where('agency_id', $agency->id)->whereKeyNot($record->id)
+            ->where('registration_number', trim($data['registration_number']))->exists()) {
+            throw ValidationException::withMessages(['registration.registration_number' => 'This document number already exists for the issuing agency.']);
+        }
+
+        return $record;
     }
 
     public function archive(

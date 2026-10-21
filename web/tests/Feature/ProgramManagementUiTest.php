@@ -102,6 +102,28 @@ class ProgramManagementUiTest extends TestCase
         DB::table('commodities')->insert(['id' => 1, 'name' => 'Fish', 'category_id' => 1, 'source' => 'manual', 'is_active' => true]);
     }
 
+    public function test_cutover_program_modules_keep_area_less_parents_visible_and_assignment_denials(): void
+    {
+        DB::statement('ALTER TABLE associations ADD COLUMN barangay_id TEXT');
+        DB::statement('UPDATE associations SET barangay_id=(SELECT barangay_id FROM areas WHERE areas.id=associations.area_id), area_id=NULL');
+        config(['associations.geography_schema_ready' => true]);
+        $this->project(101);
+        $this->project(102, ['association_id' => $this->id(12), 'title' => 'Outside Project']);
+        $this->training(201);
+        $this->activity(301);
+        foreach (['admin' => 1, 'field-officer' => 2] as $prefix => $identity) {
+            $this->identity = $this->id($identity);
+            foreach (['projects', 'trainings', 'program-activities'] as $module) {
+                $page = $this->get('/'.$prefix.'/'.$module)->assertOk()->assertSee('Test Municipality');
+                if ($prefix === 'field-officer') $page->assertDontSee('Outside Project');
+            }
+            $this->get('/'.$prefix.'/projects/'.$this->id(101))->assertOk()->assertSee('Test Municipality');
+            $this->get('/'.$prefix.'/trainings/'.$this->id(201))->assertOk()->assertSee('Test Municipality');
+        }
+        $this->get('/field-officer/projects/'.$this->id(102))->assertForbidden();
+        $this->assertDatabaseHas('projects', ['id' => $this->id(101), 'association_id' => $this->id(11), 'status' => 'ongoing']);
+    }
+
     private function project(int $id, array $overrides = []): void
     {
         DB::table('projects')->insert(array_replace(['id' => $this->id($id), 'association_id' => $this->id(11),

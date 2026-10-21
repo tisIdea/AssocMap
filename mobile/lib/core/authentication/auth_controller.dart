@@ -12,7 +12,20 @@ class AuthController extends ChangeNotifier {
     required this.repository,
     required this.mode,
     DateTime Function()? now,
-  }) : _now = now ?? DateTime.now;
+  }) : _now = now ?? DateTime.now {
+    final restorable = repository;
+    if (restorable is RestorableAuthRepository) {
+      _invalidations = restorable.invalidations.listen((failure) {
+        if (_disposed) return;
+        ++_operation;
+        _expiryTimer?.cancel();
+        _session = null;
+        _failure = failure;
+        _busy = false;
+        notifyListeners();
+      });
+    }
+  }
 
   final AuthRepository repository;
   final DataMode mode;
@@ -20,6 +33,7 @@ class AuthController extends ChangeNotifier {
   AuthSession? _session;
   AuthFailure? _failure;
   Timer? _expiryTimer;
+  StreamSubscription<AuthFailure>? _invalidations;
   bool _busy = false;
   bool _disposed = false;
   int _operation = 0;
@@ -75,10 +89,7 @@ class AuthController extends ChangeNotifier {
         return false;
       }
       _session = candidate;
-      _expiryTimer = Timer(
-        candidate.expiresAt.difference(_now()),
-        expireSession,
-      );
+      _scheduleExpiry(candidate);
       return true;
     } on AuthFailure catch (error) {
       if (!_disposed && operation == _operation) _failure = error;
@@ -102,13 +113,65 @@ class AuthController extends ChangeNotifier {
     _expiryTimer?.cancel();
     _session = null;
     _failure = null;
-    _busy = false;
+    _busy = true;
     notifyListeners();
     try {
       await repository.signOut();
+    } catch (error) {
+      if (!_disposed && operation == _operation) {
+        _failure = error is AuthFailure
+            ? error
+            : const AuthFailure(AuthFailureCode.connectionUnavailable);
+        notifyListeners();
+      }
+    } finally {
+      if (!_disposed && operation == _operation) {
+        _busy = false;
+        notifyListeners();
+      }
+    }
+  }
+
+  void _scheduleExpiry(AuthSession candidate) {
+    _expiryTimer?.cancel();
+    var duration = candidate.expiresAt.difference(_now());
+    if (!candidate.isDemo) duration -= const Duration(seconds: 30);
+    if (duration < const Duration(seconds: 1)) {
+      duration = const Duration(seconds: 1);
+    }
+    _expiryTimer = Timer(
+      duration,
+      candidate.isDemo ? expireSession : restoreSession,
+    );
+  }
+
+  Future<void> restoreSession() async {
+    final restorable = repository;
+    if (_disposed || _busy || restorable is! RestorableAuthRepository) return;
+    final operation = ++_operation;
+    _expiryTimer?.cancel();
+    _session = null;
+    _failure = null;
+    _busy = true;
+    notifyListeners();
+    try {
+      final candidate = await restorable.restoreSession();
+      if (_disposed || operation != _operation) return;
+      if (candidate != null) {
+        final denied = _accessFailure(candidate);
+        if (denied != null) throw denied;
+        _session = candidate;
+        _scheduleExpiry(candidate);
+      }
+    } on AuthFailure catch (error) {
+      if (!_disposed && operation == _operation) _failure = error;
     } catch (_) {
       if (!_disposed && operation == _operation) {
         _failure = const AuthFailure(AuthFailureCode.connectionUnavailable);
+      }
+    } finally {
+      if (!_disposed && operation == _operation) {
+        _busy = false;
         notifyListeners();
       }
     }
@@ -127,9 +190,14 @@ class AuthController extends ChangeNotifier {
     _session = null;
     _failure = null;
     notifyListeners();
+    unawaited(repository.signOut().catchError((Object _) {}));
   }
 
   void checkSessionValidity() {
+    if (repository is RestorableAuthRepository) {
+      unawaited(restoreSession());
+      return;
+    }
     if (_session != null && _accessFailure(_session!) != null) expireSession();
   }
 
@@ -148,6 +216,7 @@ class AuthController extends ChangeNotifier {
     _disposed = true;
     ++_operation;
     _expiryTimer?.cancel();
+    unawaited(_invalidations?.cancel());
     _session = null;
     _failure = null;
     super.dispose();

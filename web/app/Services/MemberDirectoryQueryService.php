@@ -37,9 +37,10 @@ class MemberDirectoryQueryService
                     ->when($filters['status'] !== '', fn ($query) => $query->where('member_status', $filters['status'])));
         $this->filterAndOrder($query, $filters, 'date_registered');
 
-        return $query->with(['association:id,name,area_id,status,archived_at',
-            'association.area:id,barangay_id,address', 'association.area.barangay:id,municipality_id,name',
-            'association.area.barangay.municipality:id,name', 'sex:id,name', 'position:id,name', 'classifications'])
+        $geography = app(AssociationGeographyService::class);
+
+        return $query->with(['association:'.implode(',', $geography->associationColumns(['id', 'name', 'area_id', 'status', 'archived_at'])),
+            ...$geography->relations('association'), 'sex:id,name', 'position:id,name', 'classifications'])
             ->paginate(25, total: $this->paginationTotal($filters, $summary, 'current'))->appends($filters);
     }
 
@@ -58,9 +59,11 @@ class MemberDirectoryQueryService
         $query = (clone $scope)->when($filters['status'] !== '', fn ($query) => $query->where('status', $filters['status']));
         $this->filterAndOrder($query, $filters, 'created_at');
         $relations = ['sex:id,name', 'position:id,name', 'classifications', 'reviewedBy:id,display_name'];
-        if ($fieldOfficer) $relations = [...$relations, 'association:id,name,area_id,status,archived_at',
-            'association.area:id,barangay_id,address', 'association.area.barangay:id,municipality_id,name',
-            'association.area.barangay.municipality:id,name'];
+        if ($fieldOfficer) {
+            $geography = app(AssociationGeographyService::class);
+            $relations = [...$relations, 'association:'.implode(',', $geography->associationColumns(['id', 'name', 'area_id', 'status', 'archived_at'])),
+                ...$geography->relations('association')];
+        }
 
         return $query->with($relations)->paginate(25, total: $this->paginationTotal($filters, $summary, 'total'))->appends($filters);
     }

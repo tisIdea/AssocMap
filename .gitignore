@@ -33,7 +33,7 @@ mobile/.flutter-plugins
 mobile/.flutter-plugins-dependencies
 mobile/.packages
 mobile/.env
-
+mobile/docs
 
 # =========================
 # Python
@@ -43,6 +43,7 @@ python-reporting/.venv/
 python-reporting/__pycache__/
 python-reporting/.env
 *.pyc
+/.venv-reporting/
 
 
 # =========================
@@ -55,4 +56,5 @@ python-reporting/.env
 Thumbs.db
 
 # Local testing evidence
-/docs/testing/
+/docs
+/mobile/docs/

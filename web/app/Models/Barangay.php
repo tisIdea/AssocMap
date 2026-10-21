@@ -38,4 +38,9 @@ class Barangay extends Model
     {
         return $this->hasMany(Area::class, 'barangay_id');
     }
+
+    public function associations(): HasMany
+    {
+        return $this->hasMany(Association::class, 'barangay_id');
+    }
 }

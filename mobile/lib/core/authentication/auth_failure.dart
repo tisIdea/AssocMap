@@ -9,6 +9,8 @@ enum AuthFailureCode {
   invalidConfiguration,
   demoDisabled,
   unexpectedResponse,
+  rateLimited,
+  storageUnavailable,
 }
 
 class AuthFailure implements Exception {
@@ -31,7 +33,11 @@ class AuthFailure implements Exception {
     AuthFailureCode.integrationUnavailable =>
       'Real mobile sign-in is not connected yet. Use the AssocMap web application while mobile integration is being completed.',
     AuthFailureCode.invalidConfiguration =>
-      'Invalid data mode. Configure ASSOCMAP_DATA_MODE as mock or api.',
+      'Mobile sign-in configuration is incomplete. Ask the administrator for a configured app build.',
+    AuthFailureCode.rateLimited =>
+      'Too many requests. Please wait a minute before trying again.',
+    AuthFailureCode.storageUnavailable =>
+      'Secure session storage is unavailable. Please restart the app and try again.',
     AuthFailureCode.demoDisabled =>
       'Demo authentication is disabled in release builds. Real mobile authentication must be verified before production use.',
     AuthFailureCode.unexpectedResponse =>

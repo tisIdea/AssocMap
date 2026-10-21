@@ -75,7 +75,9 @@
     <div class="report-preview">
         <section class="card report-document">
             <div class="report-document-header"><span class="brand-symbol"><x-assocmap-mark /></span><div><strong>ASSOCMAP</strong><small>Association and project monitoring</small></div><span class="badge badge-neutral">Authorized report</span></div>
-            <p data-report-status role="status" aria-live="polite" @if($unavailable) data-feedback-fallback @endif @class(['notice-error' => $unavailable])>{{ $unavailable ? 'Reporting is temporarily unavailable. Please try again later.' : 'Report loaded from authorized records.' }}</p>
+            <p data-report-status role="{{ isset($sizeLimitMessage) ? 'alert' : 'status' }}" aria-live="polite"
+                @if($unavailable || isset($sizeLimitMessage)) data-feedback-fallback @endif
+                @class(['notice-error' => $unavailable || isset($sizeLimitMessage)])>{{ $sizeLimitMessage ?? ($unavailable ? 'Reporting is temporarily unavailable. Please try again later.' : 'Report loaded from authorized records.') }}</p>
             <div data-report-result>
                 @if($result)
                     <h2>{{ $result['title'] }}</h2>

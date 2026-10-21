@@ -16,6 +16,8 @@ class AuditLogService
     private const MAX_SNAPSHOT_BYTES = 131072;
 
     private const DISPLAY_FIELDS = [
+        'user_invitation' => ['status', 'attempt_count', 'outcome'],
+        'user_profile' => ['is_active', 'invitation_statuses', 'cancelled_invitation_ids'],
         'association_lifecycle' => ['association_id', 'status', 'archived_at', 'archived_by', 'updated_by'],
         'project_closure' => ['project_id', 'association_id', 'status', 'closed_at', 'closed_by', 'actor_role'],
         'project_termination' => ['project_id', 'association_id', 'status', 'closed_at', 'closed_by', 'actor_role'],

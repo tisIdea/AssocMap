@@ -18,6 +18,8 @@ class LocalRequestTiming
     private int $queryCount = 0;
     private float $queryMilliseconds = 0.0;
     private float $otherQueryMilliseconds = 0.0;
+    /** @var list<float> */
+    private array $queryDurations = [];
 
     public function handle(Request $request, Closure $next): Response
     {
@@ -51,6 +53,7 @@ class LocalRequestTiming
             $profile = $timing->milliseconds['profile_role'];
             // Profile/auth spans may include queries; subtract only queries outside those spans.
             $remaining = max(0, $total - $auth - $profile - $timing->otherQueryMilliseconds);
+            $distribution = $timing->queryDistribution();
             $summary = [
                 'timing_id' => $id,
                 'route' => $request->route()?->getName(),
@@ -61,6 +64,7 @@ class LocalRequestTiming
                 'profile_role_ms' => round($profile, 2),
                 'db_query_count' => $timing->queryCount,
                 'db_query_ms' => round($timing->queryMilliseconds, 2),
+                'db_query_distribution' => $distribution,
                 'db_query_scope' => 'completed_queries_after_middleware_entry',
                 'db_outside_auth_profile_ms' => round($timing->otherQueryMilliseconds, 2),
                 // Lazy connection setup may be included in the first query's duration.
@@ -79,6 +83,7 @@ class LocalRequestTiming
                 $response->headers->set('Server-Timing', implode(', ', $header), false);
                 $response->headers->set('X-AssocMap-Timing-Id', $id);
                 $response->headers->set('X-AssocMap-DB-Queries', (string) $timing->queryCount);
+                $response->headers->set('X-AssocMap-DB-Distribution', json_encode($distribution, JSON_THROW_ON_ERROR));
             }
 
             try {
@@ -107,12 +112,40 @@ class LocalRequestTiming
         }
     }
 
+    private function queryDistribution(): array
+    {
+        $durations = $this->queryDurations;
+        sort($durations, SORT_NUMERIC);
+        $count = count($durations);
+        $middle = intdiv($count, 2);
+        $buckets = ['under_100_ms' => 0, 'from_100_to_under_500_ms' => 0, 'at_least_500_ms' => 0];
+        foreach ($durations as $milliseconds) {
+            if ($milliseconds < 100) $buckets['under_100_ms']++;
+            elseif ($milliseconds < 500) $buckets['from_100_to_under_500_ms']++;
+            else $buckets['at_least_500_ms']++;
+        }
+
+        return [
+            'count' => $count,
+            'total_ms' => round($this->queryMilliseconds, 2),
+            'min_ms' => $count === 0 ? null : round($durations[0], 2),
+            'median_ms' => $count === 0 ? null : round($count % 2 === 0
+                ? ($durations[$middle - 1] + $durations[$middle]) / 2 : $durations[$middle], 2),
+            'max_ms' => $count === 0 ? null : round($durations[$count - 1], 2),
+            // Nearest-rank percentile; the first duration retains observation order.
+            'p95_ms' => $count === 0 ? null : round($durations[(int) ceil($count * 0.95) - 1], 2),
+            'first_ms' => $count === 0 ? null : round($this->queryDurations[0], 2),
+            'buckets' => $buckets,
+        ];
+    }
+
     public static function recordQuery(Request $request, float $milliseconds): void
     {
         $timing = $request->attributes->get(self::ATTRIBUTE);
         if (!$timing instanceof self) return;
         $timing->queryCount++;
         $timing->queryMilliseconds += $milliseconds;
+        $timing->queryDurations[] = $milliseconds;
         if ($timing->phase === null) $timing->otherQueryMilliseconds += $milliseconds;
     }
 }

@@ -4,6 +4,9 @@ namespace Tests\Feature;
 
 use App\Models\Barangay;
 use App\Models\Municipality;
+use App\Models\UserProfile;
+use App\Http\Requests\StoreAreaRequest;
+use App\Services\AreaService;
 use App\Services\AreaManagementQueryService;
 use App\Services\SupabaseAuthService;
 use Illuminate\Database\Schema\Blueprint;
@@ -32,6 +35,7 @@ class AreaManagementTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        config(['associations.geography_schema_ready' => true, 'associations.direct_geography' => true]);
         $this->assertSame('sqlite', DB::connection()->getDriverName());
         $this->assertSame(':memory:', DB::connection()->getConfig('database'));
         DB::connection()->getPdo()->sqliteCreateFunction('gen_random_uuid', fn () => (string) Str::uuid());
@@ -75,15 +79,22 @@ class AreaManagementTest extends TestCase
                     $t->uuid($foreign);
                     $t->foreign($foreign)->references('id')->on($table === 'barangays' ? 'municipalities' : 'barangays')->restrictOnDelete();
                 }
-                if ($table === 'areas') $t->text('address');
+                if ($table === 'areas') {
+                    $t->text('address');
+                    $t->unique(['id', 'barangay_id']);
+                }
                 else { $t->string('name'); $t->string('psgc_code')->nullable()->unique(); }
                 $t->string('source')->default('manual'); $t->boolean('is_active')->default(true);
                 $t->uuid('created_by')->nullable(); $t->timestamps();
             });
         }
+        DB::statement('CREATE UNIQUE INDEX uq_area_barangay_address_ci ON areas(barangay_id, LOWER(address))');
         Schema::create('associations', function (Blueprint $t) {
-            $t->uuid('id')->primary(); $t->string('name'); $t->uuid('area_id');
+            $t->uuid('id')->primary(); $t->string('name'); $t->uuid('area_id')->nullable();
+            $t->uuid('barangay_id'); $t->text('specific_address')->nullable();
             $t->foreign('area_id')->references('id')->on('areas')->restrictOnDelete();
+            $t->foreign('barangay_id')->references('id')->on('barangays')->restrictOnDelete();
+            $t->foreign(['area_id', 'barangay_id'])->references(['id', 'barangay_id'])->on('areas')->restrictOnDelete()->restrictOnUpdate();
             $t->string('status'); $t->timestamp('archived_at')->nullable(); $t->timestamps();
         });
     }
@@ -116,6 +127,7 @@ class AreaManagementTest extends TestCase
             33 => [22, 'Archived Association', 'active', '2022-01-01'], 34 => [23, 'Historical Association', 'inactive', null],
             35 => [24, 'Other Association', 'active', null]] as $id => [$area, $name, $status, $archived]) {
             DB::table('associations')->insert(['id' => self::id($id), 'area_id' => self::id($area),
+                'barangay_id' => DB::table('areas')->where('id', self::id($area))->value('barangay_id'),
                 'name' => $name, 'status' => $status, 'archived_at' => $archived, 'created_at' => now(), 'updated_at' => now()]);
         }
     }
@@ -275,7 +287,7 @@ class AreaManagementTest extends TestCase
         for ($number = 100; $number < 127; $number++) {
             DB::table('barangays')->insert(['id' => self::id($number), 'municipality_id' => self::id(1), 'name' => 'Extra '.$number]);
             DB::table('areas')->insert(['id' => self::id($number + 100), 'barangay_id' => self::id(11), 'address' => 'Extra '.$number]);
-            DB::table('associations')->insert(['id' => self::id($number + 200), 'area_id' => self::id(21), 'name' => 'Extra '.$number, 'status' => 'active']);
+            DB::table('associations')->insert(['id' => self::id($number + 200), 'area_id' => self::id(21), 'barangay_id' => self::id(11), 'name' => 'Extra '.$number, 'status' => 'active']);
         }
         $response = $this->get($this->url(['tab' => 'barangays', 'q' => 'Extra', 'sort' => 'za', 'municipality_id' => self::id(1)]))->assertOk();
         $this->assertCount(25, $response->viewData('records'));
@@ -322,7 +334,7 @@ class AreaManagementTest extends TestCase
             $this->post('/admin/municipalities', ['name' => 'Unauthorized'])->assertForbidden();
             $this->patch('/admin/barangays/'.self::id(11), ['name' => 'Unauthorized'])->assertForbidden();
             $this->patch('/admin/municipalities/'.self::id(1).'/deactivate')->assertForbidden();
-            $this->post('/admin/areas', ['barangay_id' => self::id(11), 'address' => 'Unauthorized'])->assertForbidden();
+            $this->post('/admin/areas', ['municipality_id' => self::id(1), 'barangay_id' => self::id(11), 'address' => 'Unauthorized'])->assertForbidden();
         }
         $this->assertSame(4, DB::table('municipalities')->count());
         $this->assertTrue((bool) DB::table('municipalities')->where('id', self::id(1))->value('is_active'));
@@ -345,14 +357,14 @@ class AreaManagementTest extends TestCase
     {
         $this->post('/admin/municipalities', ['name' => 'New Municipality', 'area_form' => 'editor'])->assertRedirect(route('admin.areas.index'));
         $this->post('/admin/barangays', ['municipality_id' => self::id(1), 'name' => 'New Barangay', 'area_form' => 'editor'])->assertRedirect(route('admin.areas.index'));
-        $this->post('/admin/areas', ['barangay_id' => self::id(11), 'address' => 'New Purok', 'area_form' => 'editor'])->assertRedirect(route('admin.areas.index'));
+        $this->post('/admin/areas', ['municipality_id' => self::id(1), 'barangay_id' => self::id(11), 'address' => 'New Purok', 'area_form' => 'editor'])->assertRedirect(route('admin.areas.index'));
         $this->patch('/admin/municipalities/'.self::id(1), ['name' => 'Renamed Municipality', 'psgc_code' => 'M1'])->assertRedirect(route('admin.areas.index'));
         $before = DB::table('associations')->orderBy('id')->get()->toJson();
         $this->patch('/admin/municipalities/'.self::id(1).'/deactivate')->assertRedirect(route('admin.areas.index'));
         $this->patch('/admin/barangays/'.self::id(11).'/deactivate')->assertRedirect(route('admin.areas.index'));
         $this->assertSame($before, DB::table('associations')->orderBy('id')->get()->toJson());
         $this->get('/admin/barangays/'.self::id(11))->assertOk()->assertSee('Archived Association')->assertSee('Purok One');
-        $this->postJson('/admin/areas', ['barangay_id' => self::id(11), 'address' => 'Blocked'])->assertUnprocessable();
+        $this->postJson('/admin/areas', ['municipality_id' => self::id(1), 'barangay_id' => self::id(11), 'address' => 'Blocked'])->assertUnprocessable();
         $this->postJson('/admin/barangays', ['municipality_id' => self::id(1), 'name' => 'Blocked'])->assertUnprocessable();
     }
 
@@ -364,7 +376,7 @@ class AreaManagementTest extends TestCase
             };
         });
         $this->post('/admin/municipalities', ['name' => 'Blocked'])->assertStatus(419);
-        $this->post('/admin/areas', ['barangay_id' => self::id(11), 'address' => 'Blocked'])->assertStatus(419);
+        $this->post('/admin/areas', ['municipality_id' => self::id(1), 'barangay_id' => self::id(11), 'address' => 'Blocked'])->assertStatus(419);
         $this->patch('/admin/barangays/'.self::id(11), ['name' => 'Blocked'])->assertStatus(419);
         $this->patch('/admin/municipalities/'.self::id(1).'/deactivate')->assertStatus(419);
         $this->assertSame(4, DB::table('municipalities')->count());
@@ -375,7 +387,7 @@ class AreaManagementTest extends TestCase
     public function test_validation_restores_the_correct_editor_and_prevents_duplicate_records(): void
     {
         $url = '/admin/barangays/'.self::id(11);
-        $this->from($url)->post('/admin/areas', ['area_form' => 'editor', 'barangay_id' => self::id(11), 'address' => 'Purok One'])
+        $this->from($url)->post('/admin/areas', ['area_form' => 'editor', 'municipality_id' => self::id(1), 'barangay_id' => self::id(11), 'address' => 'Purok One'])
             ->assertRedirect($url)->assertSessionHasErrors('address');
         $restored = $this->get($url)->assertOk()->assertSee('Purok One')->assertSee('data-has-errors="true"', false);
         $this->assertSame(1, $this->dom($restored->getContent())->query('//select[@name="area_type"]/option[@value="Specific Area" and @selected]')->length);
@@ -386,6 +398,102 @@ class AreaManagementTest extends TestCase
         ])->assertRedirect('/admin/areas')->assertSessionHasErrors('name');
         $this->get('/admin/areas')->assertOk()->assertSee('data-mode="edit"', false)
             ->assertSee('action="'.route('admin.barangays.update', self::id(11)).'"', false);
+    }
+
+    private function geographySnapshot(): array
+    {
+        return collect(['municipalities', 'barangays', 'areas', 'associations'])
+            ->mapWithKeys(fn ($table) => [$table => DB::table($table)->orderBy('id')->get()->toJson()])->all();
+    }
+
+    #[DataProvider('invalidAreaGeography')]
+    public function test_specific_area_requires_active_matching_parents_and_a_nonblank_address(array $overrides, string $field): void
+    {
+        $before = $this->geographySnapshot();
+        $data = array_replace(['municipality_id' => self::id(1), 'barangay_id' => self::id(11), 'address' => 'New address'], $overrides);
+        $this->postJson('/admin/areas', $data)->assertUnprocessable()->assertJsonValidationErrors($field);
+        $this->assertSame($before, $this->geographySnapshot());
+    }
+
+    public static function invalidAreaGeography(): array
+    {
+        return [
+            [['municipality_id' => null], 'municipality_id'], [['municipality_id' => ''], 'municipality_id'],
+            [['municipality_id' => []], 'municipality_id'], [['municipality_id' => 'bad'], 'municipality_id'],
+            [['municipality_id' => self::id(999)], 'municipality_id'], [['municipality_id' => self::id(3)], 'municipality_id'],
+            [['municipality_id' => self::id(2)], 'barangay_id'],
+            [['barangay_id' => null], 'barangay_id'], [['barangay_id' => []], 'barangay_id'],
+            [['barangay_id' => 'bad'], 'barangay_id'], [['barangay_id' => self::id(999)], 'barangay_id'],
+            [['barangay_id' => self::id(12)], 'barangay_id'],
+            [['address' => null], 'address'], [['address' => " \t\r\n "], 'address'], [['address' => ['bad']], 'address'],
+        ];
+    }
+
+    public function test_specific_area_trims_address_prevents_duplicates_and_preserves_existing_records(): void
+    {
+        $before = $this->geographySnapshot();
+        foreach (['  pUrOk OnE  ', '  SITIO HISTORICAL  '] as $address) {
+            $this->postJson('/admin/areas', ['municipality_id' => self::id(1), 'barangay_id' => self::id(11), 'address' => $address])
+                ->assertUnprocessable()->assertJsonValidationErrors('address');
+        }
+        $this->assertSame($before, $this->geographySnapshot());
+        foreach ([[1, 11, '  New Purok  ', 'New Purok'], [2, 13, 'Purok One', 'Purok One']] as [$municipality, $barangay, $address, $stored]) {
+            $this->post('/admin/areas', ['municipality_id' => self::id($municipality), 'barangay_id' => self::id($barangay),
+                'address' => $address, 'source' => 'imported', 'created_by' => self::OFFICER, 'is_active' => false])
+                ->assertSessionHasNoErrors()->assertRedirect(route('admin.areas.index'));
+            $this->assertDatabaseHas('areas', ['barangay_id' => self::id($barangay), 'address' => $stored,
+                'source' => 'manual', 'created_by' => self::ADMIN, 'is_active' => true]);
+        }
+        $this->assertDatabaseCount('areas', 7);
+        $after = $this->geographySnapshot();
+        foreach (['municipalities', 'barangays', 'associations'] as $table) $this->assertSame($before[$table], $after[$table]);
+        $this->assertSame($before['areas'], DB::table('areas')->whereIn('id', array_column(json_decode($before['areas'], true), 'id'))->orderBy('id')->get()->toJson());
+    }
+
+    public function test_specific_area_service_rechecks_parents_changed_after_validation(): void
+    {
+        $data = ['municipality_id' => self::id(1), 'barangay_id' => self::id(11), 'address' => 'New address'];
+        foreach (['municipalities' => 'municipality_id', 'barangays' => 'barangay_id'] as $table => $field) {
+            $request = StoreAreaRequest::create('/admin/areas', 'POST', $data);
+            validator($data, $request->rules())->validate();
+            DB::table($table)->where('id', $data[$field])->update(['is_active' => false]);
+            $before = $this->geographySnapshot();
+            try {
+                app(AreaService::class)->create($data, UserProfile::findOrFail(self::ADMIN));
+                $this->fail('A deactivated parent must not be used.');
+            } catch (\Illuminate\Validation\ValidationException $exception) {
+                $this->assertArrayHasKey($field, $exception->errors());
+            }
+            $this->assertSame(0, DB::transactionLevel());
+            $this->assertSame($before, $this->geographySnapshot());
+            DB::table($table)->where('id', $data[$field])->update(['is_active' => true]);
+        }
+    }
+
+    public function test_specific_area_editor_submits_municipality_and_restores_its_type_after_missing_barangay(): void
+    {
+        $url = '/admin/barangays/'.self::id(11);
+        $this->from($url)->post('/admin/areas', ['area_form' => 'editor', 'area_type' => 'Specific Area',
+            'municipality_id' => self::id(1), 'address' => 'Unsaved independent Area address'])
+            ->assertRedirect($url)->assertSessionHasErrors('barangay_id');
+        $response = $this->get($url)->assertOk()->assertSee('Unsaved independent Area address');
+        $dom = $this->dom($response->getContent());
+        $this->assertSame(1, $dom->query('//select[@name="area_type"]/option[@value="Specific Area" and @selected]')->length);
+        $this->assertSame(1, $dom->query('//select[@data-specific-municipality and @name="municipality_id" and @required]/option[@selected and @value="'.self::id(1).'"]')->length);
+        DB::table('municipalities')->where('id', self::id(1))->update(['is_active' => false]);
+        $catalog = app(AreaManagementQueryService::class)->editorCatalog(Barangay::with('municipality')->findOrFail(self::id(11)));
+        $this->assertSame([], $catalog['options']['barangay_records']);
+        $this->assertSame([], $catalog['options']['specific_municipality_records']);
+    }
+
+    public function test_area_form_request_authorizes_only_an_eligible_administrator(): void
+    {
+        $request = new StoreAreaRequest;
+        $this->assertFalse($request->authorize());
+        foreach ([self::ADMIN => true, self::OFFICER => false, self::ACCOUNT => false] as $id => $allowed) {
+            $request->attributes->set('current_user', UserProfile::with('role')->findOrFail($id));
+            $this->assertSame($allowed, $request->authorize());
+        }
     }
 
     public function test_query_counts_remain_constant_and_relationship_pages_are_bounded(): void

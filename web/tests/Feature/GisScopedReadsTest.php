@@ -21,6 +21,7 @@ class GisScopedReadsTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        config(['associations.geography_schema_ready' => false, 'associations.direct_geography' => false]);
         Http::preventStrayRequests();
         config(['database.connections.gis_scope_test' => ['driver' => 'sqlite', 'database' => ':memory:', 'prefix' => '']]);
         DB::setDefaultConnection('gis_scope_test');
@@ -125,6 +126,23 @@ class GisScopedReadsTest extends TestCase
     private function ids(UserProfile $user, bool $archived = false): array
     {
         return $this->gis->scoped($user, $archived)->pluck('g.id')->all();
+    }
+
+    public function test_cutover_gis_scope_does_not_drop_area_less_projects_or_expand_role_access(): void
+    {
+        Schema::table('associations', function (Blueprint $table) {
+            $table->string('area_id')->nullable()->change(); $table->string('barangay_id')->nullable();
+        });
+        DB::statement('UPDATE associations SET barangay_id=(SELECT barangay_id FROM areas WHERE areas.id=associations.area_id), area_id=NULL');
+        foreach ([false, true] as $direct) {
+            config(['associations.geography_schema_ready' => true, 'associations.direct_geography' => $direct]);
+            DB::table('association_accounts')->update(['is_active' => true]);
+            $this->assertEqualsCanonicalizing(['a-project', 'a-boundary', 'b-project', 'parent-archived', 'project-archived'], $this->ids($this->principal('admin', 'system_admin')));
+            $this->assertEqualsCanonicalizing(['a-project', 'a-boundary'], $this->ids($this->principal('officer-a', 'field_officer')));
+            $this->assertEqualsCanonicalizing(['a-project', 'a-boundary'], $this->ids($this->principal('account-a', 'association_account')));
+            DB::table('association_accounts')->update(['is_active' => false]);
+            $this->assertSame([], $this->ids($this->principal('account-a', 'association_account')));
+        }
     }
 
     private function principal(string $id, string $role): UserProfile

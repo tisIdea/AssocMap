@@ -67,6 +67,16 @@ class StaffAuthenticationCharacterizationTest extends TestCase
         return $cookie->getValue();
     }
 
+    public function test_login_page_links_password_recovery_and_preserves_sign_in(): void
+    {
+        $this->get('/login')->assertOk()
+            ->assertSee('Forgot password?')->assertSee(route('password.forgot'))
+            ->assertSee('action="'.route('login.store').'"', false)
+            ->assertSee('name="_token"', false)
+            ->assertSee('name="email"', false)->assertSee('name="password"', false);
+        Http::assertNothingSent();
+    }
+
     #[DataProvider('webRoles')]
     public function test_login_resolves_the_database_profile_role_and_rotates_the_existing_session(string $role, string $destination): void
     {

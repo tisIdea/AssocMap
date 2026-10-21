@@ -1,65 +1,64 @@
 # AssocMap mobile
 
-Flutter development prototype with public welcome/GIS, synthetic demo Association
-Account sign-in and protected navigation. Public GIS now has an optional Laravel
-adapter implemented in source. No login is needed for the public map. **Current
-formatting, analysis, tests, live backend integration and device behavior are unverified.**
-Real authentication and association management modules remain pending.
+Flutter Android application with public GIS and Association Account access.
+Live mode uses Supabase Auth for identity and Laravel for account eligibility,
+Association ownership, Dashboard data, and Reports & Analytics. Administrative
+and Field Officer accounts use the web application.
 
-Mock fixtures contain fictional associations, locations and boundaries, not BFAR/SAAD
-records. The offline coordinate grid is not a street basemap or authoritative geography.
-Live mode renders only supplied public fields and actual Point/Polygon/MultiPolygon
-geometry; polygon parts and holes are preserved without invented markers.
+## Staging build
 
-## Environment and dependencies
+From `C:\dev\AssocMap\mobile`:
 
-Previously inspected development SDK: Flutter 3.44.6 / Dart 3.12.2. Project SDK
-requirement: ^3.12.2. Mapping packages: flutter_map 8.3.2 and latlong2 0.10.1.
-This task declares the already resolved http 1.6.0 directly. No dependency resolution
-was executed by Codex. The current lockfile already marks it direct; run flutter pub
-get when authorized to verify dependency consistency.
-Keep pubspec.lock when transferring the workspace.
+```powershell
+flutter pub get
+flutter analyze --no-pub
+flutter test --no-pub --concurrency=1
+flutter build apk --release --no-pub --dart-define-from-file=config/staging.json
+```
 
-## GIS and authentication modes
+`config/staging.json` contains the approved staging origin, Supabase origin and
+user-supplied **public publishable key**. Public client configuration is embedded
+in the APK. Never put a secret/service-role key, password, signing key, database
+credential, or user token in this file or a Dart define.
 
-- ASSOCMAP_GIS_MODE=mock: existing local fixtures; works without Desktop 1/network.
-- ASSOCMAP_GIS_MODE=live: HTTPS GET /map/data overview and viewport map queries.
-- ASSOCMAP_DATA_MODE=mock|api: existing authentication selection, unchanged.
-- Without a GIS define, mock data mode selects mock GIS and api selects live GIS.
-- Unknown modes fail closed. A failed live request never substitutes synthetic data.
-- Changing defines requires restarting the app.
+APK output: `build/app/outputs/flutter-apk/app-release.apk`. The repository's
+existing release configuration uses its debug signing configuration for local
+evaluation. No private signing configuration is supplied here.
 
-ASSOCMAP_BACKEND_BASE_URL is the approved HTTPS Laravel application base URL, optionally
-with its application prefix. Do not append /map/data or /api/v1; do not include
-credentials, queries or fragments. No hostname is hardcoded. Missing/invalid live
-configuration produces a safe error without a request.
+For this development laptop, the successful build used a 1 GB Gradle heap,
+768 MB Metaspace and one worker through process-only settings. The exact command,
+APK hash and verification results are in [M1 verification](docs/m1-verification.md).
+No repository or global signing/memory settings were changed.
 
-When device launch and any test-service access are separately authorized:
+For development, use separate public configuration JSON files with the same
+keys and pass the chosen file using `--dart-define-from-file`. The backend URL
+must be the HTTPS application origin, without `/api` or an endpoint suffix.
+The Supabase URL must be the HTTPS project origin, without `/rest/v1`.
 
-    flutter run --dart-define=ASSOCMAP_DATA_MODE=mock --dart-define=ASSOCMAP_GIS_MODE=mock
-    flutter run --dart-define=ASSOCMAP_DATA_MODE=mock --dart-define=ASSOCMAP_GIS_MODE=live "--dart-define=ASSOCMAP_BACKEND_BASE_URL=<approved-https-base-url>"
+## Modes and persistence
 
-Replace the URL placeholder locally with the approved isolated backend. These commands
-were not executed. Live GIS with mock authentication does not enable real login.
+- `ASSOCMAP_DATA_MODE=api`: real SDK authentication and Laravel data; missing or
+  invalid configuration blocks login. There is no demo fallback.
+- `ASSOCMAP_DATA_MODE=mock`: synthetic in-memory authentication, disabled in
+  release builds. Dashboard and Reports never fabricate organizational data.
+- `ASSOCMAP_GIS_MODE=live|mock`: independently selects the public GIS adapter.
+  With no GIS override, API mode selects live GIS and mock mode selects fixtures.
+- Sessions use `flutter_secure_storage`, not ordinary preference storage.
+  Passwords and report/dashboard snapshots are not persisted. Restored sessions
+  must pass Laravel `/api/v1/me` again before protected navigation is available.
+- Protected requests use HTTPS bearer authentication. A 401 permits one safe GET
+  retry after SDK refresh; a repeated 401 or 403 removes protected access.
+  Outages retain their error state instead of becoming empty or synthetic data.
 
-In debug/profile mock authentication, open Association access, choose a synthetic
-scenario and use Fill demo credentials. Do not enter genuine credentials. Demo
-sessions last 15 minutes, are not persisted, and are disabled in release builds.
+The default unconfigured debug run remains the existing synthetic demo. Use
+the staging configuration explicitly for the evaluation APK.
 
-## Documentation
+## Verification
 
-- [Current public GIS implementation, exact files/contracts and verification procedure](docs/public-gis-integration.md)
-- [Architecture, flow, security and defense notes](docs/mobile-architecture.md)
-- [Desktop 1 backend handoff](docs/backend-contract-requirements.md)
-- [Historical Phase 3 authentication findings and demo guide](docs/phase-3-authentication.md)
-- [Original Friday readiness audit and approved plan](docs/friday-prototype-readiness.md)
-- [Current integration checklist](docs/integration-checklist.md)
-- [Safe manual verification](docs/manual-verification.md)
-- [Development status and historical execution records](docs/development-status.md)
+See [M1 device acceptance](docs/m1-acceptance.md) for the manual release gate.
+Automated SDK/HTTP tests use synthetic sessions and fake responses. They do not
+prove a valid account can sign in to shared staging or that Android secure
+storage works on a physical device. A real-account device check remains required.
 
-Current Laravel reference source includes eligibility and association context in
-GET /api/v1/me. Its parser is prepared, but real authentication remains blocked.
-No approved manuscript/Appendix N was available in the previous audit.
-The historical 63-test pass applies to earlier source. Newly authored fake-HTTP,
-geometry and widget tests have not been executed. No backend/Supabase modifications,
-live requests, builds, migrations or device launches were performed in this task.
+Existing documents under `docs/` describe earlier phases; statements that live
+authentication is pending in those historical documents predate Mobile M1.

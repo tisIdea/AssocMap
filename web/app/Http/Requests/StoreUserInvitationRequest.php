@@ -3,8 +3,8 @@
 namespace App\Http\Requests;
 
 use App\Models\Association;
-use App\Models\AssociationAccount;
 use App\Models\Role;
+use App\Services\UserInvitationService;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
@@ -58,10 +58,13 @@ class StoreUserInvitationRequest extends FormRequest
                 if ($associationId !== null) $validator->errors()->add('association_id', 'Field Officer invitations do not assign or replace an association officer.');
                 return;
             }
-            if (! $associationId || ! Association::whereKey($associationId)->where('status', 'active')->whereNull('archived_at')->exists()) {
-                $validator->errors()->add('association_id', 'Select an active, unarchived association.');
-            } elseif (AssociationAccount::where('association_id', $associationId)->exists()) {
-                $validator->errors()->add('association_id', 'This association already has an account link. Reconcile that link before inviting another account.');
+            $association = $associationId ? Association::find($associationId) : null;
+            if (! $association) {
+                $validator->errors()->add('association_id', 'Select an existing association for this invitation.');
+            } elseif ($association->status !== 'active' || $association->archived_at !== null) {
+                $validator->errors()->add('association_id', 'This association is not currently eligible for account invitation.');
+            } elseif ($conflict = app(UserInvitationService::class)->associationConflictMessage($association)) {
+                $validator->errors()->add('association_id', $conflict);
             }
         }];
     }
