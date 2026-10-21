@@ -6,6 +6,7 @@ use App\Services\InvitationActivationContext;
 use App\Http\Requests\PasswordRecoveryRequest;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\Factory;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
@@ -291,6 +292,7 @@ class PasswordRecoveryTest extends TestCase
     public function test_verification_failure_logs_only_safe_classification_and_reference(): void
     {
         Log::spy();
+        Http::swap((new Factory)->preventStrayRequests());
         Http::fake(['*/auth/v1/verify' => Http::response(['code' => 'otp_expired',
             'msg' => 'Synthetic private provider message'], 403)]);
         $this->verifyLink()->assertRedirect(route('password.forgot'))->assertSessionHasErrors('recovery');

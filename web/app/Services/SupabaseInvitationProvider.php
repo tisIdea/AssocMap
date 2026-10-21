@@ -206,6 +206,25 @@ class SupabaseInvitationProvider
         return $result;
     }
 
+    public function confirmedInvitationIdentity(string $id, string $email): bool
+    {
+        if (! Str::isUuid($id) || ! $this->invitationConfigurationAvailable()) return false;
+        try {
+            $response = $this->adminRequest()->get(rtrim(config('services.supabase.url'), '/').'/auth/v1/admin/users/'.$id);
+        } catch (ConnectionException $exception) {
+            return false;
+        }
+        $body = SupabaseAuthResponse::jsonObject($response);
+
+        return $response->status() === 200 && $body !== null
+            && ! property_exists($body, 'error') && ! property_exists($body, 'error_code') && ! property_exists($body, 'code')
+            && is_string($body->id ?? null) && strtolower($body->id) === $id
+            && is_string($body->email ?? null) && mb_strtolower(trim($body->email)) === $email
+            && ($body->is_anonymous ?? false) === false
+            && $this->invitationCreatedAt($body->invited_at ?? null) !== null
+            && $this->invitationCreatedAt($body->email_confirmed_at ?? null) !== null;
+    }
+
     private function invitationSuccessResult(mixed $body, string $email): array
     {
         $invalidResponse = ['outcome' => 'uncertain', 'code' => 'provider_response_invalid'];

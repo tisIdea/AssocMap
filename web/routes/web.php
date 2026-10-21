@@ -95,6 +95,13 @@ Route::middleware([\App\Http\Middleware\GisRequestGuard::class, 'throttle:gis-re
 
 Route::prefix('invitation')->name('invitation.')->middleware('throttle:invitation-activation')
     ->group(function () {
+        $restart = \App\Http\Controllers\Auth\InvitationRestartController::class;
+        Route::get('/restart', [$restart, 'show'])->name('restart');
+        Route::post('/restart', [$restart, 'requestLink'])->middleware('throttle:password-recovery')->block(120, 3)->name('restart.store');
+        Route::get('/restart/{reference}', [$restart, 'callback'])->where('reference', '[A-Za-z0-9]{64}')
+            ->block(120, 3)->name('restart.callback');
+        Route::post('/restart/{reference}/verify', [$restart, 'verify'])->where('reference', '[A-Za-z0-9]{64}')
+            ->block(120, 3)->name('restart.verify');
         Route::get('/', [InvitationActivationController::class, 'showVerification'])->block(120, 3)->name('verify');
         Route::post('/verify', [InvitationActivationController::class, 'verify'])->block(120, 3)->name('verify.store');
         Route::get('/password', [InvitationActivationController::class, 'showPassword'])->block(120, 3)->name('password');

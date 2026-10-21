@@ -54,10 +54,12 @@ class AppServiceProvider extends ServiceProvider
             ];
         });
         RateLimiter::for('password-recovery', function (Request $request) {
-            $throttled = fn (Request $request, array $headers) => app(\App\Http\Controllers\Auth\PasswordRecoveryController::class)
-                ->throttled($request, $headers);
+            $throttled = $request->is('invitation/restart')
+                ? fn (Request $request, array $headers) => response()->view('auth.invitation-restart', ['restartThrottled' => true], 429, $headers)
+                : fn (Request $request, array $headers) => app(\App\Http\Controllers\Auth\PasswordRecoveryController::class)
+                    ->throttled($request, $headers);
             $limits = [Limit::perMinute(20)->by('recovery-ip:'.$request->ip())->response($throttled)];
-            if ($request->isMethod('post') && $request->is('forgot-password', 'forgot-password/resend')) {
+            if ($request->isMethod('post') && $request->is('forgot-password', 'forgot-password/resend', 'invitation/restart')) {
                 $confirmation = $request->session()->get('recovery_request');
                 $email = $request->is('forgot-password/resend')
                     ? (is_array($confirmation) ? ($confirmation['email'] ?? null) : null) : $request->input('email');

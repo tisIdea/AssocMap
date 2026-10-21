@@ -133,6 +133,8 @@
                     </p>
                 </form>
 
+                <p class="staff-login-note"><a href="{{ route('invitation.restart') }}">Resume account activation</a></p>
+
                 <a
                     href="{{ route('home') }}"
                     class="staff-login-back"

@@ -14,6 +14,20 @@ class SupabasePasswordRecoveryProvider
 
     public function request(string $email): void
     {
+        $this->sendRecovery($email, '/password-recovery');
+    }
+
+    public function requestInvitationRestart(string $email, string $reference): void
+    {
+        if (config('services.supabase.invitation_restart_enabled') !== true
+            || ! preg_match('/\A[A-Za-z0-9]{64}\z/D', $reference)) {
+            throw new RuntimeException('invitation_restart_unavailable');
+        }
+        $this->sendRecovery($email, '/invitation/restart/'.$reference);
+    }
+
+    private function sendRecovery(string $email, string $callbackPath): void
+    {
         $origin = config('app.url');
         $parts = is_string($origin) ? parse_url($origin) : false;
         if (! $this->auth->activationConfigurationAvailable() || ! is_array($parts)
@@ -24,7 +38,7 @@ class SupabasePasswordRecoveryProvider
         }
         // The callback is server configured, never supplied by the visitor.
         $url = rtrim(config('services.supabase.url'), '/').'/auth/v1/recover?'.http_build_query([
-            'redirect_to' => rtrim($origin, '/').'/password-recovery',
+            'redirect_to' => rtrim($origin, '/').$callbackPath,
         ]);
         $response = $this->requestClient()->post($url, ['email' => $email]);
         $body = SupabaseAuthResponse::jsonObject($response);

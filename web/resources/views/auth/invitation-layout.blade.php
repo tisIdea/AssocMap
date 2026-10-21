@@ -21,7 +21,7 @@
                     button.disabled = !valid;
                     note.hidden = valid;
                     if (!valid) {
-                        note.textContent = 'This page has no usable invitation token. Reopen the original activation link from your invitation email. If the link is unavailable, expired, or already used, contact the administrator for recovery.';
+                        note.textContent = note.getAttribute?.('data-invalid-message') || 'This page has no usable invitation token. Reopen the original activation link from your invitation email. If the link is unavailable, expired, or already used, contact the administrator for recovery.';
                         note.setAttribute('role', 'alert');
                     }
                     verification.addEventListener('submit', (event) => {

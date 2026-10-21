@@ -52,6 +52,7 @@ return [
     'service_role_key' => env('SUPABASE_SERVICE_ROLE_KEY'),
     'invitation_redirect_url' => env('SUPABASE_INVITATION_REDIRECT_URL'),
     'activation_cache_store' => env('SUPABASE_ACTIVATION_CACHE_STORE', 'database'),
+    'invitation_restart_enabled' => env('SUPABASE_INVITATION_RESTART_ENABLED', false),
 ],
 
 ];

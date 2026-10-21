@@ -99,6 +99,9 @@ class InvitationActivationService
             $invitation->accepted_at = $activatedAt;
             $invitation->last_error_code = null;
             $invitation->save();
+            if (($context['recovery_origin'] ?? null) === 'invitation_restart') {
+                app(InvitationRestartAudit::class)->record($invitation, 'activation_completed', true);
+            }
         });
     }
 

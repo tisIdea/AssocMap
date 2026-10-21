@@ -708,7 +708,7 @@ class UserManagementTest extends TestCase
         $this->actor = $target;
         $this->get('/_tests/revocation-probe')->assertRedirect(route('login'))
             ->assertSessionMissing('supabase_access_token');
-        $this->withHeader('Authorization', 'Bearer synthetic-existing-token')->getJson('/api/v1/me')->assertForbidden();
+        $this->withHeader('Authorization', 'Bearer synthetic.header.signature')->getJson('/api/v1/me')->assertForbidden();
         $this->get('/_tests/revocation-probe')->assertRedirect(route('login'));
     }
 
