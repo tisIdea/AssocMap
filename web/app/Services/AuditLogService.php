@@ -16,6 +16,7 @@ class AuditLogService
     private const MAX_SNAPSHOT_BYTES = 131072;
 
     private const DISPLAY_FIELDS = [
+        'association' => ['primary_field_officer_id'],
         'monitoring_harvest_entry' => ['monitoring_production_id', 'harvest_date', 'quantity', 'remarks',
             'created_by', 'updated_by', 'voided_at', 'voided_by', 'void_reason'],
         'monitoring_production_goal' => ['target_output', 'reason'],
@@ -64,7 +65,9 @@ class AuditLogService
                 throw new InvalidArgumentException('Audit snapshot fields must be explicitly permitted and non-sensitive.');
             }
         }
-        if (count($allowedSnapshotFields) > 50) throw new InvalidArgumentException('Too many audit snapshot fields.');
+        if (count($allowedSnapshotFields) > 50) {
+            throw new InvalidArgumentException('Too many audit snapshot fields.');
+        }
         $id = (string) Str::uuid();
         $values = [
             'id' => $id, 'actor_user_id' => $actor->id, 'action_type' => $action, 'module' => $module,
@@ -77,19 +80,25 @@ class AuditLogService
             $values['ip_address'] = filter_var($request->ip(), FILTER_VALIDATE_IP) ?: null;
             $values['user_agent'] = mb_substr(preg_replace('/[\x00-\x1F\x7F]/u', '', $request->userAgent() ?? '') ?? '', 0, 500);
         }
-        if (! DB::table('audit_logs')->insert($values)) throw new RuntimeException('The required audit event could not be recorded.');
+        if (! DB::table('audit_logs')->insert($values)) {
+            throw new RuntimeException('The required audit event could not be recorded.');
+        }
 
         return $id;
     }
 
     public function formatSnapshot(mixed $values, ?string $entityType): array
     {
-        if ($values === null) return ['json' => null, 'message' => 'No snapshot was recorded.'];
+        if ($values === null) {
+            return ['json' => null, 'message' => 'No snapshot was recorded.'];
+        }
         if (! isset(self::DISPLAY_FIELDS[$entityType ?? ''])) {
             return ['json' => null, 'message' => 'Change details are not enabled for this entity type.'];
         }
         try {
-            if (! is_array($values)) throw new InvalidArgumentException('Unsupported snapshot.');
+            if (! is_array($values)) {
+                throw new InvalidArgumentException('Unsupported snapshot.');
+            }
             $encoded = $this->encodeSnapshot($values, self::DISPLAY_FIELDS[$entityType]);
             $json = $encoded === null ? null : json_encode(json_decode($encoded, true, 16, JSON_THROW_ON_ERROR),
                 JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
@@ -113,34 +122,52 @@ class AuditLogService
 
     private function encodeSnapshot(?array $values, array $allowedFields): ?string
     {
-        if ($values === null || $allowedFields === []) return null;
+        if ($values === null || $allowedFields === []) {
+            return null;
+        }
         $permitted = array_intersect_key($values, array_fill_keys($allowedFields, true));
-        if ($permitted === []) return null;
+        if ($permitted === []) {
+            return null;
+        }
         $remaining = 12000;
         $safe = $this->sanitize($permitted, 0, $remaining);
         $json = json_encode($safe, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
-        if (strlen($json) > self::MAX_SNAPSHOT_BYTES) throw new InvalidArgumentException('Audit snapshot exceeds the supported size.');
+        if (strlen($json) > self::MAX_SNAPSHOT_BYTES) {
+            throw new InvalidArgumentException('Audit snapshot exceeds the supported size.');
+        }
 
         return $json;
     }
 
     private function sanitize(mixed $value, int $depth, int &$remaining): mixed
     {
-        if ($depth > 8 || --$remaining < 0) throw new InvalidArgumentException('Audit snapshot exceeds the supported structure limits.');
-        if ($value instanceof DateTimeInterface) return $value->format('Y-m-d\TH:i:s.uP');
+        if ($depth > 8 || --$remaining < 0) {
+            throw new InvalidArgumentException('Audit snapshot exceeds the supported structure limits.');
+        }
+        if ($value instanceof DateTimeInterface) {
+            return $value->format('Y-m-d\TH:i:s.uP');
+        }
         if (is_array($value)) {
             $safe = [];
             foreach ($value as $key => $item) {
-                if (is_string($key) && ($this->sensitiveKey($key) || strlen($key) > 100)) continue;
+                if (is_string($key) && ($this->sensitiveKey($key) || strlen($key) > 100)) {
+                    continue;
+                }
                 $safe[$key] = $this->sanitize($item, $depth + 1, $remaining);
             }
+
             return $safe;
         }
         if (is_string($value)) {
-            if (! mb_check_encoding($value, 'UTF-8') || mb_strlen($value) > 4000) throw new InvalidArgumentException('Audit snapshot text is invalid or too long.');
+            if (! mb_check_encoding($value, 'UTF-8') || mb_strlen($value) > 4000) {
+                throw new InvalidArgumentException('Audit snapshot text is invalid or too long.');
+            }
+
             return $value;
         }
-        if ($value === null || is_bool($value) || is_int($value) || (is_float($value) && is_finite($value))) return $value;
+        if ($value === null || is_bool($value) || is_int($value) || (is_float($value) && is_finite($value))) {
+            return $value;
+        }
 
         throw new InvalidArgumentException('Audit snapshots must contain JSON values.');
     }

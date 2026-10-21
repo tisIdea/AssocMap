@@ -2,9 +2,9 @@
 
 namespace App\Http\Requests;
 
-use App\Services\AssociationGeographyService;
 use App\Models\Association;
 use App\Models\AssociationRegistration;
+use App\Services\AssociationGeographyService;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -20,6 +20,11 @@ class StoreAssociationRequest extends FormRequest
 
     protected function prepareForValidation(): void
     {
+        foreach (['primary_field_officer_id', 'expected_primary_field_officer_id'] as $field) {
+            if (is_string($this->input($field))) {
+                $this->merge([$field => strtolower(trim($this->input($field)))]);
+            }
+        }
         if ($this->exists('specific_address') && is_string($this->input('specific_address'))) {
             $address = trim($this->input('specific_address'));
             $this->merge(['specific_address' => $address === '' ? null : $address]);
@@ -70,9 +75,9 @@ class StoreAssociationRequest extends FormRequest
             'primary_field_officer_id' => [
                 'required',
                 'uuid',
-                Rule::exists('user_profiles', 'id')
-                    ->where('is_active', true),
+                Rule::exists('user_profiles', 'id'),
             ],
+            'expected_primary_field_officer_id' => [$this->isMethod('POST') ? 'prohibited' : 'required', 'uuid'],
 
             'status' => [
                 'required',
@@ -96,7 +101,9 @@ class StoreAssociationRequest extends FormRequest
                 'registration' => ['sometimes', 'array:id,expected_updated_at,registration_number,registration_date,expiration_date,remarks',
                     'required_array_keys:id,expected_updated_at,registration_number,registration_date'],
                 'registration.id' => ['bail', 'required_with:registration', 'uuid', function ($attribute, $value, $fail) use ($record) {
-                    if (! $record) $fail('Select an existing accreditation record for this association with an active issuing agency.');
+                    if (! $record) {
+                        $fail('Select an existing accreditation record for this association with an active issuing agency.');
+                    }
                 }],
                 'registration.expected_updated_at' => ['required_with:registration', 'string', 'max:50'],
                 'registration.agency_id' => ['prohibited'],

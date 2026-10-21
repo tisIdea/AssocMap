@@ -8,6 +8,7 @@ use App\Services\SupabaseAuthService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
+use Illuminate\Testing\TestResponse;
 use LogicException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
@@ -15,8 +16,11 @@ use Tests\TestCase;
 class AuditLogAccessTest extends TestCase
 {
     private const ADMIN = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+
     private const OFFICER = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+
     private const ASSOCIATION = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+
     private const EVENT = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
 
     protected function setUp(): void
@@ -191,7 +195,9 @@ class AuditLogAccessTest extends TestCase
         $event = AuditLog::findOrFail(self::EVENT);
         foreach (['update', 'delete'] as $operation) {
             try {
-                if ($operation === 'update') $event->action_type = 'TAMPERED';
+                if ($operation === 'update') {
+                    $event->action_type = 'TAMPERED';
+                }
                 $operation === 'update' ? $event->save() : $event->delete();
                 $this->fail('Audit mutation should have failed.');
             } catch (LogicException $exception) {
@@ -216,8 +222,10 @@ class AuditLogAccessTest extends TestCase
             }
         };
         $one = $countQueries();
-        for ($i = 0; $i < 25; $i++) $this->event(['id' => (string) Str::uuid(), 'actor_user_id' => $i % 2 ? self::OFFICER : self::ASSOCIATION]);
-        $this->assertSame(10, $one);
+        for ($i = 0; $i < 25; $i++) {
+            $this->event(['id' => (string) Str::uuid(), 'actor_user_id' => $i % 2 ? self::OFFICER : self::ASSOCIATION]);
+        }
+        $this->assertSame(9, $one);
         $this->assertSame($one, $countQueries());
     }
 
@@ -424,7 +432,9 @@ class AuditLogAccessTest extends TestCase
 
     public function test_all_four_selections_persist_on_refresh_and_paginated_links(): void
     {
-        for ($i = 1; $i <= 26; $i++) $this->event(['id' => sprintf('%08d-dddd-4ddd-8ddd-dddddddddddd', $i), 'actor_user_id' => self::OFFICER]);
+        for ($i = 1; $i <= 26; $i++) {
+            $this->event(['id' => sprintf('%08d-dddd-4ddd-8ddd-dddddddddddd', $i), 'actor_user_id' => self::OFFICER]);
+        }
         $this->event();
         $filters = ['action_type' => 'ARCHIVE MEMBER', 'module' => 'Member Management', 'entity_type' => 'member', 'actor_user_id' => self::OFFICER,
             'date_from' => '2026-10-18', 'date_to' => '2026-10-18', 'per_page' => 25];
@@ -439,7 +449,9 @@ class AuditLogAccessTest extends TestCase
         $next = $xpath->query('//nav[@aria-label="Audit pagination"]/a[@rel="next"]')->item(0);
         $this->assertNotNull($next);
         parse_str(parse_url($next->getAttribute('href'), PHP_URL_QUERY), $nextFilters);
-        foreach ($filters as $field => $value) $this->assertSame((string) $value, $nextFilters[$field]);
+        foreach ($filters as $field => $value) {
+            $this->assertSame((string) $value, $nextFilters[$field]);
+        }
         $this->get($next->getAttribute('href'))->assertOk()->assertViewHas('logs', fn ($logs) => $logs->total() === 26 && $logs->count() === 1);
         $this->get('/admin/audit-logs')->assertOk()->assertViewHas('logs', fn ($logs) => $logs->total() === 27);
     }
@@ -475,21 +487,35 @@ class AuditLogAccessTest extends TestCase
         DB::flushQueryLog();
         try {
             $response = $this->signIn()->get('/admin/audit-logs')->assertOk();
-            $this->assertCount(10, DB::getQueryLog());
+            $this->assertCount(9, DB::getQueryLog());
             $xpath = $this->document($response);
-            foreach (['action_type', 'module', 'entity_type'] as $field) $this->assertSame(106, $xpath->query('//select[@name="'.$field.'"]/option[@value!=""]')->length);
+            foreach (['action_type', 'module', 'entity_type'] as $field) {
+                $this->assertSame(106, $xpath->query('//select[@name="'.$field.'"]/option[@value!=""]')->length);
+            }
             $this->assertSame(106, $xpath->query('//select[@name="actor_user_id"]/option[@value!="" and @value!="unavailable"]')->length);
             DB::flushQueryLog();
             $filters = ['action_type' => 'RECORDED ACTION 105', 'module' => 'Recorded Module 105', 'entity_type' => 'recorded_entity_105', 'actor_user_id' => $actorId];
             $this->get('/admin/audit-logs?'.http_build_query($filters))->assertOk()
                 ->assertViewHas('logs', fn ($logs) => $logs->total() === 1 && $logs->first()->actor_user_id === $actorId);
-            $this->assertCount(10, DB::getQueryLog());
+            $this->assertCount(9, DB::getQueryLog());
         } finally {
             DB::disableQueryLog();
         }
     }
 
-    private function document(\Illuminate\Testing\TestResponse $response): \DOMXPath
+    public function test_assignment_snapshots_display_only_the_approved_officer_identifier(): void
+    {
+        $this->event(['action_type' => 'REASSIGN FIELD OFFICER', 'entity_type' => 'association', 'entity_id' => self::EVENT,
+            'old_values' => json_encode(['primary_field_officer_id' => self::OFFICER]),
+            'new_values' => json_encode(['primary_field_officer_id' => self::ASSOCIATION,
+                'password' => 'Synthetic hidden password', 'access_token' => 'Synthetic hidden token', 'unexpected' => 'Synthetic hidden data'])]);
+        $this->signIn()->get('/admin/audit-logs/'.self::EVENT)->assertOk()->assertSee('primary_field_officer_id')
+            ->assertSee(self::OFFICER)->assertSee(self::ASSOCIATION)->assertDontSee('Synthetic hidden');
+        $formatted = app(AuditLogService::class)->formatSnapshot(['primary_field_officer_id' => null], 'association');
+        $this->assertSame(['primary_field_officer_id' => null], json_decode($formatted['json'], true));
+    }
+
+    private function document(TestResponse $response): \DOMXPath
     {
         $previous = libxml_use_internal_errors(true);
         try {

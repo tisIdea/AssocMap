@@ -7,8 +7,8 @@ use App\Models\Area;
 use App\Models\Association;
 use App\Models\AssociationRegistration;
 use App\Models\Barangay;
-use App\Models\Municipality;
 use App\Models\Member;
+use App\Models\Municipality;
 use App\Models\ProgramActivityRecord;
 use App\Models\Project;
 use App\Models\RegistrationAgency;
@@ -24,7 +24,7 @@ class AssociationDirectoryQueryService
     private const EDITOR_CHOICE_LIMIT = 5000;
 
     public function __construct(private AssociationOfficerService $officers, private AssociationLifecycleService $lifecycle,
-        private AssociationGeographyService $geography) {}
+        private AssociationGeographyService $geography, private FieldOfficerAssignmentService $assignments) {}
 
     private function barangayRelation(): string
     {
@@ -51,22 +51,27 @@ class AssociationDirectoryQueryService
     }
 
     /**
-     * @param array{q: string, status: string, municipality: string, barangay: string, field_officer: string, sort: string} $filters
+     * @param  array{q: string, status: string, municipality: string, barangay: string, field_officer: string, sort: string}  $filters
      * @return Builder<Association>
      */
     private function filtered(UserProfile $actor, array $filters, bool $geography = true): Builder
     {
         $query = $this->scoped($actor);
         $status = $filters['status'];
-        if ($status === 'archived') $query->whereNotNull('associations.archived_at');
-        elseif ($status !== 'all') {
+        if ($status === 'archived') {
+            $query->whereNotNull('associations.archived_at');
+        } elseif ($status !== 'all') {
             $query->whereNull('associations.archived_at');
-            if ($status !== '') $query->where('associations.status', $status);
+            if ($status !== '') {
+                $query->where('associations.status', $status);
+            }
         }
         foreach (['municipality' => $this->barangayRelation().'.municipality', 'barangay' => $this->barangayRelation(),
             'field_officer' => 'primaryFieldOfficer'] as $key => $relation) {
-            if ($filters[$key] !== '') $query->whereHas($relation,
-                fn ($related) => $related->where($key === 'field_officer' ? 'display_name' : 'name', $filters[$key]));
+            if ($filters[$key] !== '') {
+                $query->whereHas($relation,
+                    fn ($related) => $related->where($key === 'field_officer' ? 'display_name' : 'name', $filters[$key]));
+            }
         }
         if ($filters['q'] !== '') {
             $pattern = '%'.str_replace(['!', '%', '_'], ['!!', '!%', '!_'], mb_strtolower($filters['q'])).'%';
@@ -86,10 +91,12 @@ class AssociationDirectoryQueryService
         $sort = $filters['sort'];
         if (in_array($sort, ['newest', 'oldest'], true)) {
             $query->orderBy($geography ? 'saad_phase2_join_date' : 'created_at', $sort === 'newest' ? 'desc' : 'asc');
-        } elseif ($sort === 'status') $query->orderBy('associations.status');
-        elseif ($sort === 'field_officer') $query->orderBy(UserProfile::query()->select('display_name')
-            ->whereColumn('user_profiles.id', 'associations.primary_field_officer_id'));
-        elseif (in_array($sort, ['municipality', 'barangay'], true)) {
+        } elseif ($sort === 'status') {
+            $query->orderBy('associations.status');
+        } elseif ($sort === 'field_officer') {
+            $query->orderBy(UserProfile::query()->select('display_name')
+                ->whereColumn('user_profiles.id', 'associations.primary_field_officer_id'));
+        } elseif (in_array($sort, ['municipality', 'barangay'], true)) {
             $location = $this->geography->usesDirectGeography()
                 ? Barangay::query()->whereColumn('barangays.id', 'associations.barangay_id')
                 : Area::query()->join('barangays', 'barangays.id', '=', 'areas.barangay_id')
@@ -103,7 +110,7 @@ class AssociationDirectoryQueryService
     }
 
     /**
-     * @param array{q: string, status: string, municipality: string, barangay: string, field_officer: string, sort: string} $filters
+     * @param  array{q: string, status: string, municipality: string, barangay: string, field_officer: string, sort: string}  $filters
      * @return LengthAwarePaginator<int, Association>
      */
     public function records(UserProfile $actor, array $filters): LengthAwarePaginator
@@ -119,7 +126,7 @@ class AssociationDirectoryQueryService
     }
 
     /**
-     * @param array{q: string, status: string, municipality: string, barangay: string, field_officer: string, sort: string} $filters
+     * @param  array{q: string, status: string, municipality: string, barangay: string, field_officer: string, sort: string}  $filters
      * @return LengthAwarePaginator<int, Association>
      */
     public function officerRecords(UserProfile $actor, array $filters): LengthAwarePaginator
@@ -147,8 +154,11 @@ class AssociationDirectoryQueryService
     public function filterChoices(UserProfile $actor): array
     {
         $query = $this->scoped($actor);
-        if ($this->geography->usesDirectGeography()) $query->join('barangays', 'barangays.id', '=', 'associations.barangay_id');
-        else $query->join('areas', 'areas.id', '=', 'associations.area_id')->join('barangays', 'barangays.id', '=', 'areas.barangay_id');
+        if ($this->geography->usesDirectGeography()) {
+            $query->join('barangays', 'barangays.id', '=', 'associations.barangay_id');
+        } else {
+            $query->join('areas', 'areas.id', '=', 'associations.area_id')->join('barangays', 'barangays.id', '=', 'areas.barangay_id');
+        }
         $locations = $query
             ->join('municipalities', 'municipalities.id', '=', 'barangays.municipality_id')
             ->leftJoin('user_profiles as assigned_officer', 'assigned_officer.id', '=', 'associations.primary_field_officer_id')
@@ -160,8 +170,8 @@ class AssociationDirectoryQueryService
     }
 
     /**
-     * @param 'members'|'projects'|'trainings'|'activities'|'registrations' $section
-     * @param array<string, mixed> $parameters
+     * @param  'members'|'projects'|'trainings'|'activities'|'registrations'  $section
+     * @param  array<string, mixed>  $parameters
      * @return array{association: Association, section: string,
      *     related: LengthAwarePaginator<int, Member|Project|Training|ProgramActivityRecord|AssociationRegistration>, canViewActivities: bool}
      */
@@ -171,7 +181,9 @@ class AssociationDirectoryQueryService
         abort_if($actor->role->code === 'field_officer' && $association->archived_at !== null, 403);
         $association->load([...$this->locationRelations(), 'primaryFieldOfficer:id,display_name']);
         $canViewActivities = $actor->role->code === 'system_admin' || $this->lifecycle->isOperational($association);
-        if (in_array($section, ['trainings', 'activities'], true)) abort_unless($canViewActivities, 403);
+        if (in_array($section, ['trainings', 'activities'], true)) {
+            abort_unless($canViewActivities, 403);
+        }
         $query = match ($section) {
             'members' => Member::query()->where('association_id', $association->id)->with('position:id,name')
                 ->orderBy('last_name')->orderBy('first_name')->orderBy('id')
@@ -201,17 +213,22 @@ class AssociationDirectoryQueryService
     {
         $recovering = $request->old('association_form') === 'editor';
         $editor = $request->validated('editor') ?? ($recovering ? $request->old('association_record_id', 'create') : null);
-        if (!$editor) return [];
+        if (! $editor) {
+            return [];
+        }
         $actor = $request->attributes->get('current_user');
         abort_unless($actor->role->code === 'system_admin', 403);
         $associationEditorRecord = null;
         if ($editor !== 'create' && Str::isUuid($editor)) {
-            if ($association) abort_unless(strtolower($association->id) === strtolower($editor), 404);
+            if ($association) {
+                abort_unless(strtolower($association->id) === strtolower($editor), 404);
+            }
             $record = $this->scoped($actor)->whereKey($editor)->firstOrFail();
             abort_if($record->archived_at !== null, 403);
             $associationEditorRecord = [
                 'id' => $record->id, 'name' => $record->name, 'acronym' => $record->acronym, 'area_id' => $record->area_id,
                 'primary_field_officer_id' => $record->primary_field_officer_id, 'joined_at' => $record->saad_phase2_join_date?->format('Y-m-d'),
+                'expected_primary_field_officer_id' => $record->primary_field_officer_id,
                 'status_value' => $record->status, 'update_url' => route('admin.associations.update', $record),
             ];
             if ($this->geography->usesDirectGeography()) {
@@ -232,10 +249,14 @@ class AssociationDirectoryQueryService
             ])->all();
             $selectedId = $request->validated('accreditation') ?? ($recovering ? $request->old('registration.id') : null);
             $selected = is_string($selectedId) ? collect($associationEditorRecord['accreditations'])->firstWhere('id', $selectedId) : null;
-            if ($request->validated('accreditation')) abort_unless($selected && $selected['agency_active'] && $this->lifecycle->isOperational($record), 404);
+            if ($request->validated('accreditation')) {
+                abort_unless($selected && $selected['agency_active'] && $this->lifecycle->isOperational($record), 404);
+            }
             $associationEditorRecord['selected_accreditation'] = $selected && $selected['agency_active'] && $this->lifecycle->isOperational($record) ? $selected : null;
         }
-        if ($editor === 'create' && $request->validated('accreditation')) abort(404);
+        if ($editor === 'create' && $request->validated('accreditation')) {
+            abort(404);
+        }
         $catalog = require resource_path('ui/admin.php');
         $areaQuery = Area::query()->where('is_active', true)
             ->with(['barangay:id,name,municipality_id', 'barangay.municipality:id,name'])
@@ -247,10 +268,10 @@ class AssociationDirectoryQueryService
         $areas = $this->geography->enabled() ? $this->editorChoices($areaQuery, ['id', 'barangay_id', 'address'])
             : $areaQuery->get(['id', 'barangay_id', 'address']);
         $catalog['options']['area_records'] = $areas->map(fn ($area) => [
-                'value' => $area->id, 'label' => $area->address, 'barangay' => $area->barangay?->name,
-                'barangay_id' => $area->barangay_id, 'municipality' => $area->barangay?->municipality?->name,
-                'municipality_id' => $area->barangay?->municipality_id,
-            ])->all();
+            'value' => $area->id, 'label' => $area->address, 'barangay' => $area->barangay?->name,
+            'barangay_id' => $area->barangay_id, 'municipality' => $area->barangay?->municipality?->name,
+            'municipality_id' => $area->barangay?->municipality_id,
+        ])->all();
         if ($this->geography->enabled()) {
             $catalog['options']['municipality_records'] = $this->editorChoices(Municipality::where('is_active', true)->orderBy('name')->orderBy('id'), ['id', 'name'])
                 ->map(fn ($record) => ['value' => $record->id, 'label' => $record->name])->all();
@@ -258,14 +279,25 @@ class AssociationDirectoryQueryService
                 ->whereHas('municipality', fn ($query) => $query->where('is_active', true))->orderBy('name')->orderBy('id'), ['id', 'name', 'municipality_id'])
                 ->map(fn ($record) => ['value' => $record->id, 'label' => $record->name, 'municipality_id' => $record->municipality_id])->all();
         }
-        $catalog['options']['field_officer_records'] = UserProfile::query()->where('is_active', true)
-            ->whereHas('role', fn ($role) => $role->where('code', 'field_officer'))->orderBy('display_name')
-            ->get(['id', 'display_name'])->map(fn ($user) => ['value' => $user->id, 'label' => $user->display_name])->all();
+        $officers = UserProfile::query()->where('is_active', true)->whereNotNull('activated_at')
+            ->whereHas('role', fn ($role) => $role->where('code', 'field_officer')->where('is_active', true))
+            ->with('role')->orderBy('display_name')->orderBy('id')->get()
+            ->filter(fn ($officer) => $this->assignments->eligibleOfficer($officer));
+        $catalog['options']['field_officer_records'] = $officers
+            ->map(fn ($user) => ['value' => $user->id, 'label' => $user->display_name])->values()->all();
+        if ($associationEditorRecord && ! $officers->contains('id', $associationEditorRecord['primary_field_officer_id'])) {
+            $recordedOfficer = UserProfile::find($associationEditorRecord['primary_field_officer_id']);
+            $catalog['options']['field_officer_records'][] = [
+                'value' => $associationEditorRecord['primary_field_officer_id'],
+                'label' => ($recordedOfficer?->display_name ?? 'Recorded officer').' (retained current assignment)',
+            ];
+            $associationEditorRecord['retained_officer'] = true;
+        }
         $catalog['options']['registration_agencies'] = RegistrationAgency::where('is_active', true)->orderBy('name')
             ->get(['id', 'name', 'registration_kind'])->map(fn ($agency) => [
                 'value' => $agency->id, 'label' => $agency->name.' ('.$agency->registration_kind.')',
             ])->all();
-        $associationOpenEditor = !$recovering;
+        $associationOpenEditor = ! $recovering;
         $module = $catalog['modules']['associations'];
         $module['rows'] = $associationEditorRecord ? [$associationEditorRecord] : [];
 

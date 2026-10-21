@@ -36,6 +36,9 @@
         <input type="hidden" name="association_form" value="editor">
         <input type="hidden" name="_method" value="PATCH" data-association-method @disabled(!$editingAssociation)>
         <input type="hidden" name="association_record_id" value="{{ $editingAssociation['id'] ?? '' }}" @disabled(!$editingAssociation)>
+        @if($editingAssociation)
+            <input type="hidden" name="expected_primary_field_officer_id" value="{{ $associationOld('expected_primary_field_officer_id') }}">
+        @endif
         @if($geography->usesDirectGeography() && $editingAssociation)
             <input type="hidden" name="expected_updated_at" value="{{ $associationOld('expected_updated_at') }}">
         @endif
@@ -81,6 +84,9 @@
             @endif
             <x-field :field="['name' => 'saad_phase2_join_date', 'label' => 'SAAD Phase II Join Date', 'type' => 'date', 'required' => true]" prefix="association-editor" :value="$associationOld('saad_phase2_join_date')" />
             <x-field :field="['name' => 'primary_field_officer_id', 'label' => 'Primary Field Officer', 'type' => 'select', 'choices' => $catalog['options']['field_officer_records'] ?? [], 'required' => true]" prefix="association-editor" :value="$associationOld('primary_field_officer_id')" />
+            @if($editingAssociation['retained_officer'] ?? false)
+                <p class="field-wide notice">The current officer is retained for historical continuity. You may keep this designation for other permitted edits. A replacement must be an eligible, activated Field Officer.</p>
+            @endif
             <x-field :field="['name' => 'status', 'label' => 'Status', 'type' => 'select', 'choices' => [['value' => 'active', 'label' => 'Active'], ['value' => 'inactive', 'label' => 'Inactive']], 'required' => true]" prefix="association-editor" :value="$associationOld('status', 'active')" />
         </div>
         @if($editingAssociation)

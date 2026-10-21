@@ -2,14 +2,15 @@
 
 namespace Tests\Feature;
 
+use App\Exceptions\InvitationActivationException;
 use App\Models\Association;
 use App\Models\UserProfile;
 use App\Services\AuditLogService;
+use App\Services\FieldOfficerAssignmentService;
 use App\Services\InvitationActivationService;
-use App\Services\UserAccessRevocationService;
-use App\Exceptions\InvitationActivationException;
-use App\Services\ProfileAuthIdentityService;
 use App\Services\MemberApplicationPhotoService;
+use App\Services\ProfileAuthIdentityService;
+use App\Services\UserAccessRevocationService;
 use App\Services\UserManagementQueryService;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
@@ -20,6 +21,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Validation\ValidationException;
 use Mockery;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
@@ -28,18 +30,29 @@ use Tests\TestCase;
 class UserManagementTest extends TestCase
 {
     private const ADMIN = '11111111-1111-4111-8111-111111111111';
+
     private const OFFICER_A = '22222222-2222-4222-8222-222222222222';
+
     private const OFFICER_B = '33333333-3333-4333-8333-333333333333';
+
     private const ACCOUNT = '44444444-4444-4444-8444-444444444444';
+
     private const ASSOCIATION = '55555555-5555-4555-8555-555555555555';
+
     private const SECOND = '66666666-6666-4666-8666-666666666666';
+
     private const OTHER = '77777777-7777-4777-8777-777777777777';
+
     private const ARCHIVED = '88888888-8888-4888-8888-888888888888';
+
     private const APPLICATION = '99999999-9999-4999-8999-999999999999';
+
     private const LINK = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+
     private const INVITATION = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 
     private string $actor = self::ADMIN;
+
     private ?Collection $authIdentities;
 
     protected function setUp(): void
@@ -64,6 +77,7 @@ class UserManagementTest extends TestCase
         $reader = Mockery::mock(ProfileAuthIdentityService::class);
         $reader->shouldReceive('read')->andReturnUsing(function (array $ids) {
             $this->assertLessThanOrEqual(25, count($ids));
+
             return $this->authIdentities?->only($ids);
         });
         $this->app->instance(ProfileAuthIdentityService::class, $reader);
@@ -84,37 +98,67 @@ class UserManagementTest extends TestCase
     private function schema(): void
     {
         Schema::create('roles', function (Blueprint $table) {
-            $table->id(); $table->string('code'); $table->string('name'); $table->boolean('is_active'); $table->timestamps();
+            $table->id();
+            $table->string('code');
+            $table->string('name');
+            $table->boolean('is_active');
+            $table->timestamps();
             $table->text('description')->nullable();
         });
         Schema::create('user_profiles', function (Blueprint $table) {
-            $table->uuid('id')->primary(); $table->unsignedBigInteger('role_id'); $table->string('display_name');
-            $table->boolean('is_active'); $table->timestamp('activated_at')->nullable(); $table->timestamps();
+            $table->uuid('id')->primary();
+            $table->unsignedBigInteger('role_id');
+            $table->string('display_name');
+            $table->boolean('is_active');
+            $table->timestamp('activated_at')->nullable();
+            $table->timestamps();
         });
         Schema::create('associations', function (Blueprint $table) {
-            $table->uuid('id')->primary(); $table->string('name'); $table->string('status');
-            $table->uuid('primary_field_officer_id'); $table->uuid('updated_by')->nullable();
-            $table->timestamp('archived_at')->nullable(); $table->timestamps();
+            $table->uuid('id')->primary();
+            $table->string('name');
+            $table->string('status');
+            $table->uuid('primary_field_officer_id');
+            $table->uuid('updated_by')->nullable();
+            $table->timestamp('archived_at')->nullable();
+            $table->timestamps();
             $table->foreign('primary_field_officer_id')->references('id')->on('user_profiles');
         });
         Schema::create('association_accounts', function (Blueprint $table) {
-            $table->uuid('id')->primary(); $table->uuid('association_id')->unique(); $table->uuid('user_id')->unique();
-            $table->boolean('is_active'); $table->timestamps();
+            $table->uuid('id')->primary();
+            $table->uuid('association_id')->unique();
+            $table->uuid('user_id')->unique();
+            $table->boolean('is_active');
+            $table->timestamps();
         });
         Schema::create('user_invitations', function (Blueprint $table) {
-            $table->uuid('id')->primary(); $table->string('email'); $table->uuid('auth_user_id')->nullable();
-            $table->string('status'); $table->string('last_error_code')->nullable();
-            $table->timestamp('accepted_at')->nullable(); $table->timestamp('last_attempt_at')->nullable(); $table->timestamps();
+            $table->uuid('id')->primary();
+            $table->string('email');
+            $table->uuid('auth_user_id')->nullable();
+            $table->string('status');
+            $table->string('last_error_code')->nullable();
+            $table->timestamp('accepted_at')->nullable();
+            $table->timestamp('last_attempt_at')->nullable();
+            $table->timestamps();
         });
         Schema::create('audit_logs', function (Blueprint $table) {
-            $table->uuid('id')->primary(); $table->uuid('actor_user_id')->nullable(); $table->string('action_type');
-            $table->string('module'); $table->string('entity_type')->nullable(); $table->string('entity_id')->nullable();
-            $table->text('old_values')->nullable(); $table->text('new_values')->nullable(); $table->timestamp('performed_at');
+            $table->uuid('id')->primary();
+            $table->uuid('actor_user_id')->nullable();
+            $table->string('action_type');
+            $table->string('module');
+            $table->string('entity_type')->nullable();
+            $table->string('entity_id')->nullable();
+            $table->text('old_values')->nullable();
+            $table->text('new_values')->nullable();
+            $table->timestamp('performed_at');
         });
         Schema::create('member_applications', function (Blueprint $table) {
-            $table->uuid('id')->primary(); $table->uuid('association_id'); $table->string('status');
-            $table->uuid('reviewed_by')->nullable(); $table->timestamp('reviewed_at')->nullable();
-            $table->string('rejection_reason')->nullable(); $table->timestamps();
+            $table->uuid('id')->primary();
+            $table->uuid('association_id');
+            $table->string('status');
+            $table->uuid('reviewed_by')->nullable();
+            $table->timestamp('reviewed_at')->nullable();
+            $table->string('rejection_reason')->nullable();
+            $table->timestamps();
         });
     }
 
@@ -127,7 +171,7 @@ class UserManagementTest extends TestCase
         foreach ([self::ADMIN => [1, 'Synthetic Administrator'], self::OFFICER_A => [2, 'Synthetic Officer A'],
             self::OFFICER_B => [2, 'Synthetic Officer B'], self::ACCOUNT => [3, 'Synthetic Association Account']] as $id => $values) {
             DB::table('user_profiles')->insert(['id' => $id, 'role_id' => $values[0], 'display_name' => $values[1],
-                'is_active' => true, 'created_at' => now(), 'updated_at' => now()]);
+                'is_active' => true, 'activated_at' => now()->subDay(), 'created_at' => now()->subDays(2), 'updated_at' => now()]);
         }
         foreach ([self::ASSOCIATION => [self::OFFICER_A, 'First Synthetic Association', 'active', null],
             self::SECOND => [self::OFFICER_A, 'Second Synthetic Association', 'inactive', null],
@@ -200,8 +244,12 @@ class UserManagementTest extends TestCase
     public function test_assignment_without_csrf_token_cannot_change_records(): void
     {
         $this->app->bind(ValidateCsrfToken::class, function ($app) {
-            return new class($app, $app['encrypter']) extends ValidateCsrfToken {
-                protected function runningUnitTests() { return false; }
+            return new class($app, $app['encrypter']) extends ValidateCsrfToken
+            {
+                protected function runningUnitTests()
+                {
+                    return false;
+                }
             };
         });
         $this->withSession($this->actorSessionData())->patchJson($this->assignmentUrl(), $this->assignmentData())->assertStatus(419);
@@ -360,6 +408,15 @@ class UserManagementTest extends TestCase
 
     public function test_old_officer_loses_review_scope_and_new_officer_receives_it(): void
     {
+        Schema::create('monitoring_records', function (Blueprint $table) {
+            $table->uuid('id')->primary();
+            $table->uuid('project_id');
+            $table->uuid('monitored_by');
+            $table->text('remarks');
+        });
+        DB::table('monitoring_records')->insert(['id' => self::APPLICATION, 'project_id' => self::ASSOCIATION,
+            'monitored_by' => self::OFFICER_A, 'remarks' => 'Retained historical monitoring attribution']);
+        $monitoringHistory = DB::table('monitoring_records')->get()->toJson();
         $this->withSession($this->actorSessionData())->patchJson($this->assignmentUrl(), $this->assignmentData([self::ASSOCIATION]))->assertOk();
         $this->actor = self::OFFICER_A;
         $url = '/field-officer/member-applications/'.self::APPLICATION.'/reject';
@@ -371,6 +428,7 @@ class UserManagementTest extends TestCase
         $this->assertSame(self::OFFICER_B, DB::table('member_applications')->value('reviewed_by'));
         $this->assertSame(self::ACCOUNT, DB::table('association_accounts')->value('user_id'));
         $this->assertSame(self::ASSOCIATION, DB::table('association_accounts')->value('association_id'));
+        $this->assertSame($monitoringHistory, DB::table('monitoring_records')->get()->toJson());
     }
 
     private function realIdentityLookup(): void
@@ -675,7 +733,9 @@ class UserManagementTest extends TestCase
         $this->assertSame($role, $profile->role->code);
         $this->assertSame('cancelled', DB::table('user_invitations')->where('id', $pending)->value('status'));
         $this->assertSame('accepted', DB::table('user_invitations')->where('id', self::INVITATION)->value('status'));
-        foreach ($before as $table => $rows) $this->assertSame($rows, DB::table($table)->orderBy('id')->get()->toJson());
+        foreach ($before as $table => $rows) {
+            $this->assertSame($rows, DB::table($table)->orderBy('id')->get()->toJson());
+        }
         $audit = DB::table('audit_logs')->sole();
         $this->assertSame(self::ADMIN, $audit->actor_user_id);
         $this->assertSame(UserAccessRevocationService::ACTION, $audit->action_type);
@@ -860,5 +920,66 @@ class UserManagementTest extends TestCase
         $this->assertCount(2, $references);
         $this->assertCount(0, $query->invitationReferences('association', null));
         $this->assertCount(0, $query->invitationReferences('association_@example.test', null));
+    }
+
+    public function test_assignment_eligibility_does_not_require_an_existing_association_or_change_login_rules(): void
+    {
+        DB::table('associations')->where('primary_field_officer_id', self::OFFICER_B)->update(['primary_field_officer_id' => self::OFFICER_A]);
+        $officer = UserProfile::with('role')->findOrFail(self::OFFICER_B);
+        $this->assertSame(0, $officer->assignedAssociations()->count());
+        $this->assertTrue($officer->canAccessApplication());
+        Route::middleware(['web', 'supabase.auth', 'role:field_officer'])->get('/_tests/unassigned-officer', fn () => response('Authorized officer'));
+        $this->actor = self::OFFICER_B;
+        $this->withSession($this->actorSessionData())->get('/_tests/unassigned-officer')->assertOk();
+        $this->patchJson('/field-officer/member-applications/'.self::APPLICATION.'/reject', ['rejection_reason' => 'Unauthorized direct attempt'])
+            ->assertUnprocessable()->assertJsonValidationErrors('reviewer');
+        $this->assertSame('pending', DB::table('member_applications')->value('status'));
+        $this->actor = self::ADMIN;
+        $this->patchJson($this->assignmentUrl(), $this->assignmentData([self::ASSOCIATION]))->assertOk()->assertJsonPath('changed', 1);
+        $this->assertSame(1, $officer->assignedAssociations()->count());
+        $this->assertSame(1, DB::table('audit_logs')->count());
+    }
+
+    public function test_assignment_cannot_select_a_revoked_officer_and_preserves_their_existing_designations(): void
+    {
+        $request = new Request;
+        $request->attributes->set('current_user', UserProfile::with('role')->findOrFail(self::ADMIN));
+        app(UserAccessRevocationService::class)->revoke($request, UserProfile::findOrFail(self::OFFICER_B));
+        $before = DB::table('associations')->orderBy('id')->get()->toJson();
+        $this->withSession($this->actorSessionData())->patchJson($this->assignmentUrl(), $this->assignmentData([self::ASSOCIATION]))
+            ->assertUnprocessable()->assertJsonValidationErrors('officer');
+        $this->assertSame($before, DB::table('associations')->orderBy('id')->get()->toJson());
+        $this->assertSame(UserAccessRevocationService::ACTION, DB::table('audit_logs')->sole()->action_type);
+        $this->assertFalse(UserProfile::findOrFail(self::OFFICER_B)->is_active);
+    }
+
+    public static function assignmentTargetChanges(): array
+    {
+        return [['inactive'], ['never_activated'], ['role_inactive'], ['pending']];
+    }
+
+    #[DataProvider('assignmentTargetChanges')]
+    public function test_assignment_reloads_the_selected_officer_after_the_form_was_opened(string $state): void
+    {
+        $officer = UserProfile::with('role')->findOrFail(self::OFFICER_B);
+        $this->assertTrue($officer->canAccessApplication());
+        match ($state) {
+            'inactive' => DB::table('user_profiles')->where('id', $officer->id)->update(['is_active' => false]),
+            'never_activated' => DB::table('user_profiles')->where('id', $officer->id)->update(['activated_at' => null]),
+            'role_inactive' => DB::table('roles')->where('id', 2)->update(['is_active' => false]),
+            'pending' => DB::table('user_invitations')->insert(['id' => self::INVITATION, 'auth_user_id' => $officer->id,
+                'email' => 'synthetic@example.test', 'status' => 'sent', 'created_at' => now(), 'updated_at' => now()]),
+        };
+        $before = DB::table('associations')->orderBy('id')->get()->toJson();
+        $request = new Request;
+        $request->attributes->set('current_user', UserProfile::with('role')->findOrFail(self::ADMIN));
+        try {
+            app(FieldOfficerAssignmentService::class)->assign($request, $officer, $this->assignmentData([self::ASSOCIATION]));
+            $this->fail('The selected officer must be rechecked before assignment.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('officer', $exception->errors());
+        }
+        $this->assertSame($before, DB::table('associations')->orderBy('id')->get()->toJson());
+        $this->assertSame(0, DB::table('audit_logs')->count());
     }
 }
