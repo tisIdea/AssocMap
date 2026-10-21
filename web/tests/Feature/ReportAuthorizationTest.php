@@ -35,6 +35,9 @@ class ReportAuthorizationTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        config([
+    'app.key' => 'base64:'.base64_encode(str_repeat('a', 32)),
+        ]);
         config(['associations.geography_schema_ready' => false, 'associations.direct_geography' => false]);
         config(['database.connections.report_test' => ['driver' => 'sqlite', 'database' => ':memory:', 'prefix' => '', 'foreign_key_constraints' => true]]);
         DB::setDefaultConnection('report_test');
