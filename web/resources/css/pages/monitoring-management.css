@@ -65,6 +65,22 @@
 .monitoring-management .monitoring-detail-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: 20px; margin: 22px 0; }
 .monitoring-management :is(.monitoring-detail-grid, .monitoring-visit-notes) dt { font-size: 11px; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px; }
 .monitoring-management :is(.monitoring-detail-grid, .monitoring-visit-notes) dd { margin: 0; font-size: 13px; line-height: 1.7; white-space: pre-wrap; }
+.monitoring-management .monitoring-harvest-card .monitoring-card-heading > div { min-width: 0; flex: 1 1 220px; }
+.monitoring-management .monitoring-harvest-unit { color: var(--text-secondary); font-size: 12px; font-weight: 400; }
+.monitoring-management p.monitoring-harvest-unit { margin-top: 4px; }
+.monitoring-management .monitoring-harvest-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin: 18px 0; }
+.monitoring-management .monitoring-harvest-summary > div { min-width: 0; }
+.monitoring-management .monitoring-harvest-summary dd { color: var(--text-primary); font-size: 18px; font-weight: 600; line-height: 1.5; white-space: normal; font-variant-numeric: tabular-nums; }
+.monitoring-management .monitoring-harvest-summary .monitoring-harvest-unrecorded { font-size: 13px; font-weight: 400; color: var(--text-secondary); }
+.monitoring-management .monitoring-harvest-goal { padding-top: 16px; border-top: 1px solid var(--border-color); }
+.monitoring-management .monitoring-harvest-goal h4 { margin: 0; }
+.monitoring-management .monitoring-harvest-attainment { margin-top: 6px; color: var(--primary); font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.monitoring-management .monitoring-harvest-progress { display: block; width: 100%; height: 10px; margin-top: 12px; border: 0; border-radius: var(--radius-sm); overflow: hidden; background: var(--border-color); color: var(--primary); accent-color: var(--primary); appearance: none; }
+.monitoring-management .monitoring-harvest-progress::-webkit-progress-bar { background: var(--border-color); border-radius: var(--radius-sm); }
+.monitoring-management .monitoring-harvest-progress::-webkit-progress-value { background: var(--primary); border-radius: var(--radius-sm); }
+.monitoring-management .monitoring-harvest-progress::-moz-progress-bar { background: var(--primary); border-radius: var(--radius-sm); }
+.monitoring-management .monitoring-harvest-action { margin-top: 18px; }
+.monitoring-management .monitoring-harvest-action .button { max-width: 100%; white-space: normal; text-align: center; }
 .monitoring-management .monitoring-detail-table { min-width: 580px; margin-top: 16px; }
 .monitoring-management .monitoring-money { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .monitoring-management .monitoring-text { white-space: pre-wrap; }
@@ -123,6 +139,7 @@
     .monitoring-management .monitoring-workspace .field-wide { grid-column: auto; }
     .monitoring-management .monitoring-card { padding: 16px; }
     .monitoring-management .monitoring-detail-grid { grid-template-columns: minmax(0, 1fr); }
+    .monitoring-management .monitoring-harvest-summary { gap: 14px; }
     .monitoring-management .monitoring-context .detail-grid { grid-template-columns: minmax(0, 1fr); }
     .monitoring-management .monitoring-pagination { flex-direction: column; align-items: flex-start; }
 }

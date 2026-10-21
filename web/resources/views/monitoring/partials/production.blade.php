@@ -18,11 +18,37 @@
 @endif
 @forelse($record->production as $production)
     @if($production->quantity_source === 'daily_harvest')
-        <article class="monitoring-card">
-            <div class="monitoring-card-heading"><h3>{{ $production->projectProduct?->product_name ?? 'Product unavailable' }}</h3><span class="badge badge-neutral">Daily harvest</span></div>
-            @include('monitoring.partials.details', ['details' => ['Quarterly target' => $production->target_output ?? 'Not set',
-                'Quarterly recorded quantity' => $production->monthlyDetails->sum('activity_count') > 0 ? $production->actual_output.' '.$production->unit : 'No harvest records submitted']])
-            <a class="button" href="{{ route($monitoringPrefix.'.harvest.index', [$record, $production]) }}">View Daily Harvest</a>
+        @php
+            $harvestingDays = $production->monthlyDetails->sum('activity_count');
+            $attainment = app(\App\Services\ProductionMonitoringService::class)->goalAttainment($production, $harvestingDays);
+            $progressValue = $attainment === null ? null : min(100, max(0, (float) $attainment));
+            $cardId = 'daily-harvest-'.$production->id;
+            $progressMessage = $harvestingDays === 0 ? 'Goal attainment is unavailable until harvest records are submitted.'
+                : ($production->target_output === null ? 'A quarterly target is needed to track attainment.' : 'No positive target.');
+        @endphp
+        <article class="monitoring-card monitoring-harvest-card" aria-labelledby="{{ $cardId }}-product">
+            <div class="monitoring-card-heading">
+                <div><h3 id="{{ $cardId }}-product">{{ $production->projectProduct?->product_name ?? 'Product unavailable' }}</h3>
+                    <p class="monitoring-harvest-unit">Measured in {{ $production->unit }}</p></div>
+                <span class="badge badge-neutral">Daily Harvest</span>
+            </div>
+            <dl class="monitoring-detail-grid monitoring-harvest-summary">
+                <div><dt>Quarterly Target</dt><dd>@if($production->target_output === null)Not set @else{{ number_format((float) $production->target_output, 2) }} <span class="monitoring-harvest-unit">{{ $production->unit }}</span>@endif</dd></div>
+                <div><dt>Recorded Quantity</dt><dd @class(['monitoring-harvest-unrecorded' => $harvestingDays === 0])>@if($harvestingDays > 0){{ number_format((float) $production->actual_output, 2) }} <span class="monitoring-harvest-unit">{{ $production->unit }}</span>@else No harvest records submitted @endif</dd></div>
+                <div><dt>Harvesting Days</dt><dd @class(['monitoring-harvest-unrecorded' => $harvestingDays === 0])>@if($harvestingDays > 0){{ number_format($harvestingDays) }} {{ $harvestingDays === 1 ? 'day' : 'days' }}@else None recorded @endif</dd></div>
+            </dl>
+            <div class="monitoring-harvest-goal">
+                <h4 id="{{ $cardId }}-goal">Quarterly Goal Progress</h4>
+                <p id="{{ $cardId }}-status" @class(['monitoring-harvest-attainment' => $attainment !== null, 'field-hint' => $attainment === null])>{{ $attainment !== null ? $attainment.'% of target achieved' : $progressMessage }}</p>
+                @if($attainment !== null)
+                    <progress class="monitoring-harvest-progress" value="{{ $progressValue }}" max="100"
+                        aria-labelledby="{{ $cardId }}-product {{ $cardId }}-goal" aria-describedby="{{ $cardId }}-status"
+                        aria-valuetext="{{ $attainment }}% of target achieved">{{ $attainment }}% of target achieved</progress>
+                @else
+                    <div class="monitoring-harvest-progress" aria-hidden="true"></div>
+                @endif
+            </div>
+            <div class="monitoring-harvest-action"><a class="button" href="{{ route($monitoringPrefix.'.harvest.index', [$record, $production]) }}">View Daily Harvest</a></div>
         </article>
         @continue
     @endif

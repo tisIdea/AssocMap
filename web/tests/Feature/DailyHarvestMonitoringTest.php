@@ -112,10 +112,32 @@ class DailyHarvestMonitoringTest extends TestCase
         $this->assertSame(0, $row->monthlyDetails()->sum('activity_count'));
         $this->assertSame(self::OFFICER, $entry->fresh()->voided_by);
         $this->assertSame('7.25', $entry->fresh()->quantity);
+        $this->get(route('admin.monitoring.workspace', [self::RECORD, 'production']))->assertOk()
+            ->assertSee('No harvest records submitted')->assertSee('None recorded')
+            ->assertDontSee('% of target achieved');
         $this->rejected(fn () => $this->save($row, '2026-02-02', '8', $entry->id));
         $this->save($row, '2026-02-02', '2');
         $this->assertDatabaseCount('monitoring_harvest_entries', 2);
         $this->assertSame('2.00', $row->fresh()->actual_output);
+    }
+
+    public static function cardRoles(): array
+    {
+        return [[self::ADMIN, 'admin', true], [self::OFFICER, 'field-officer', true], [self::ACCOUNT, 'association', false]];
+    }
+
+    #[DataProvider('cardRoles')]
+    public function test_production_workspace_shows_progress_without_changing_role_actions(string $identity, string $prefix, bool $canManage): void
+    {
+        $row = $this->initialize(); $this->save($row, '2026-01-10', '200.00');
+        app(DailyHarvestMonitoringService::class)->reviseGoal($this->record(), $row->id,
+            $this->request(['target_output' => '500.00', 'reason' => 'Synthetic approved goal']));
+        $this->identity = $identity;
+        $page = $this->get(route($prefix.'.monitoring.workspace', [self::RECORD, 'production']))->assertOk()
+            ->assertSee('40.00% of target achieved')->assertSee('Harvesting Days')->assertSee('1 day')
+            ->assertSee(route($prefix.'.monitoring.harvest.index', [self::RECORD, $row]), false);
+        if ($canManage) $page->assertSee('Manage Production');
+        else $page->assertDontSee('Manage Production')->assertDontSee('Initialize Daily Harvest');
     }
 
     public static function operations(): array { return [['create'], ['edit'], ['void'], ['goal'], ['initialize']]; }
