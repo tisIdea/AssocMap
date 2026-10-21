@@ -94,9 +94,15 @@ function initializeMonitoringEditor() {
         const output = production.querySelector('[data-quarterly-output]');
         const notice = production.querySelector('[data-monthly-notice]');
         if (production.dataset.legacyProduction) {
-            output.textContent = production.savedProduction.actual_output + ' ' + production.savedProduction.unit;
+            const daily = production.savedProduction.quantity_source === 'daily_harvest';
+            const hasHarvests = production.savedProduction.monthly_details.some(month => Number(month.activity_count) > 0);
+            output.textContent = daily && !hasHarvests ? 'No harvest records submitted'
+                : production.savedProduction.actual_output + ' ' + production.savedProduction.unit;
+            production.querySelector('[data-monthly-container]').hidden = daily;
             monthlyRows(production).forEach(row => { row.querySelector('[data-month-unit]').textContent = production.savedProduction.unit; });
-            notice.textContent = 'Legacy quarterly-only or unreconciled record: saved output and monthly details are read-only. No monthly values are inferred.';
+            notice.textContent = daily
+                ? 'Daily harvest quantities and goals are managed through Daily Harvest in the Production workspace.'
+                : 'Legacy quarterly-only or unreconciled record: saved output and monthly details are read-only. No monthly values are inferred.';
             return;
         }
         const rows = monthlyRows(production), allowed = reportingMonths();

@@ -4,6 +4,8 @@ namespace App\Services;
 
 use App\Models\MonitoringProduction;
 use App\Models\MonitoringRecord;
+use Brick\Math\BigDecimal;
+use Brick\Math\RoundingMode;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
 
@@ -40,10 +42,18 @@ class ProductionMonitoringService
             throw ValidationException::withMessages($errors);
         }
 
+        return $this->sumQuantities(array_column($details, 'total_quantity'), $prefix.'.monthly_details');
+    }
+
+    public function sumQuantities(iterable $quantities, string $field = 'quantity'): string
+    {
         // Add fixed-point decimal strings without binary floats or platform-sized integers.
         $sum = '0';
-        foreach ($details as $detail) {
-            [$whole, $fraction] = array_pad(explode('.', (string) $detail['total_quantity'], 2), 2, '');
+        foreach ($quantities as $quantity) {
+            if (! is_scalar($quantity) || ! preg_match('/\A\d{1,12}(?:\.\d{1,2})?\z/D', (string) $quantity)) {
+                throw ValidationException::withMessages([$field => 'Enter a quantity with at most 12 whole digits and 2 decimal places.']);
+            }
+            [$whole, $fraction] = array_pad(explode('.', (string) $quantity, 2), 2, '');
             $digits = strrev($whole.str_pad($fraction, 2, '0'));
             $previous = strrev($sum);
             $next = '';
@@ -56,7 +66,7 @@ class ProductionMonitoringService
             $sum = ltrim(strrev($next), '0') ?: '0';
         }
         if (strlen($sum) > 14) {
-            throw ValidationException::withMessages([$prefix.'.monthly_details' => 'Quarterly Actual Output exceeds NUMERIC(14,2).']);
+            throw ValidationException::withMessages([$field => 'Recorded production exceeds NUMERIC(14,2).']);
         }
         $sum = str_pad($sum, 3, '0', STR_PAD_LEFT);
         return substr($sum, 0, -2).'.'.substr($sum, -2);
@@ -64,6 +74,7 @@ class ProductionMonitoringService
 
     public function canEditMonthly(MonitoringProduction $production): bool
     {
+        if ($production->quantity_source === 'daily_harvest') return false;
         $record = $production->monitoringRecord;
         try {
             $details = $production->monthlyDetails->map(fn ($row) => $row->only([
@@ -81,6 +92,7 @@ class ProductionMonitoringService
         $rows = $record->production()->orderBy('id')->with('monthlyDetails')->get()->map(fn ($row) => [
             $row->id, $row->project_product_id, $row->target_output, $row->actual_output, $row->unit,
             $row->remarks, $row->updated_at?->format('Y-m-d\TH:i:s.uP'),
+            $row->quantity_source ?? 'aggregate', $row->harvest_version ?? 0,
             $row->monthlyDetails->map(fn ($month) => [$month->id, $month->month, $month->activity_count,
                 $month->total_quantity, $month->remarks, $month->updated_at?->format('Y-m-d\TH:i:s.uP')])->all(),
         ])->all();
@@ -95,5 +107,14 @@ class ProductionMonitoringService
         if (! is_string($revision) || ! hash_equals($this->revision($record), $revision)) {
             throw ValidationException::withMessages(['production_revision' => 'Production changed or this form is outdated. Reload and review before saving.'])->status(409);
         }
+    }
+
+    public function goalAttainment(MonitoringProduction $production, int $activeCount): ?string
+    {
+        if ($activeCount === 0 || $production->target_output === null
+            || $production->target_output === '0.00') return null;
+
+        return (string) BigDecimal::of($production->actual_output)->multipliedBy('100')
+            ->dividedBy($production->target_output, 2, RoundingMode::HALF_UP);
     }
 }

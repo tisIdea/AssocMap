@@ -540,7 +540,7 @@ class MonitoringService
         return $this->resolveProjectForUser($locked->id, $fresh);
     }
 
-    private function lockRecordForMutation(MonitoringRecord $record, UserProfile $actor): MonitoringRecord
+    public function lockRecordForMutation(MonitoringRecord $record, UserProfile $actor): MonitoringRecord
     {
         $project = Project::whereKey($record->project_id)->firstOrFail();
         $this->lockProjectForWrite($project, $actor);
@@ -742,6 +742,9 @@ class MonitoringService
         $productIds = [];
         foreach ($productionRows as $index => $row) {
             $prefix = "production.{$index}";
+            if (isset($row['quantity_source']) && $row['quantity_source'] !== 'aggregate') {
+                throw ValidationException::withMessages([$prefix => 'Initialize daily harvest through the daily harvest workflow.']);
+            }
             $product = $this->resolveProjectProduct($project, $row['project_product_id']);
             if (isset($productIds[$product->id])) {
                 throw ValidationException::withMessages([$prefix.'.project_product_id' => 'Select each project product only once.']);
@@ -757,6 +760,15 @@ class MonitoringService
                 $existing = $record->production()->whereKey($id)->lockForUpdate()->first();
                 if (! $existing || $existing->project_product_id !== $product->id) {
                     throw ValidationException::withMessages([$prefix.'.id' => 'This Production record or product is unavailable.']);
+                }
+                if ($existing->quantity_source === 'daily_harvest') {
+                    if (array_diff(array_keys($row), ['id', 'project_product_id', 'income', 'deleted_income_ids'])) {
+                        throw ValidationException::withMessages([$prefix => 'Daily harvest quantities are calculated. Use Daily Harvest for entries and quarterly goals.']);
+                    }
+                    if (array_key_exists('income', $row) || array_key_exists('deleted_income_ids', $row)) {
+                        $this->syncIncome($existing, $row['income'] ?? [], $row['deleted_income_ids'] ?? []);
+                    }
+                    continue;
                 }
                 if (! $this->production->canEditMonthly($existing)) {
                     if (array_diff(array_keys($row), ['id', 'project_product_id', 'income', 'deleted_income_ids'])) {

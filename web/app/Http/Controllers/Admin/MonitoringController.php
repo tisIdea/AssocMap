@@ -276,6 +276,7 @@ class MonitoringController extends Controller
 
                             'monthly_details' => $production->monthlyDetails->toArray(),
                             'can_edit_monthly' => app(ProductionMonitoringService::class)->canEditMonthly($production),
+                            'quantity_source' => $production->quantity_source ?? 'aggregate',
                             'monthly_subtotal' => $production->monthlySubtotal(),
                             'income' =>
                                 $production->income

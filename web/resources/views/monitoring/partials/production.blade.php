@@ -1,4 +1,31 @@
+@if($errors->any())<div class="notice notice-error" role="alert">@foreach($errors->all() as $error)<p>{{ $error }}</p>@endforeach</div>@endif
+@if($canManage && $harvestProducts->isNotEmpty())
+    <article class="monitoring-card">
+        <h3>Start Daily Harvest</h3>
+        <p class="field-hint">Select a project product for this reporting quarter. Existing aggregate production cannot be converted.</p>
+        <form method="POST" action="{{ route($monitoringPrefix.'.harvest.initialize', $record) }}">
+            @csrf
+            <input type="hidden" name="production_revision" value="{{ $productionRevision }}">
+            <div class="field"><label for="harvest-product">Project product</label>
+                <select id="harvest-product" name="project_product_id" required>
+                    <option value="">Select product</option>
+                    @foreach($harvestProducts as $product)<option value="{{ $product->id }}" @selected(old('project_product_id') === $product->id)>{{ $product->product_name }} ({{ $product->default_unit }})</option>@endforeach
+                </select>
+            </div>
+            <div class="monitoring-actions"><button class="button button-primary" type="submit">Initialize Daily Harvest</button></div>
+        </form>
+    </article>
+@endif
 @forelse($record->production as $production)
+    @if($production->quantity_source === 'daily_harvest')
+        <article class="monitoring-card">
+            <div class="monitoring-card-heading"><h3>{{ $production->projectProduct?->product_name ?? 'Product unavailable' }}</h3><span class="badge badge-neutral">Daily harvest</span></div>
+            @include('monitoring.partials.details', ['details' => ['Quarterly target' => $production->target_output ?? 'Not set',
+                'Quarterly recorded quantity' => $production->monthlyDetails->sum('activity_count') > 0 ? $production->actual_output.' '.$production->unit : 'No harvest records submitted']])
+            <a class="button" href="{{ route($monitoringPrefix.'.harvest.index', [$record, $production]) }}">View Daily Harvest</a>
+        </article>
+        @continue
+    @endif
     <article class="monitoring-card">
         <div class="monitoring-card-heading"><h3>{{ $production->projectProduct?->product_name ?? 'Product unavailable' }}</h3><span class="badge badge-neutral">{{ ucfirst($production->projectProduct?->product_type ?? 'Unavailable') }}</span></div>
         @include('monitoring.partials.details', ['details' => ['Target Output' => $production->target_output, 'Actual Output' => $production->actual_output, 'Unit' => $production->unit, 'Remarks' => $production->remarks]])

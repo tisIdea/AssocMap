@@ -17,6 +17,7 @@ use App\Services\MaterialsMonitoringService;
 use App\Services\MonitoringDirectoryQueryService;
 use App\Services\MonitoringService;
 use App\Services\ProductionMonitoringService;
+use App\Services\DailyHarvestMonitoringService;
 use App\Services\ProjectLifecycleService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
@@ -102,6 +103,8 @@ class MonitoringWorkspaceController extends MonitoringController
         abort_unless(in_array($section, ['overview', 'production', 'income', 'materials'], true), 404);
         $record = $this->accessibleRecord($request, $monitoringRecord);
         $monthlyReconciled = [];
+        $harvestProducts = collect();
+        $productionRevision = null;
         if ($section === 'production') {
             $record->load(['production.projectProduct', 'production.monthlyDetails']);
             $productionService = app(ProductionMonitoringService::class);
@@ -109,10 +112,76 @@ class MonitoringWorkspaceController extends MonitoringController
                 $production->setRelation('monitoringRecord', $record);
                 $monthlyReconciled[$production->id] = $productionService->canEditMonthly($production);
             }
+            $harvestProducts = $record->project->products()->where('is_active', true)
+                ->whereNotIn('id', $record->production->pluck('project_product_id'))->orderBy('product_name')->get();
+            $productionRevision = $productionService->revision($record);
         }
         if ($section === 'income') $record->load(['production.projectProduct', 'production.income']);
         if ($section === 'materials') $record->load('materials.projectMaterial');
-        return view('monitoring.workspace', $this->context($request, $record) + compact('record', 'section', 'monthlyReconciled'));
+        return view('monitoring.workspace', $this->context($request, $record)
+            + compact('record', 'section', 'monthlyReconciled', 'harvestProducts', 'productionRevision'));
+    }
+
+    public function harvestPage(Request $request, MonitoringRecord $monitoringRecord, string $productionId, ?string $entryId = null): View
+    {
+        return \Illuminate\Support\Facades\DB::transaction(function () use ($request, $monitoringRecord, $productionId, $entryId) {
+            // Keep entry values, summaries and the revision in one snapshot of application writes.
+            $monitoringRecord = MonitoringRecord::whereKey($monitoringRecord->id)->sharedLock()->firstOrFail();
+            $record = $this->accessibleRecord($request, $monitoringRecord, $entryId !== null);
+            $production = $record->production()->whereKey($productionId)->where('quantity_source', 'daily_harvest')
+                ->with(['projectProduct', 'monthlyDetails'])->firstOrFail();
+            $editing = $entryId ? $production->harvestEntries()->whereKey($entryId)->whereNull('voided_at')->firstOrFail() : null;
+            $entries = $production->harvestEntries()->paginate(25);
+            $calculator = app(ProductionMonitoringService::class);
+            $productionRevision = $calculator->revision($record);
+            $activeCount = $production->monthlyDetails->sum('activity_count');
+            $attainment = $calculator->goalAttainment($production, $activeCount);
+            $start = \Carbon\CarbonImmutable::create((int) $record->year,
+                (((int) $record->quarter->quarter_number - 1) * 3) + 1, 1, 0, 0, 0, 'Asia/Manila');
+            $today = \Carbon\CarbonImmutable::now('Asia/Manila')->toDateString();
+            $minDate = $start->toDateString();
+            $endDate = $start->addMonths(3)->subDay()->toDateString();
+            $maxDate = min($endDate, $today);
+            $ongoing = $endDate >= $today;
+            return view('monitoring.harvest', $this->context($request, $record)
+                + compact('record', 'production', 'entries', 'editing', 'productionRevision', 'activeCount',
+                    'attainment', 'minDate', 'maxDate', 'ongoing') + ['section' => 'production']);
+        });
+    }
+
+    public function initializeHarvest(Request $request, MonitoringRecord $monitoringRecord, DailyHarvestMonitoringService $service): RedirectResponse
+    {
+        $record = $this->accessibleRecord($request, $monitoringRecord, true);
+        $production = $service->initialize($record, $request);
+        return redirect()->route($this->context($request)['monitoringPrefix'].'.harvest.index', [$record, $production])
+            ->with('success', 'Daily harvest initialized. No harvest records have been submitted.');
+    }
+
+    public function saveHarvest(Request $request, MonitoringRecord $monitoringRecord, string $productionId,
+        DailyHarvestMonitoringService $service, ?string $entryId = null): RedirectResponse
+    {
+        $record = $this->accessibleRecord($request, $monitoringRecord, true);
+        $service->saveHarvest($record, $productionId, $request, $entryId);
+        return redirect()->route($this->context($request)['monitoringPrefix'].'.harvest.index', [$record, $productionId])
+            ->with('success', 'Daily harvest saved and recorded totals recalculated.');
+    }
+
+    public function voidHarvest(Request $request, MonitoringRecord $monitoringRecord, string $productionId, string $entryId,
+        DailyHarvestMonitoringService $service): RedirectResponse
+    {
+        $record = $this->accessibleRecord($request, $monitoringRecord, true);
+        $service->voidHarvest($record, $productionId, $entryId, $request);
+        return redirect()->route($this->context($request)['monitoringPrefix'].'.harvest.index', [$record, $productionId])
+            ->with('success', 'Harvest voided. History retained and recorded totals recalculated.');
+    }
+
+    public function saveHarvestGoal(Request $request, MonitoringRecord $monitoringRecord, string $productionId,
+        DailyHarvestMonitoringService $service): RedirectResponse
+    {
+        $record = $this->accessibleRecord($request, $monitoringRecord, true);
+        $service->reviseGoal($record, $productionId, $request);
+        return redirect()->route($this->context($request)['monitoringPrefix'].'.harvest.index', [$record, $productionId])
+            ->with('success', 'Quarterly production goal saved with its revision reason.');
     }
 
     public function editOverview(Request $request, MonitoringRecord $monitoringRecord): View
