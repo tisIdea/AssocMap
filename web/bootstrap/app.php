@@ -13,6 +13,7 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        $middleware->prepend(\App\Http\Middleware\ProtectAccountReactivation::class);
         $middleware->trimStrings(except: ['completion_confirmation', 'termination_confirmation']);
         $middleware->prepend(\App\Http\Middleware\ProtectInvitationActivation::class);
         $middleware->prepend(\App\Http\Middleware\ProtectPasswordRecovery::class);
@@ -34,6 +35,17 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
+        $exceptions->dontReportWhen(fn (\Throwable $exception) => \App\Http\Middleware\ProtectAccountReactivation::applies(request()));
+        $exceptions->render(function (\Throwable $exception, Request $request) {
+            if (! \App\Http\Middleware\ProtectAccountReactivation::applies($request)) return null;
+            if ($exception instanceof \Illuminate\Http\Exceptions\HttpResponseException) {
+                return \App\Http\Middleware\ProtectInvitationActivation::secure($exception->getResponse(), $request);
+            }
+            $status = $exception instanceof \Symfony\Component\HttpKernel\Exception\HttpExceptionInterface ? $exception->getStatusCode() : 503;
+            $message = $status === 429 ? 'Too many reactivation requests. Wait before trying again.' : 'Account reactivation is unavailable. Contact the Administrator.';
+            return \App\Http\Middleware\ProtectInvitationActivation::secure(response()->view('auth.password-recovery',
+                ['reactivation' => true, 'step' => 'invalid', 'recoveryFailureMessage' => $message], $status), $request);
+        });
         $exceptions->render(function (\App\Exceptions\MonitoringMaterialsConflictException $exception, Request $request) {
             $headers = ['Cache-Control' => 'private, no-store', 'X-Content-Type-Options' => 'nosniff'];
             $prefix = $request->routeIs('admin.monitoring.*') ? 'admin.monitoring'

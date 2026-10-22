@@ -26,6 +26,24 @@ class SupabasePasswordRecoveryProvider
         $this->sendRecovery($email, '/invitation/restart/'.$reference);
     }
 
+    public function requestReactivation(string $email, string $reference): void
+    {
+        if (config('services.supabase.account_reactivation_enabled') !== true
+            || ! preg_match('/\A[A-Za-z0-9]{64}\z/D', $reference)) {
+            throw new RuntimeException('reactivation_unavailable');
+        }
+        $this->sendRecovery($email, '/account-reactivation/'.$reference);
+    }
+
+    public function signOutEverywhere(string $token): void
+    {
+        if (! $this->auth->activationConfigurationAvailable() || ! SupabaseAuthResponse::isBearerToken($token)) {
+            throw new RuntimeException('reactivation_unavailable');
+        }
+        $response = $this->requestClient($token)->post(rtrim(config('services.supabase.url'), '/').'/auth/v1/logout?scope=global');
+        if ($response->status() !== 204) throw new RuntimeException('reactivation_signout_unconfirmed');
+    }
+
     private function sendRecovery(string $email, string $callbackPath): void
     {
         $origin = config('app.url');

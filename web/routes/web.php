@@ -87,6 +87,15 @@ Route::middleware('throttle:password-recovery')->group(function () {
     Route::post('/password-recovery/password', [$controller, 'updatePassword'])->block(120, 3)->name('password.update');
 });
 
+Route::prefix('account-reactivation')->name('account-reactivation.')->middleware('throttle:20,1,account-reactivation:')->group(function () {
+    $controller = \App\Http\Controllers\Auth\AccountReactivationController::class;
+    Route::get('/password', [$controller, 'password'])->block(120, 3)->name('password');
+    Route::post('/password', [$controller, 'complete'])->block(120, 3)->name('complete');
+    Route::get('/result', [$controller, 'result'])->block(120, 3)->name('result');
+    Route::get('/{reference}', [$controller, 'callback'])->where('reference', '[A-Za-z0-9]{64}')->block(120, 3)->name('callback');
+    Route::post('/{reference}/verify', [$controller, 'verify'])->where('reference', '[A-Za-z0-9]{64}')->block(120, 3)->name('verify');
+});
+
 Route::middleware([\App\Http\Middleware\GisRequestGuard::class, 'throttle:gis-read'])->group(function () {
     Route::get('/map', [\App\Http\Controllers\PublicGisController::class, 'index'])->name('public.gis');
     Route::get('/map/data', [\App\Http\Controllers\PublicGisController::class, 'data'])->name('public.gis.data');
@@ -133,6 +142,10 @@ Route::middleware([
 ])->group(function () {
 
     Route::get('/admin/users', [UserManagementController::class, 'index'])->name('admin.users.index');
+    Route::get('/admin/users/{userProfile}/reactivate', [\App\Http\Controllers\Admin\AccountReactivationController::class, 'edit'])
+        ->whereUuid('userProfile')->name('admin.users.reactivation.edit');
+    Route::post('/admin/users/{userProfile}/reactivate', [\App\Http\Controllers\Admin\AccountReactivationController::class, 'store'])
+        ->whereUuid('userProfile')->middleware('throttle:6,1,account-reactivation-admin:')->name('admin.users.reactivation.store');
     Route::get('/admin/users/{userProfile}/associations', [FieldOfficerAssignmentController::class, 'edit'])
         ->whereUuid('userProfile')->name('admin.users.assignments.edit');
     Route::patch('/admin/users/{userProfile}/associations', [FieldOfficerAssignmentController::class, 'update'])

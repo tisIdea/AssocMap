@@ -51,6 +51,14 @@
             <h2 id="user-access-title">Account access</h2>
             @if($account['revoked_at'])
                 <p role="status">Access revoked on {{ $account['revoked_at']->timezone('Asia/Manila')->format('M d, Y g:i A') }}. Organizational records were preserved.</p>
+                @if(config('services.supabase.account_reactivation_enabled') === true && $account['activated_at'] && $account['role_active'])
+                    <a class="button button-primary" href="{{ route('admin.users.reactivation.edit', $account['id']) }}">Reactivate Account</a>
+                    <form method="POST" action="{{ route('admin.users.revoke', $account['id']) }}">
+                        @csrf @method('PATCH')
+                        <p><label><input type="checkbox" name="confirm_revocation" value="1" required> Keep access revoked and cancel any pending reactivation approval.</label></p>
+                        <button type="submit" class="button button-danger-outline">Cancel Pending Reactivation</button>
+                    </form>
+                @endif
                 <a class="button" href="{{ route('admin.audit-logs.index', ['module' => 'User Management', 'entity_type' => 'user_profile']) }}">View access audit history</a>
             @elseif($account['id'] === $currentUser->id)
                 <p>You cannot revoke your own access.</p>

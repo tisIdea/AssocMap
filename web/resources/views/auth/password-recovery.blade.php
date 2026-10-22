@@ -1,10 +1,11 @@
+@php($reactivation = $reactivation ?? false)
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="referrer" content="no-referrer">
-    <title>Password Recovery · AssocMap</title>
+    <title>{{ $reactivation ? 'Account Reactivation' : 'Password Recovery' }} · AssocMap</title>
     <script nonce="{{ request()->attributes->get('activation_nonce') }}">
         (() => {
             const hashes = new URLSearchParams(window.location.hash.slice(1)).getAll('token_hash');
@@ -92,7 +93,8 @@
 </head>
 <body>
 <main aria-labelledby="recovery-title"><section>
-    <h1 id="recovery-title">{{ $step === 'confirmation' ? 'Check your email' : ($step === 'success' ? 'Password updated successfully' : ($step === 'invalid' ? 'Recovery could not be completed' : 'Password recovery')) }}</h1>
+    <h1 id="recovery-title">{{ $reactivation ? ($step === 'success' ? 'Account reactivated' : 'Account reactivation') : ($step === 'confirmation' ? 'Check your email' : ($step === 'success' ? 'Password updated successfully' : ($step === 'invalid' ? 'Recovery could not be completed' : 'Password recovery'))) }}</h1>
+    @if($reactivation && in_array($step, ['verify', 'reset']))<p>Your Administrator approved restoring this account. Verify your existing email and replace your password. Access remains restricted until completion; afterward you must sign in afresh.</p>@endif
     @if($recoveryFailureMessage ?? null)<p class="error" role="alert">{{ $recoveryFailureMessage }}</p>@endif
     @if($errors->any())<div class="error" role="alert">@foreach($errors->all() as $error)<p>{{ $error }}</p>@endforeach</div>@endif
     @if($step === 'forgot')
@@ -114,9 +116,9 @@
         <noscript><p>After the waiting period, reload this page to enable the button.</p></noscript>
         <p><a href="{{ route('password.request.edit') }}">Use a different email address</a></p>
     @elseif($step === 'success')
-        <p id="recovery-success" role="status">Password updated successfully. Redirecting you to sign in...</p>
+        <p id="recovery-success" role="status">{{ $reactivation ? 'Account reactivated. Use your new password to sign in. Previous sessions cannot be resumed.' : 'Password updated successfully. Redirecting you to sign in...' }}</p>
     @elseif($step === 'invalid')
-        <p>Follow the message above. You can request another recovery link or return to Sign In.</p>
+        <p>{{ $reactivation ? 'Contact your Administrator to review this reactivation request, or return to Sign In.' : 'Follow the message above. You can request another recovery link or return to Sign In.' }}</p>
     @elseif($step === 'verify')
         @if($signedIn ?? false)
             <p role="alert">This browser has an existing AssocMap sign-in session. To continue recovery, confirm that you want to end that local session. Opening this page does not sign you out.</p>
@@ -125,7 +127,7 @@
         @endif
         <p id="recovery-link-note" role="alert">No usable recovery token is available. Reopen your email link or request a new one.</p>
         <noscript><p>JavaScript is required to securely submit this recovery link.</p></noscript>
-        <form id="recovery-verification" method="POST" action="{{ route('password.verify') }}" autocomplete="off">
+        <form id="recovery-verification" method="POST" action="{{ $verificationUrl ?? route('password.verify') }}" autocomplete="off">
             @csrf
             <input type="hidden" name="token_hash" value="" autocomplete="off">
             @if($signedIn ?? false)
@@ -138,7 +140,7 @@
         </form>
     @elseif($step === 'reset')
         <p>Use at least 12 characters, including uppercase and lowercase letters, a number and a symbol. This recovery session expires within 10 minutes.</p>
-        <form method="POST" action="{{ route('password.update') }}">
+        <form method="POST" action="{{ $passwordUpdateUrl ?? route('password.update') }}">
             @csrf
             <label for="recovery-password">New password</label>
             <div class="recovery-password-control">
@@ -164,7 +166,7 @@
         </form>
     @endif
     <p><a id="recovery-sign-in" href="{{ route('login') }}">Go to Sign In</a></p>
-    @if(in_array($step, ['verify', 'reset', 'invalid'], true))<p><a href="{{ route('password.request.edit') }}">Request another recovery link</a></p>@endif
+    @if(!$reactivation && in_array($step, ['verify', 'reset', 'invalid'], true))<p><a href="{{ route('password.request.edit') }}">Request another recovery link</a></p>@endif
 </section></main>
 </body>
 </html>

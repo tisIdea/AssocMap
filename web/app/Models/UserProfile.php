@@ -33,6 +33,7 @@ class UserProfile extends Model
         return [
             'is_active' => 'boolean',
             'activated_at' => 'datetime',
+            'auth_sessions_valid_after' => 'immutable_datetime',
         ];
     }
 

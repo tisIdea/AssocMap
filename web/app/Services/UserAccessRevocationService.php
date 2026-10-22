@@ -47,7 +47,11 @@ class UserAccessRevocationService
                     throw ValidationException::withMessages(['confirm_revocation' => 'The last active Administrator cannot be revoked.']);
                 }
             }
-            if (! $target->is_active && $invitations->isEmpty() && DB::table('audit_logs')
+            // The security migration adds both the profile boundary and approval table atomically.
+            $reactivation = array_key_exists('auth_sessions_valid_after', $target->getAttributes())
+                ? DB::table('account_reactivations')->where('user_id', $target->id)->where('state', '!=', 'completed')
+                    ->whereNull('cancelled_at')->lockForUpdate()->first() : null;
+            if (! $reactivation && ! $target->is_active && $invitations->isEmpty() && DB::table('audit_logs')
                 ->where('action_type', self::ACTION)->where('entity_type', 'user_profile')->where('entity_id', $target->id)->exists()) {
                 return false;
             }
@@ -60,10 +64,14 @@ class UserAccessRevocationService
                 $invitation->status = 'cancelled';
                 $invitation->save();
             }
+            if ($reactivation) {
+                DB::table('account_reactivations')->where('id', $reactivation->id)->update(['cancelled_at' => now(), 'updated_at' => now()]);
+            }
             $this->audit->record($request, self::ACTION, 'User Management', 'user_profile', $target->id,
                 ['is_active' => $wasActive, 'invitation_statuses' => $previousStatuses],
-                ['is_active' => false, 'cancelled_invitation_ids' => $invitations->pluck('id')->all()],
-                ['is_active', 'invitation_statuses', 'cancelled_invitation_ids']);
+                ['is_active' => false, 'cancelled_invitation_ids' => $invitations->pluck('id')->all()]
+                    + ($reactivation ? ['cancelled_reactivation_id' => $reactivation->id] : []),
+                ['is_active', 'invitation_statuses', 'cancelled_invitation_ids', 'cancelled_reactivation_id']);
 
             return true;
         }, 3);

@@ -21,7 +21,7 @@ class PasswordRecoveryContext
         $this->storage->checkStorage();
     }
 
-    public function create(Request $request, array $verified): void
+    public function create(Request $request, array $verified, ?string $reactivationId = null): void
     {
         $this->forget($request);
         $request->session()->regenerate(true);
@@ -31,6 +31,7 @@ class PasswordRecoveryContext
             'access_token' => $verified['access_token'], 'phase' => 'verified',
             'expires_at' => time() + min(600, $verified['expires_in'] - 30),
             'session_fingerprint' => hash('sha256', $request->session()->getId())];
+        if ($reactivationId !== null) $context['reactivation_id'] = $reactivationId;
         $this->save($id, $context);
         $request->session()->put(self::SESSION_KEY, $id);
     }

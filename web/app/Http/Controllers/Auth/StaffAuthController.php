@@ -32,7 +32,7 @@ class StaffAuthController extends Controller
         }
         $supabaseUser = $authData['user'];
 
-        $profile = UserProfile::with('role')
+        $profile = UserProfile::with('role')->useWritePdo()
             ->find($supabaseUser['id']);
 
         if (! $profile) {
@@ -41,6 +41,13 @@ class StaffAuthController extends Controller
 
         if (! $profile->canAccessApplication($supabaseUser)) {
             return $this->rejectLogin($request, 'This AssocMap account or role is unavailable.');
+        }
+
+        if ($profile->auth_sessions_valid_after !== null) {
+            $verified = $supabaseAuth->getUser($authData['access_token']);
+            if (! $verified || ! app(\App\Services\SupabaseSessionBoundary::class)->allows($profile, $verified, $authData['access_token'])) {
+                return $this->rejectLogin($request, 'Fresh password sign-in is required. Wait a moment and sign in again.');
+            }
         }
 
         if (! $profile->role) {

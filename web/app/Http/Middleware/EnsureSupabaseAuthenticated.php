@@ -44,9 +44,10 @@ class EnsureSupabaseAuthenticated
         }
 
         $profile = LocalRequestTiming::measure($request, 'profile_role',
-            fn () => UserProfile::findWithRole($supabaseUser['id']));
+            fn () => UserProfile::findWithRole($supabaseUser['id'], useWritePdo: true));
 
-        if (! $profile || ! $profile->canAccessApplication($supabaseUser)) {
+        if (! $profile || ! $profile->canAccessApplication($supabaseUser)
+            || ! app(\App\Services\SupabaseSessionBoundary::class)->allows($profile, $supabaseUser, $accessToken)) {
             $request->session()->invalidate();
             $request->session()->regenerateToken();
 
