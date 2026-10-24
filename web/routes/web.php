@@ -258,14 +258,7 @@ Route::middleware([
     |--------------------------------------------------------------------------
     */
 
-    Route::get('/field-officer/members', [\App\Http\Controllers\FieldOfficer\MemberController::class, 'index'])
-        ->name('field-officer.members.index');
-    Route::patch('/field-officer/members/{member}', [\App\Http\Controllers\FieldOfficer\MemberController::class, 'update'])
-        ->whereUuid('member')->name('field-officer.members.update');
-    Route::patch('/field-officer/members/{member}/archive', [\App\Http\Controllers\FieldOfficer\MemberController::class, 'archive'])
-        ->whereUuid('member')->name('field-officer.members.archive');
-    Route::patch('/field-officer/members/{member}/reactivate', [\App\Http\Controllers\FieldOfficer\MemberController::class, 'reactivate'])
-        ->whereUuid('member')->name('field-officer.members.reactivate');
+    require __DIR__.'/field-officer/members.php';
 
     require __DIR__.'/field-officer/associations.php';
 
