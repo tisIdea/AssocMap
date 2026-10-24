@@ -174,7 +174,16 @@ class RecordNavigationTest extends TestCase
         $this->identity = $prefix === 'admin' ? self::ADMIN : self::OFFICER;
         $listing = $this->get($this->url($module, 'index', $prefix))->assertOk();
         $dom = $this->document($listing->getContent());
-        $this->assertSame(1, $dom->query('//dialog//form[@action="'.$this->url($module, 'store', $prefix).'"]')->length);
+        $creationForm = '//dialog//form[@action="'.$this->url($module, 'store', $prefix).'"]';
+        $this->assertSame(0, $dom->query($creationForm)->length);
+        $addLinks = $dom->query('//a[contains(@href,"editor=create")]');
+        $this->assertSame(1, $addLinks->length);
+        $creation = $this->get($addLinks->item(0)->getAttribute('href'))->assertOk();
+        $creationDom = $this->document($creation->getContent());
+        $this->assertSame(1, $creationDom->query($creationForm)->length);
+        $this->assertSame('POST', $creationDom->evaluate('string('.$creationForm.'/@method)'));
+        $this->assertSame(1, $creationDom->query($creationForm.'//input[@name="_token"]')->length);
+        $this->assertNotEmpty($creationDom->evaluate('string('.$creationForm.'//input[@name="_token"]/@value)'));
         $this->assertSame(0, $dom->query('//dialog[contains(@id,"-view-")]')->length);
         $this->assertGreaterThan(0, $dom->query('//a[@href="'.$this->url($module, 'show', $prefix).'"]')->length);
         $this->assertSame(1, $dom->query('//a[@href="'.$this->url($module, 'edit', $prefix).'"]')->length);
@@ -212,10 +221,24 @@ class RecordNavigationTest extends TestCase
             ->assertRedirect($this->url($module, 'edit', $prefix))->assertSessionHasErrors('title');
         $this->get($this->url($module, 'edit', $prefix))->assertOk()->assertSee('retained input')->assertDontSee('<script>retained input</script>', false);
         $marker = match ($module) { 'projects' => 'project', 'trainings' => 'training', default => 'program_activity' };
-        $payload = array_replace($this->data($module), ['title' => '', $marker.'_form' => 'editor']);
+        $payload = array_replace($this->data($module), [
+            'title' => '',
+            'remarks' => '<script>creation input</script>',
+            $marker.'_form' => 'editor',
+        ]);
         $this->from($this->url($module, 'index', $prefix))->post($this->url($module, 'store', $prefix), $payload)
             ->assertRedirect($this->url($module, 'index', $prefix))->assertSessionHasErrors('title');
-        $this->get($this->url($module, 'index', $prefix))->assertOk()->assertSee("dataset.feedbackRestore = 'true'", false);
+        $recovered = $this->get($this->url($module, 'index', $prefix))->assertOk()
+            ->assertSee('creation input')->assertDontSee('<script>creation input</script>', false);
+        $dom = $this->document($recovered->getContent());
+        $formMarker = str_replace('_', '-', $marker);
+        $creationForm = '//dialog[@id="'.$formMarker.'-editor"]//form[@action="'.$this->url($module, 'store', $prefix).'"]';
+        $this->assertSame(1, $dom->query($creationForm.'[@data-feedback-error-bag="default"]')->length);
+        $errors = $dom->query($creationForm.'//*[@data-'.$formMarker.'-errors]');
+        $this->assertSame(1, $errors->length);
+        $this->assertStringContainsString('title', strtolower($errors->item(0)->textContent));
+        $this->assertSame('', $dom->evaluate('string('.$creationForm.'//input[@name="title"]/@value)'));
+        $this->assertSame($payload['remarks'], $dom->evaluate('string('.$creationForm.'//textarea[@name="remarks"])'));
         $this->assertDatabaseHas($this->table($module), ['id' => $this->id($module), 'title' => 'Synthetic '.($module === 'projects' ? 'Project' : $module)]);
     }
 
@@ -338,7 +361,12 @@ class RecordNavigationTest extends TestCase
                 $this->assertSame(0, $dom->query('//form[@action="'.$this->url($module, $action).'"]')->length);
                 $this->patchJson($this->url($module, $action))->assertUnprocessable();
             }
-            $this->get($this->url($module, 'show'))->assertOk()->assertSee('Association Archived — Read Only');
+            $details = $this->get($this->url($module, 'show'))->assertOk();
+            $detailDom = $this->document($details->getContent());
+            $notice = $detailDom->query('//p[contains(@class,"notice")][contains(.,"Association Archived")]');
+            $this->assertSame(1, $notice->length);
+            $this->assertStringContainsString('Read Only', $notice->item(0)->textContent);
+            $this->assertSame(0, $detailDom->query('//a[@href="'.$this->url($module, 'edit').'"]')->length);
         }
         $this->identity = self::OFFICER;
         $listing = $this->get($this->url($module, 'index', 'field-officer').'?status=archived')->assertOk();
