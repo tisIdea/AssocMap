@@ -376,15 +376,11 @@ Route::middleware([
     'role:association_account',
 ])->group(function () {
 
-    Route::get('/association/dashboard', [\App\Http\Controllers\DashboardController::class, 'index'])->name('association.dashboard');
+    require __DIR__.'/association/dashboard.php';
 
-    Route::get('/association/projects', [\App\Http\Controllers\AssociationAccount\ProjectController::class, 'index'])->name('association.projects.index');
-    Route::get('/association/projects/{project}', [\App\Http\Controllers\AssociationAccount\ProjectController::class, 'show'])
-        ->whereUuid('project')->name('association.projects.show');
+    require __DIR__.'/association/projects.php';
 
-    Route::get('/association/trainings', [\App\Http\Controllers\AssociationAccount\ProgramController::class, 'trainings'])->name('association.trainings.index');
-    Route::get('/association/trainings/{training}', [\App\Http\Controllers\AssociationAccount\ProgramController::class, 'training'])
-        ->whereUuid('training')->name('association.trainings.show');
+    require __DIR__.'/association/trainings.php';
     Route::get('/association/program-activities', [\App\Http\Controllers\AssociationAccount\ProgramController::class, 'activities'])->name('association.program-activities.index');
     Route::get('/association/program-activities/{activity}', [\App\Http\Controllers\AssociationAccount\ProgramController::class, 'activity'])
         ->whereUuid('activity')->name('association.program-activities.show');
