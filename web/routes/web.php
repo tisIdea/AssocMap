@@ -31,8 +31,7 @@ require __DIR__.'/shared/reports.php';
 |--------------------------------------------------------------------------
 */
 
-Route::view('/', 'public.landing')
-    ->name('home');
+require __DIR__.'/public/landing.php';
 
 Route::view('/login', 'auth.login')
     ->name('login');
@@ -381,9 +380,7 @@ Route::middleware([
     require __DIR__.'/association/projects.php';
 
     require __DIR__.'/association/trainings.php';
-    Route::get('/association/program-activities', [\App\Http\Controllers\AssociationAccount\ProgramController::class, 'activities'])->name('association.program-activities.index');
-    Route::get('/association/program-activities/{activity}', [\App\Http\Controllers\AssociationAccount\ProgramController::class, 'activity'])
-        ->whereUuid('activity')->name('association.program-activities.show');
+    require __DIR__.'/association/program-activities.php';
 
     Route::get(
         '/association/member-applications',
