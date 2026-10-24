@@ -51,7 +51,7 @@ class TrainingController extends Controller
         $actor = $request->attributes->get('current_user');
         abort_unless($actor->canAccessApplication() && in_array($actor->role?->code, ['system_admin', 'field_officer'], true), 403);
         $request->validate(['participant_page' => ['nullable', 'integer', 'min:1', 'max:1000000']]);
-        $training->load(['association.area.barangay.municipality', 'relatedProject.association', 'saadActivity']);
+        $training->load([...app(\App\Services\AssociationGeographyService::class)->relations('association'), 'relatedProject.association', 'saadActivity']);
         $prefix = $actor->role->code === 'system_admin' ? 'admin' : 'field-officer';
         $lifecycle = app(AssociationLifecycleService::class);
         if ($prefix === 'field-officer') {
@@ -185,7 +185,7 @@ class TrainingController extends Controller
             $association?->area;
 
         $barangay =
-            $area?->barangay;
+            $association?->locationBarangay();
 
         $municipality =
             $barangay?->municipality;

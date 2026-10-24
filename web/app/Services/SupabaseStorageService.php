@@ -143,6 +143,8 @@ class SupabaseStorageService
     {
         $body = $response->toPsrResponse()->getBody();
         try {
+            $length = trim($response->header('Content-Length'));
+            if ($length !== '' && (! ctype_digit($length) || (int) $length > $limit)) return null;
             $contents = '';
             while (! $body->eof()) {
                 if (hrtime(true) > $deadline) return null;
@@ -151,6 +153,7 @@ class SupabaseStorageService
                 $contents .= $chunk;
                 if (strlen($contents) > $limit) return null;
             }
+            if ($length !== '' && strlen($contents) !== (int) $length) return null;
 
             return hrtime(true) <= $deadline ? $contents : null;
         } catch (RuntimeException $exception) {

@@ -9,9 +9,8 @@ class GisAddressResolver
 {
     public function forAssociation(Association $association): array
     {
-        $area = DB::table('areas as ar')->join('barangays as b', 'b.id', '=', 'ar.barangay_id')
-            ->join('municipalities as m', 'm.id', '=', 'b.municipality_id')
-            ->where('ar.id', $association->area_id)
+        $area = app(AssociationGeographyService::class)->joinGeography(DB::table('associations as a'))
+            ->where('a.id', $association->id)
             ->first(['ar.address as area_address', 'b.name as barangay_name', 'm.name as municipality_name', 'm.province', 'm.region']);
 
         return $this->fromRow($area);

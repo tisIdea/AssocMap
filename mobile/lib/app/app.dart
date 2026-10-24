@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
 
 import '../core/widgets/feedback_panel.dart';
 import '../core/authentication/auth_controller.dart';
@@ -8,6 +9,9 @@ import '../data/repositories/analytics_repository.dart';
 import '../data/repositories/dashboard_repository.dart';
 import '../data/repositories/repository_factory.dart';
 import '../data/repositories/public_projects_repository.dart';
+import '../data/remote/api_auth_repository.dart';
+import '../data/remote/api_dashboard_repository.dart';
+import '../data/remote/api_analytics_repository.dart';
 import '../features/public_map/public_map_screen.dart';
 import '../features/welcome/welcome_screen.dart';
 import 'configuration/app_config.dart';
@@ -20,15 +24,15 @@ class AssocMapApp extends StatefulWidget {
     required this.config,
     required this.publicProjects,
     this.authentication,
-    this.analytics = const UnavailableAnalyticsRepository(),
-    this.dashboard = const UnavailableDashboardRepository(),
+    this.analytics,
+    this.dashboard,
   });
 
   final AppConfig config;
   final PublicProjectsRepository publicProjects;
   final AuthRepository? authentication;
-  final AnalyticsRepository analytics;
-  final DashboardRepository dashboard;
+  final AnalyticsRepository? analytics;
+  final DashboardRepository? dashboard;
 
   @override
   State<AssocMapApp> createState() => _AssocMapAppState();
@@ -36,17 +40,36 @@ class AssocMapApp extends StatefulWidget {
 
 class _AssocMapAppState extends State<AssocMapApp> with WidgetsBindingObserver {
   late final AuthController _auth;
+  late final AuthRepository _repository;
+  late final AnalyticsRepository _analytics;
+  late final DashboardRepository _dashboard;
 
   @override
   void initState() {
     super.initState();
-    _auth = AuthController(
-      repository:
-          widget.authentication ??
-          RepositoryFactory.authentication(widget.config),
-      mode: widget.config.mode,
-    );
+    _repository =
+        widget.authentication ??
+        RepositoryFactory.authentication(widget.config);
+    final repository = _repository;
+    _analytics =
+        widget.analytics ??
+        (repository is ApiAuthRepository
+            ? ApiAnalyticsRepository(
+                config: widget.config,
+                read: repository.read,
+              )
+            : const UnavailableAnalyticsRepository());
+    _dashboard =
+        widget.dashboard ??
+        (repository is ApiAuthRepository
+            ? ApiDashboardRepository(
+                config: widget.config,
+                read: repository.read,
+              )
+            : const UnavailableDashboardRepository());
+    _auth = AuthController(repository: _repository, mode: widget.config.mode);
     WidgetsBinding.instance.addObserver(this);
+    unawaited(_auth.restoreSession());
   }
 
   @override
@@ -58,6 +81,7 @@ class _AssocMapAppState extends State<AssocMapApp> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _auth.dispose();
+    if (_repository is ApiAuthRepository) unawaited(_repository.dispose());
     super.dispose();
   }
 
@@ -73,10 +97,18 @@ class _AssocMapAppState extends State<AssocMapApp> with WidgetsBindingObserver {
         config: widget.config,
         repository: widget.publicProjects,
       ),
-      AppRoutes.associationAccess: (_) =>
-          AssociationGuard(config: widget.config, controller: _auth, analytics: widget.analytics, dashboard: widget.dashboard),
-      AppRoutes.associationHome: (_) =>
-          AssociationGuard(config: widget.config, controller: _auth, analytics: widget.analytics, dashboard: widget.dashboard),
+      AppRoutes.associationAccess: (_) => AssociationGuard(
+        config: widget.config,
+        controller: _auth,
+        analytics: _analytics,
+        dashboard: _dashboard,
+      ),
+      AppRoutes.associationHome: (_) => AssociationGuard(
+        config: widget.config,
+        controller: _auth,
+        analytics: _analytics,
+        dashboard: _dashboard,
+      ),
     },
     onUnknownRoute: (_) => MaterialPageRoute<void>(
       builder: (context) => Scaffold(

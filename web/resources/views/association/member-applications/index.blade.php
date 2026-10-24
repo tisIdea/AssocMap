@@ -10,7 +10,7 @@
     $canSubmit = $association && !$association->archived_at && $association->status === 'active';
     $submissionErrors = $errors->any() && !$errors->hasAny(['q', 'status', 'sort', 'page', 'association']);
     $area = $association?->area;
-    $barangay = $area?->barangay;
+    $barangay = $association?->locationBarangay();
     $otherPositionId = $positions->firstWhere('code', 'OTHER')?->id;
     $isOtherPosition = $otherPositionId !== null && (string) old('position_id') === (string) $otherPositionId;
 @endphp

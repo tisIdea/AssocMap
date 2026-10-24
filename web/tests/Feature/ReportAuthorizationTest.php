@@ -4,17 +4,22 @@ namespace Tests\Feature;
 
 use App\Models\UserProfile;
 use App\Services\SupabaseAuthService;
+use App\Exceptions\ReportDatasetLimitException;
 use App\Exceptions\ReportingUnavailableException;
+use App\Services\Reporting\ReportDataset;
 use App\Services\Reporting\PythonReportEngine;
 use App\Services\Reporting\ReportScope;
 use App\Services\Reporting\ReportService;
 use App\Services\Reporting\ReportCatalog;
+use Illuminate\Database\Query\Builder;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Validation\ValidationException;
 use Mockery;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 use Tests\TestCase;
 
@@ -30,11 +35,16 @@ class ReportAuthorizationTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        config([
+    'app.key' => 'base64:'.base64_encode(str_repeat('a', 32)),
+        ]);
+        config(['associations.geography_schema_ready' => false, 'associations.direct_geography' => false]);
         config(['database.connections.report_test' => ['driver' => 'sqlite', 'database' => ':memory:', 'prefix' => '', 'foreign_key_constraints' => true]]);
         DB::setDefaultConnection('report_test');
         $this->assertSame(':memory:', DB::connection()->getConfig('database'));
         Schema::create('roles', function (Blueprint $table) {
             $table->id(); $table->string('code'); $table->string('name'); $table->boolean('is_active'); $table->timestamps();
+            $table->text('description')->nullable();
         });
         Schema::create('user_profiles', function (Blueprint $table) {
             $table->uuid('id')->primary(); $table->integer('role_id'); $table->string('display_name');
@@ -78,6 +88,43 @@ class ReportAuthorizationTest extends TestCase
     private function actor(): UserProfile
     {
         return UserProfile::with('role')->findOrFail(self::USER);
+    }
+
+    public function test_current_association_report_scope_ignores_history_and_never_restores_ended_access(): void
+    {
+        DB::table('user_profiles')->where('id', self::USER)->update(['role_id' => 3]);
+        DB::table('user_profiles')->insert(['id' => self::OTHER, 'role_id' => 3, 'display_name' => 'Former synthetic holder', 'is_active' => false]);
+        DB::table('association_accounts')->insert([
+            ['id' => self::OWN, 'user_id' => self::USER, 'association_id' => self::OWN, 'is_active' => true],
+            ['id' => self::OUTSIDE, 'user_id' => self::USER, 'association_id' => self::OUTSIDE, 'is_active' => false],
+            ['id' => self::OTHER, 'user_id' => self::OTHER, 'association_id' => self::OWN, 'is_active' => false],
+        ]);
+        $scope = app(ReportScope::class);
+        $this->assertSame([self::OWN], $scope->associations($this->actor())->pluck('a.id')->all());
+        DB::table('association_accounts')->where('id', self::OWN)->update(['is_active' => false]);
+        try {
+            $scope->associations($this->actor())->get();
+            $this->fail('Historical appointments must not authorize report access.');
+        } catch (HttpExceptionInterface $exception) {
+            $this->assertSame(403, $exception->getStatusCode());
+        }
+    }
+
+    public function test_cutover_report_scope_retains_area_less_associations_and_exact_assignment_isolation(): void
+    {
+        Schema::table('associations', function (Blueprint $table) {
+            $table->uuid('area_id')->nullable()->change(); $table->uuid('barangay_id')->nullable();
+        });
+        DB::statement('UPDATE associations SET barangay_id=(SELECT barangay_id FROM areas WHERE areas.id=associations.area_id), area_id=NULL');
+        foreach ([false, true] as $direct) {
+            config(['associations.geography_schema_ready' => true, 'associations.direct_geography' => $direct]);
+            DB::table('associations')->where('id', self::OWN)->update(['primary_field_officer_id' => self::USER]);
+            $scope = app(ReportScope::class);
+            $this->assertSame([self::OWN], $scope->ids($this->actor(), ['municipality_id' => self::TOWN]));
+            $this->forbidden(fn () => $scope->ids($this->actor(), ['municipality_id' => self::OTHER_TOWN]));
+            DB::table('associations')->where('id', self::OWN)->update(['primary_field_officer_id' => self::OTHER]);
+            $this->assertSame([], $scope->ids($this->actor(), []));
+        }
     }
 
     private function request(): Request
@@ -148,6 +195,102 @@ class ReportAuthorizationTest extends TestCase
         $request = $this->request();
         DB::table('roles')->where('id', 3)->update(['is_active' => false]);
         $this->forbidden(fn () => app(ReportScope::class)->actor($request));
+    }
+
+    #[DataProvider('associationScopeGeographies')]
+    public function test_association_scope_uses_one_eligibility_query_and_keeps_the_geographic_builder(bool $schemaReady, bool $direct): void
+    {
+        $this->webIdentity(3);
+        if ($schemaReady) {
+            Schema::table('associations', function (Blueprint $table) {
+                $table->uuid('area_id')->nullable()->change(); $table->uuid('barangay_id')->nullable();
+            });
+            foreach ([[self::OWN, self::TOWN], [self::OUTSIDE, self::OTHER_TOWN]] as [$id, $barangay]) {
+                DB::table('associations')->where('id', $id)->update(['area_id' => null, 'barangay_id' => $barangay]);
+            }
+        }
+        config(['associations.geography_schema_ready' => $schemaReady, 'associations.direct_geography' => $direct]);
+        $actor = $this->actor();
+        $this->assertTrue($actor->canAccessApplication(throwOnDatabaseError: true));
+        $connection = DB::connection();
+        $connection->enableQueryLog();
+        $connection->flushQueryLog();
+        try {
+            $query = app(ReportScope::class)->associations($actor);
+            $this->assertCount(1, $connection->getQueryLog());
+        } finally {
+            $connection->disableQueryLog();
+            $connection->flushQueryLog();
+        }
+
+        $this->assertInstanceOf(Builder::class, $query);
+        $this->assertTrue($query->useWritePdo);
+        $association = $query->first(['a.id', 'ar.id as area_id', 'b.id as barangay_id', 'mu.id as municipality_id']);
+        $this->assertNotNull($association);
+        $this->assertSame(self::OWN, $association->id);
+        $this->assertSame($schemaReady ? null : self::TOWN, $association->area_id);
+        $this->assertSame(self::TOWN, $association->barangay_id);
+        $this->assertSame(self::TOWN, $association->municipality_id);
+        $this->assertArrayNotHasKey('association_link_count', (array) $association);
+        $this->assertArrayNotHasKey('eligible_association_id', (array) $association);
+        $this->assertFalse((clone $query)->where('a.id', self::OUTSIDE)->exists());
+    }
+
+    public static function associationScopeGeographies(): array
+    {
+        return [
+            'legacy geography' => [false, false],
+            'schema ready with optional Area disabled' => [true, false],
+            'optional Area enabled' => [true, true],
+        ];
+    }
+
+    #[DataProvider('associationScopeRestrictions')]
+    public function test_association_scope_rechecks_current_links_and_parents_without_granting_historical_access(string $restriction): void
+    {
+        $this->webIdentity(3);
+        $scope = app(ReportScope::class);
+        $request = $this->request();
+        $actor = $request->attributes->get('current_user');
+        $ids = $scope->ids($actor, []);
+        $this->assertSame([self::OWN], $ids);
+
+        match ($restriction) {
+            'missing_link' => DB::table('association_accounts')->where('user_id', self::USER)->delete(),
+            'inactive_link' => DB::table('association_accounts')->where('user_id', self::USER)->update(['is_active' => false]),
+            'duplicate_user_active', 'duplicate_user_inactive', 'duplicate_user_missing_parent' => DB::table('association_accounts')->insert([
+                'id' => self::OUTSIDE, 'user_id' => self::USER,
+                'association_id' => $restriction === 'duplicate_user_missing_parent' ? self::OTHER : self::OUTSIDE,
+                'is_active' => $restriction !== 'duplicate_user_inactive',
+            ]),
+            'duplicate_association_active', 'duplicate_association_inactive' => DB::table('association_accounts')->insert([
+                'id' => self::OUTSIDE, 'user_id' => self::OTHER, 'association_id' => self::OWN,
+                'is_active' => $restriction === 'duplicate_association_active',
+            ]),
+            'missing_association' => DB::table('association_accounts')->where('user_id', self::USER)->update(['association_id' => self::OTHER]),
+            'inactive_association' => DB::table('associations')->where('id', self::OWN)->update(['status' => 'inactive']),
+            'archived_association' => DB::table('associations')->where('id', self::OWN)->update(['archived_at' => '2026-01-01 00:00:00']),
+            'missing_area' => DB::table('areas')->where('id', self::TOWN)->delete(),
+            'missing_barangay' => DB::table('barangays')->where('id', self::TOWN)->delete(),
+            'missing_municipality' => DB::table('municipalities')->where('id', self::TOWN)->delete(),
+        };
+
+        if (in_array($restriction, ['duplicate_user_inactive', 'duplicate_association_inactive'], true)) {
+            $scope->recheck($request, [], $ids);
+            $this->assertSame($ids, $scope->ids($actor, []));
+            return;
+        }
+        $this->forbidden(fn () => $scope->associations($actor));
+        $this->forbidden(fn () => $scope->recheck($request, [], $ids));
+    }
+
+    public static function associationScopeRestrictions(): array
+    {
+        return array_map(fn ($case) => [$case], [
+            'missing_link', 'inactive_link', 'duplicate_user_active', 'duplicate_user_inactive', 'duplicate_user_missing_parent',
+            'duplicate_association_active', 'duplicate_association_inactive', 'missing_association',
+            'inactive_association', 'archived_association', 'missing_area', 'missing_barangay', 'missing_municipality',
+        ]);
     }
 
     private function webIdentity(int $role = 1): void
@@ -401,5 +544,146 @@ class ReportAuthorizationTest extends TestCase
         $query = $this->htmlQuery($this->get('/admin/reports')->assertOk()->assertSee('Reporting is temporarily unavailable.')->getContent());
         $this->assertSame(2, $query->query('//form[@data-report-export]/button[@disabled]')->length);
         $this->assertSame(1, $query->query('//button[@data-report-submit and not(@disabled)]')->length);
+    }
+
+    public static function datasetSizeLimits(): array
+    {
+        return ['dataset limit' => [1, 20000], 'total limit' => [5000, 1]];
+    }
+
+    #[DataProvider('datasetSizeLimits')]
+    public function test_dataset_size_limits_raise_the_recoverable_validation_exception(int $rows, int $total): void
+    {
+        DB::table('user_profiles')->where('id', self::USER)->update(['role_id' => 2]);
+        config(['reporting.max_rows' => $rows, 'reporting.max_total_rows' => $total]);
+        $actor = $this->actor();
+        $scope = app(ReportScope::class);
+        try {
+            app(ReportDataset::class)->extract($actor, ['report_type' => 'associations'], $scope->ids($actor, []));
+            $this->fail('Expected a report dataset size rejection.');
+        } catch (ReportDatasetLimitException $exception) {
+            $this->assertSame(422, $exception->status);
+            $this->assertArrayHasKey('filters', $exception->errors());
+        }
+        $this->assertSame(2, DB::table('associations')->count());
+    }
+
+    private function recoveryOptions(): array
+    {
+        $options = array_fill_keys(['municipalities', 'associations', 'projects', 'products', 'components', 'program_years'], []);
+        $options['years'] = [2024];
+        $options['municipalities'] = [['id' => self::TOWN, 'name' => 'Synthetic authorized municipality']];
+        $options['associations'] = [['id' => self::OWN, 'name' => 'Synthetic authorized association', 'municipality_id' => self::TOWN]];
+
+        return $options;
+    }
+
+    #[DataProvider('reportRoles')]
+    public function test_oversized_initial_report_retains_filters_and_disables_exports(string $prefix, int $role, bool $export): void
+    {
+        $this->webIdentity($role);
+        $filters = ['report_type' => 'comprehensive', 'year' => 2024, 'quarter' => 2,
+            'municipality_id' => self::TOWN, 'association_id' => self::OWN];
+        $service = Mockery::mock(ReportService::class);
+        $service->shouldReceive('options')->twice()->andReturn($this->recoveryOptions());
+        $service->shouldReceive('generate')->once()->andThrow(ReportDatasetLimitException::withMessages([
+            'filters' => 'Synthetic internal dataset detail that must not appear in the page.',
+        ]));
+        $this->app->instance(ReportService::class, $service);
+
+        $response = $this->get('/'.$prefix.'/reports?'.http_build_query($filters))->assertUnprocessable()
+            ->assertViewIs('reports.page')->assertViewHas('result', fn ($result) => $result === null)
+            ->assertSee('This report is too large.')->assertDontSee('Synthetic internal dataset detail');
+        $query = $this->htmlQuery($response->getContent());
+        $this->assertSame(1, $query->query('//form[@data-report-form and @method="GET"]')->length);
+        $this->assertSame(1, $query->query('//button[@data-report-submit and not(@disabled)]')->length);
+        $this->assertSame(1, $query->query('//*[@data-report-status and @role="alert"]')->length);
+        $this->assertSame('2024', $query->query('//select[@name="year"]/option[@selected]')->item(0)->getAttribute('value'));
+        $this->assertSame('2', $query->query('//select[@name="quarter"]/option[@selected]')->item(0)->getAttribute('value'));
+        $this->assertSame($export ? 2 : 0, $query->query('//form[@data-report-export]/button[@disabled]')->length);
+        $this->assertSame((int) $export, $query->query('//form[@data-report-export]')->length);
+        if ($export) {
+            $this->assertSame(self::OWN, $query->query('//select[@name="association_id"]/option[@selected]')->item(0)->getAttribute('value'));
+        } else {
+            $this->assertSame(0, $query->query('//select[@name="association_id" or @name="municipality_id"]')->length);
+        }
+        $response->assertDontSee(self::OUTSIDE)->assertDontSee(self::OTHER_TOWN);
+    }
+
+    public function test_oversized_initial_report_can_be_narrowed_and_loaded_again(): void
+    {
+        $this->webIdentity(2);
+        $filters = ['report_type' => 'comprehensive', 'year' => 2024];
+        $narrowed = $filters + ['association_id' => self::OWN];
+        $service = Mockery::mock(ReportService::class);
+        $service->shouldReceive('options')->twice()->andReturn($this->recoveryOptions());
+        $service->shouldReceive('generate')->once()
+            ->withArgs(fn (Request $request, array $selection) => ! isset($selection['association_id']))
+            ->andThrow(ReportDatasetLimitException::withMessages(['filters' => 'Select a smaller report.']));
+        $service->shouldReceive('generate')->once()
+            ->withArgs(fn (Request $request, array $selection) => $selection == $narrowed)
+            ->andReturn(['result' => $this->uiResult($narrowed), 'artifact' => null]);
+        $this->app->instance(ReportService::class, $service);
+
+        $this->get('/admin/reports?'.http_build_query($filters))->assertUnprocessable()->assertViewIs('reports.page');
+        $this->getJson('/admin/reports/data?'.http_build_query($narrowed))->assertOk()
+            ->assertJsonPath('data.meta.filters.association_id', self::OWN);
+    }
+
+    public function test_size_recovery_denies_filters_when_authorization_is_revoked(): void
+    {
+        $this->webIdentity(2);
+        $reads = 0;
+        $service = Mockery::mock(ReportService::class);
+        $service->shouldReceive('options')->twice()->andReturnUsing(function () use (&$reads) {
+            abort_if(++$reads === 2, 403);
+
+            return $this->recoveryOptions();
+        });
+        $service->shouldReceive('generate')->once()
+            ->andThrow(ReportDatasetLimitException::withMessages(['filters' => 'Select a smaller report.']));
+        $this->app->instance(ReportService::class, $service);
+
+        $this->get('/admin/reports')->assertForbidden()->assertViewIs('reports.error')->assertDontSee('data-report-form', false);
+    }
+
+    public static function nonRecoverableReportStatuses(): array
+    {
+        return [[403], [419], [422]];
+    }
+
+    #[DataProvider('nonRecoverableReportStatuses')]
+    public function test_non_size_report_errors_keep_existing_error_handling(int $status): void
+    {
+        $this->webIdentity(2);
+        $failure = $status === 422
+            ? ValidationException::withMessages(['component_id' => 'Choose a recorded program component.'])
+            : new HttpException($status, 'Synthetic internal exception detail.');
+        $service = Mockery::mock(ReportService::class);
+        $service->shouldReceive('options')->once()->andReturn($this->recoveryOptions());
+        $service->shouldReceive('generate')->once()->andThrow($failure);
+        $this->app->instance(ReportService::class, $service);
+
+        $this->get('/admin/reports')->assertStatus($status)->assertViewIs('reports.error')
+            ->assertDontSee('data-report-form', false)->assertDontSee('Synthetic internal exception detail.');
+    }
+
+    public function test_size_rejections_keep_json_and_export_validation_responses(): void
+    {
+        $this->webIdentity(2);
+        $service = Mockery::mock(ReportService::class);
+        $service->shouldReceive('options')->once()->andReturn($this->recoveryOptions());
+        $service->shouldReceive('generate')->times(4)
+            ->andThrow(ReportDatasetLimitException::withMessages(['filters' => 'Select a smaller report.']));
+        $this->app->instance(ReportService::class, $service);
+
+        foreach (['/admin/reports', '/admin/reports/data'] as $url) {
+            $this->getJson($url)->assertUnprocessable()->assertJsonValidationErrors('filters')
+                ->assertJsonPath('error.code', 'reporting_request_failed');
+        }
+        foreach (['pdf', 'xlsx'] as $format) {
+            $this->postJson('/admin/reports/export/'.$format)->assertUnprocessable()
+                ->assertJsonValidationErrors('filters')->assertJsonPath('error.code', 'reporting_request_failed');
+        }
     }
 }

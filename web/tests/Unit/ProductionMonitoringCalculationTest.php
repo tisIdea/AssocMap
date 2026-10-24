@@ -79,4 +79,20 @@ class ProductionMonitoringCalculationTest extends TestCase
             }
         }
     }
+
+    public function test_daily_quantity_sum_and_goal_attainment_use_exact_decimals_at_precision_limits(): void
+    {
+        $calculator = app(ProductionMonitoringService::class);
+        $this->assertSame('0.00', $calculator->sumQuantities([]));
+        $this->assertSame('0.30', $calculator->sumQuantities(['0.10', '0.20']));
+        $row = new \App\Models\MonitoringProduction(['target_output' => '0.01', 'actual_output' => '999999999999.99']);
+        $this->assertSame('9999999999999900.00', $calculator->goalAttainment($row, 1));
+        $this->assertNull($calculator->goalAttainment($row, 0));
+        $row->target_output = null;
+        $this->assertNull($calculator->goalAttainment($row, 1));
+        $row->target_output = '0.00';
+        $this->assertNull($calculator->goalAttainment($row, 1));
+        $row->target_output = '3.00'; $row->actual_output = '1.00';
+        $this->assertSame('33.33', $calculator->goalAttainment($row, 1));
+    }
 }

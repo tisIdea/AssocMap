@@ -32,7 +32,7 @@ class SupabaseApiIdentityTest extends TestCase
             return Http::response(['id' => self::ID, 'email' => 'Synthetic@Example.test',
                 'user_metadata' => ['role' => 'system_admin', 'private_note' => 'withheld']], 200);
         });
-        $result = (new SupabaseAuthService)->verifyApiIdentity(self::TOKEN);
+        $result = app(SupabaseAuthService::class)->verifyApiIdentity(self::TOKEN);
         $this->assertSame(['outcome' => 'verified', 'identity' => [
             'id' => self::ID, 'email' => 'synthetic@example.test',
         ]], $result);
@@ -54,7 +54,7 @@ class SupabaseApiIdentityTest extends TestCase
         int $status, array $body, array $headers, string $outcome): void
     {
         Http::fake([self::URL => Http::response($body, $status, $headers)]);
-        $result = (new SupabaseAuthService)->verifyApiIdentity(self::TOKEN);
+        $result = app(SupabaseAuthService::class)->verifyApiIdentity(self::TOKEN);
         $this->assertSame(['outcome' => $outcome], $result);
         Http::assertSentCount(1);
         $this->assertSame([], DB::getConnections());
@@ -87,7 +87,7 @@ class SupabaseApiIdentityTest extends TestCase
     public function test_unexpected_identity_payloads_are_unavailable(string $body): void
     {
         Http::fake([self::URL => Http::response($body, 200, ['Content-Type' => 'application/json'])]);
-        $this->assertSame(['outcome' => 'unavailable'], (new SupabaseAuthService)->verifyApiIdentity(self::TOKEN));
+        $this->assertSame(['outcome' => 'unavailable'], app(SupabaseAuthService::class)->verifyApiIdentity(self::TOKEN));
         Http::assertSentCount(1);
     }
 
@@ -110,14 +110,14 @@ class SupabaseApiIdentityTest extends TestCase
     {
         Http::fake([self::URL => Http::response(['id' => self::ID,
             'email' => null, 'is_anonymous' => true])]);
-        $this->assertSame(['outcome' => 'denied'], (new SupabaseAuthService)->verifyApiIdentity(self::TOKEN));
+        $this->assertSame(['outcome' => 'denied'], app(SupabaseAuthService::class)->verifyApiIdentity(self::TOKEN));
     }
 
     public function test_json_identity_with_unexpected_content_type_is_unavailable(): void
     {
         Http::fake([self::URL => Http::response(json_encode(['id' => self::ID,
             'email' => 'synthetic@example.test']), 200, ['Content-Type' => 'text/html'])]);
-        $this->assertSame(['outcome' => 'unavailable'], (new SupabaseAuthService)->verifyApiIdentity(self::TOKEN));
+        $this->assertSame(['outcome' => 'unavailable'], app(SupabaseAuthService::class)->verifyApiIdentity(self::TOKEN));
         Http::assertSentCount(1);
     }
 
@@ -127,7 +127,7 @@ class SupabaseApiIdentityTest extends TestCase
         $key = $encode('{"alg":"HS256","typ":"JWT"}').'.'.$encode('{"role":"anon"}').'.synthetic_signature';
         config(['services.supabase.publishable_key' => $key]);
         Http::fake([self::URL => Http::response(['id' => self::ID, 'email' => 'synthetic@example.test'])]);
-        $service = new SupabaseAuthService;
+        $service = app(SupabaseAuthService::class);
         $this->assertSame('verified', $service->verifyApiIdentity(self::TOKEN)['outcome']);
         Http::assertSent(fn ($request) => $request->header('apikey') === [$key]
             && $request->header('Authorization') === ['Bearer '.self::TOKEN]);
@@ -140,14 +140,14 @@ class SupabaseApiIdentityTest extends TestCase
     public function test_timeout_is_unavailable_without_retry_or_sensitive_error_details(): void
     {
         Http::fake([self::URL => Http::failedConnection('Synthetic private context '.self::TOKEN)]);
-        $this->assertSame(['outcome' => 'unavailable'], (new SupabaseAuthService)->verifyApiIdentity(self::TOKEN));
+        $this->assertSame(['outcome' => 'unavailable'], app(SupabaseAuthService::class)->verifyApiIdentity(self::TOKEN));
         Http::assertSentCount(1);
         $this->assertSame([], DB::getConnections());
     }
 
     public function test_invalid_tokens_and_configuration_never_contact_provider(): void
     {
-        $service = new SupabaseAuthService;
+        $service = app(SupabaseAuthService::class);
         foreach (['', 'not-a-jwt', self::TOKEN."\r\n", str_repeat('x', 8193)] as $token) {
             $this->assertSame(['outcome' => 'invalid'], $service->verifyApiIdentity($token));
         }

@@ -19,7 +19,7 @@
             ['field-officer.reports.index', 'Reports & Analytics', 'receipt'], ['field-officer.gis.index', 'GIS Mapping', 'map'],
         ],
         default => [
-            ['association.member-applications.index', 'Member Applications', 'users'], ['association.monitoring.index', 'Projects & monitoring', 'briefcase'],
+            ['association.member-applications.index', 'Member Applications', 'users'], ['association.projects.index', 'My Projects', 'briefcase'], ['association.monitoring.index', 'Monitoring', 'clipboard-check'],
             ['association.reports.index', 'Reports & Analytics', 'receipt'], ['association.gis.index', 'GIS Mapping', 'map'],
         ],
     };
@@ -144,10 +144,10 @@
         @elseif(!$dashboard['recent_projects'])<p class="dashboard-empty">No unarchived projects in this scope.</p>
         @else
             <ul class="dashboard-records">
-                @foreach($dashboard['recent_projects'] as $project)<li><div><strong>@if($role !== 'association_account')<a href="{{ route($prefix.'.projects.show', $project['id']) }}">{{ $project['title'] }}</a>@else{{ $project['title'] }}@endif</strong><p>{{ $project['association'] }} · Program year {{ $project['program_year'] }}</p><small>Registered {{ \Carbon\CarbonImmutable::parse($project['created_at'])->setTimezone('Asia/Manila')->format('M j, Y') }}</small></div><span class="badge badge-neutral">{{ ucfirst($project['status']) }}</span></li>@endforeach
+                @foreach($dashboard['recent_projects'] as $project)<li><div><strong><a href="{{ route($prefix.'.projects.show', $project['id']) }}">{{ $project['title'] }}</a></strong><p>{{ $project['association'] }} · Program year {{ $project['program_year'] }}</p><small>Registered {{ \Carbon\CarbonImmutable::parse($project['created_at'])->setTimezone('Asia/Manila')->format('M j, Y') }}</small></div><span class="badge badge-neutral">{{ ucfirst($project['status']) }}</span></li>@endforeach
             </ul>
         @endif
-        <a class="button" href="{{ route($role === 'association_account' ? 'association.monitoring.index' : $prefix.'.projects.index') }}">{{ $role === 'association_account' ? 'View projects in Monitoring' : 'Open Projects' }}</a>
+        <a class="button" href="{{ route($prefix.'.projects.index') }}">{{ $role === 'association_account' ? 'Open My Projects' : 'Open Projects' }}</a>
     </section>
     @if($role !== 'system_admin')
     </div>

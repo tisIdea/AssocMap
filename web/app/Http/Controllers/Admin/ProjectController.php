@@ -41,7 +41,7 @@ class ProjectController extends Controller
 
     public function edit(Request $request, Project $project, ProjectLifecycleService $lifecycle, AssociationLifecycleService $associations, ProgramEditorQueryService $editor): View
     {
-        $project->load(['association.area.barangay.municipality', 'saadActivity', 'fisheriesCategory', 'commodity', 'materials', 'products']);
+        $project->load([...app(\App\Services\AssociationGeographyService::class)->relations('association'), 'saadActivity', 'fisheriesCategory', 'commodity', 'materials', 'products']);
         abort_unless($project->association, 404);
         $actor = $request->attributes->get('current_user');
         $lifecycle->authorize($actor, $project->association);
@@ -153,7 +153,7 @@ class ProjectController extends Controller
     {
         $association = $project->association;
         $area = $association?->area;
-        $barangay = $area?->barangay;
+        $barangay = $association?->locationBarangay();
         $municipality = $barangay?->municipality;
 
         return [

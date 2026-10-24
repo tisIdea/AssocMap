@@ -54,7 +54,7 @@
             <div class="table-scroll" tabindex="0" role="region" aria-label="User accounts">
                 <table class="data-table user-table">
                     <caption class="sr-only">Application profiles, current Auth emails, invitation state, and organizational links.</caption>
-                    <thead><tr><th scope="col">Account</th><th scope="col">Role</th><th scope="col">Profile status</th><th scope="col">Invitation</th><th scope="col">Created</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead>
+                    <thead><tr><th scope="col">Account</th><th scope="col">Role</th><th scope="col">Account status</th><th scope="col">Linked association</th><th scope="col">Invitation</th><th scope="col">Created</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead>
                     <tbody>
                     @forelse($users as $user)
                         @php($detailUrl = route('admin.users.show', ['userProfile' => $user['id']] + $filters + ['page' => $users->currentPage()]))
@@ -70,14 +70,19 @@
                                     @if($user['email'] === null && $user['invitation_email'])<p class="field-help">Historical invitation email: {{ $user['invitation_email'] }}</p>@endif
                                     @if($user['role_code'] === 'field_officer')
                                         <p class="user-account-meta">{{ $user['assigned_count'] }} association(s); {{ $user['archived_assigned_count'] }} archived.</p>
-                                    @elseif($user['role_code'] === 'association_account')
-                                        <p class="user-account-meta">{{ $user['association'] ?? 'No association link' }}</p>
-                                        @if($user['association'] && (!$user['link_active'] || !$user['association_available']))<p class="field-help">Link or association unavailable</p>@endif
                                     @endif
                                 </div>
                             </div></td>
                             <td><span @class(['badge', 'user-role-admin' => $user['role_code'] === 'system_admin', 'user-role-officer' => $user['role_code'] === 'field_officer', 'user-role-association' => $user['role_code'] === 'association_account', 'badge-neutral' => !$user['role_code']])>{{ $user['role'] }}</span>@if(!$user['role_active'])<p class="field-help">Role inactive or unavailable</p>@endif</td>
-                            <td><x-status-badge :value="$user['is_active'] ? 'Active' : 'Inactive'" /></td>
+                            <td><x-status-badge :value="$user['is_active'] ? 'Active' : ($user['revoked_at'] ? 'Revoked' : 'Inactive')" />
+                                @if($user['revoked_at'] && $user['reactivation_blocked_reason'])<p class="field-help">{{ $user['reactivation_blocked_reason'] }}</p>@endif
+                            </td>
+                            <td>
+                                @if($user['role_code'] === 'association_account' || $user['association_integrity_issue'])
+                                    <span>{{ $user['association'] ?? $user['association_relationship_status'] }}</span>
+                                    @if($user['association'])<p class="field-help">{{ $user['association_relationship_status'] }} · Association: {{ $user['association_status'] }}</p>@endif
+                                @else<span class="field-help">Not applicable</span>@endif
+                            </td>
                             <td><x-status-badge :value="$user['invitation_status'] ? ucfirst($user['invitation_status']) : 'No bound invitation'" /></td>
                             <td class="user-created">{{ $user['created_at']?->timezone('Asia/Manila')->format('M d, Y') ?? 'Not recorded' }}</td>
                             <td class="user-actions-cell">
@@ -85,15 +90,16 @@
                                     <summary aria-label="Actions for {{ $user['display_name'] }}" title="Actions for {{ $user['display_name'] }}"><x-icon name="ellipsis" /></summary>
                                     <div class="user-actions-panel" data-user-actions-panel>
                                         <a href="{{ $detailUrl }}"><x-icon name="eye" /><span>View Account Details</span></a>
+                                        @if(config('services.supabase.account_reactivation_enabled') === true && $user['revoked_at'] && $user['activated_at'] && $user['role_active'] && !$user['reactivation_blocked_reason'])<a href="{{ route('admin.users.reactivation.edit', $user['id']) }}"><x-icon name="user" /><span>Reactivate Account</span></a>@endif
                                         @if($user['role_code'] === 'field_officer' && $user['is_active'] && $user['role_active'])<a href="{{ route('admin.users.assignments.edit', $user['id']) }}"><x-icon name="building" /><span>Association assignments</span></a>@endif
                                         <button type="button" disabled><x-icon name="settings" /><span>Reset Password<small>Coming soon</small></span></button>
-                                        <button type="button" disabled title="Account deactivation is not available in this release."><x-icon name="archive" /><span>Deactivate User<small>Unavailable</small></span></button>
+                                        @if($user['id'] !== $currentUser->id)<a href="{{ $detailUrl }}#user-access"><x-icon name="archive" /><span>Manage access</span></a>@else<button type="button" disabled title="You cannot revoke your own access."><x-icon name="archive" /><span>Revoke Access<small>Your account</small></span></button>@endif
                                     </div>
                                 </details>
                             </td>
                         </tr>
                     @empty
-                        <tr><td colspan="6"><x-empty-state title="No accounts on this page" message="Try another search or reset the filters to view all application profiles." /></td></tr>
+                        <tr><td colspan="7"><x-empty-state title="No accounts on this page" message="Try another search or reset the filters to view all application profiles." /></td></tr>
                     @endforelse
                     </tbody>
                 </table>

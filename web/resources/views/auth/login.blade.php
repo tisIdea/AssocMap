@@ -113,9 +113,7 @@
                             Remember me
                         </label>
 
-                        <a href="#">
-                            Forgot Password?
-                        </a>
+                        <a href="{{ route('password.forgot') }}">Forgot password?</a>
                     </div>
 
                     <button
@@ -134,6 +132,8 @@
                         Authorized AssocMap accounts only.
                     </p>
                 </form>
+
+                <p class="staff-login-note"><a href="{{ route('invitation.restart') }}">Resume account activation</a></p>
 
                 <a
                     href="{{ route('home') }}"

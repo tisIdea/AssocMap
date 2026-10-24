@@ -10,7 +10,7 @@
         ($row['area_type'] === 'Barangay') === ($areaType === 'Barangay'));
     $municipalityChoices = $catalog['options']['municipality_records'] ?? [];
     $barangayChoices = $catalog['options']['barangay_records'] ?? [];
-    $specificMunicipality = collect($barangayChoices)->firstWhere('value', $areaOld('barangay_id'))['municipality_id'] ?? '';
+    $specificMunicipality = $areaOld('municipality_id', collect($barangayChoices)->firstWhere('value', $areaOld('barangay_id'))['municipality_id'] ?? '');
     if ($editingArea && $areaType === 'Barangay' && !in_array($editingArea['municipality_id'], array_column($municipalityChoices, 'value'))) {
         $municipalityChoices[] = ['value' => $editingArea['municipality_id'], 'label' => $editingArea['municipality']];
     }
@@ -89,7 +89,7 @@
             <div class="form-grid field-wide" data-area-fields="Specific Area" @if($areaType !== 'Specific Area') hidden @endif>
                 <div class="field">
                     <label for="area-editor-specific-municipality">Municipality / City <span class="field-hint">*</span></label>
-                    <select id="area-editor-specific-municipality" data-specific-municipality required>
+                    <select id="area-editor-specific-municipality" name="municipality_id" data-specific-municipality required>
                         <option value="">Select…</option>
                         @foreach($catalog['options']['specific_municipality_records'] ?? $catalog['options']['municipality_records'] ?? [] as $choice)
                             <option value="{{ $choice['value'] }}" @selected($specificMunicipality === $choice['value'])>{{ $choice['label'] }}</option>

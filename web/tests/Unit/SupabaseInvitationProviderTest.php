@@ -96,6 +96,44 @@ class SupabaseInvitationProviderTest extends TestCase
         return ['id' => strtoupper(self::ID), 'email' => ' RECIPIENT@EXAMPLE.TEST ', 'created_at' => $createdAt];
     }
 
+    public static function contradictoryErrorFields(): array
+    {
+        $cases = [];
+        foreach (['error', 'error_code', 'code'] as $field) {
+            $cases[$field.' null'] = [$field, null];
+            $cases[$field.' message'] = [$field, 'Synthetic private provider detail'];
+        }
+
+        return $cases;
+    }
+
+    #[DataProvider('contradictoryErrorFields')]
+    public function test_lookup_error_fields_cannot_establish_identity_absence(string $field, ?string $value): void
+    {
+        $last = http_build_query(['filter' => self::EMAIL, 'page' => 0, 'per_page' => 100]);
+        Http::fake([self::URL.'*' => Http::response(['users' => [], $field => $value], 200, [
+            'X-Total-Count' => '0', 'Link' => '</auth/v1/admin/users?'.$last.'>; rel="last"',
+        ])]);
+
+        $this->assertSame(['outcome' => 'failed', 'code' => 'identity_lookup_failed'],
+            app(SupabaseInvitationProvider::class)->findInvitationIdentity(self::EMAIL));
+        Http::assertSentCount(1);
+        Http::assertNotSent(fn (Request $request) => $request->method() !== 'GET');
+    }
+
+    #[DataProvider('contradictoryErrorFields')]
+    public function test_invitation_error_fields_cannot_confirm_provisioning(string $field, ?string $value): void
+    {
+        Http::fake([self::INVITE_URL.'*' => Http::response($this->invitationBody() + [$field => $value])]);
+
+        $result = app(SupabaseInvitationProvider::class)->inviteUser(self::EMAIL, 'Synthetic Recipient');
+
+        $this->assertSame(['outcome' => 'uncertain', 'code' => 'provider_response_invalid'], $result);
+        $this->assertStringNotContainsString('Synthetic private provider detail', json_encode($result));
+        Http::assertSentCount(1);
+        Http::assertNotSent(fn (Request $request) => $request->method() !== 'POST');
+    }
+
     #[Group('m3c-contract')]
     #[DataProvider('validCreationTimes')]
     public function test_valid_creation_times_preserve_the_provisioned_identity_and_instant(string $createdAt, string $expected): void

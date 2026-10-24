@@ -18,6 +18,8 @@ class Association extends Model
 
     public $incrementing = false;
 
+    protected $hidden = ['specific_address'];
+
     protected $fillable = [
         'name',
         'acronym',
@@ -38,6 +40,17 @@ class Association extends Model
     public function area(): BelongsTo
     {
         return $this->belongsTo(Area::class, 'area_id');
+    }
+
+    public function barangay(): BelongsTo
+    {
+        return $this->belongsTo(Barangay::class, 'barangay_id');
+    }
+
+    public function locationBarangay(): ?Barangay
+    {
+        return app(\App\Services\AssociationGeographyService::class)->usesDirectGeography()
+            ? $this->barangay : $this->area?->barangay;
     }
 
     public function primaryFieldOfficer(): BelongsTo
@@ -62,7 +75,12 @@ class Association extends Model
 
     public function associationAccount(): HasOne
     {
-        return $this->hasOne(AssociationAccount::class, 'association_id');
+        return $this->hasOne(AssociationAccount::class, 'association_id')->where('is_active', true);
+    }
+
+    public function associationAccountHistory(): HasMany
+    {
+        return $this->hasMany(AssociationAccount::class, 'association_id');
     }
 
     public function currentPresident(): HasOne

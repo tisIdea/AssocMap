@@ -1,0 +1,7 @@
+{
+  "ASSOCMAP_DATA_MODE": "api",
+  "ASSOCMAP_GIS_MODE": "live",
+  "ASSOCMAP_BACKEND_BASE_URL": "https://staging.assocmap.app",
+  "ASSOCMAP_SUPABASE_URL": "https://mbpvgmpubsedafexunhs.supabase.co",
+  "ASSOCMAP_SUPABASE_PUBLISHABLE_KEY": "sb_publishable_B7uD5G8J_5OIogxZ3w2cSg_rP02dVP2"
+}

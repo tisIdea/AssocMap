@@ -57,7 +57,7 @@ class ProgramManagementUiTest extends TestCase
     {
         // Test tables exist only in the guarded SQLite in-memory connection.
         DB::unprepared(<<<'SQL'
-            CREATE TABLE roles (id INTEGER PRIMARY KEY, code TEXT, is_active BOOLEAN);
+            CREATE TABLE roles (id INTEGER PRIMARY KEY, code TEXT, is_active BOOLEAN, name TEXT, description TEXT, created_at TEXT, updated_at TEXT);
             CREATE TABLE user_profiles (id TEXT PRIMARY KEY, role_id INTEGER, display_name TEXT, is_active BOOLEAN, created_at TEXT, updated_at TEXT);
             CREATE TABLE user_invitations (id TEXT PRIMARY KEY, auth_user_id TEXT, status TEXT, last_error_code TEXT, accepted_at TEXT, last_attempt_at TEXT, created_at TEXT);
             CREATE TABLE municipalities (id TEXT PRIMARY KEY, name TEXT);
@@ -100,6 +100,28 @@ class ProgramManagementUiTest extends TestCase
             ['id' => 2, 'code' => 'SP_LT', 'name' => 'Livelihood Training', 'is_active' => true]]);
         DB::table('fisheries_project_categories')->insert(['id' => 1, 'name' => 'Aquaculture', 'is_active' => true]);
         DB::table('commodities')->insert(['id' => 1, 'name' => 'Fish', 'category_id' => 1, 'source' => 'manual', 'is_active' => true]);
+    }
+
+    public function test_cutover_program_modules_keep_area_less_parents_visible_and_assignment_denials(): void
+    {
+        DB::statement('ALTER TABLE associations ADD COLUMN barangay_id TEXT');
+        DB::statement('UPDATE associations SET barangay_id=(SELECT barangay_id FROM areas WHERE areas.id=associations.area_id), area_id=NULL');
+        config(['associations.geography_schema_ready' => true]);
+        $this->project(101);
+        $this->project(102, ['association_id' => $this->id(12), 'title' => 'Outside Project']);
+        $this->training(201);
+        $this->activity(301);
+        foreach (['admin' => 1, 'field-officer' => 2] as $prefix => $identity) {
+            $this->identity = $this->id($identity);
+            foreach (['projects', 'trainings', 'program-activities'] as $module) {
+                $page = $this->get('/'.$prefix.'/'.$module)->assertOk()->assertSee('Test Municipality');
+                if ($prefix === 'field-officer') $page->assertDontSee('Outside Project');
+            }
+            $this->get('/'.$prefix.'/projects/'.$this->id(101))->assertOk()->assertSee('Test Municipality');
+            $this->get('/'.$prefix.'/trainings/'.$this->id(201))->assertOk()->assertSee('Test Municipality');
+        }
+        $this->get('/field-officer/projects/'.$this->id(102))->assertForbidden();
+        $this->assertDatabaseHas('projects', ['id' => $this->id(101), 'association_id' => $this->id(11), 'status' => 'ongoing']);
     }
 
     private function project(int $id, array $overrides = []): void

@@ -12,13 +12,15 @@
         <p class="association-section-note">The president is the recorded active, nonarchived member holding the President position. Registration records are available below.</p>
     </section>
     <section class="card association-information" aria-labelledby="association-location-title">
+        @php($locationBarangay = $association->locationBarangay())
         <div class="association-section-heading"><h2 id="association-location-title">Geographic location</h2></div>
         <dl class="association-info-grid">
-            <div><dt>City / Municipality</dt><dd>@if($prefix === 'admin' && $association->area?->barangay?->municipality)<a href="{{ route('admin.municipalities.show', $association->area->barangay->municipality_id) }}">{{ $association->area->barangay->municipality->name }}</a>@else{{ $association->area?->barangay?->municipality?->name ?? 'Not recorded' }}@endif</dd></div>
-            <div><dt>Barangay</dt><dd>@if($prefix === 'admin' && $association->area?->barangay)<a href="{{ route('admin.barangays.show', $association->area->barangay_id) }}">{{ $association->area->barangay->name }}</a>@else{{ $association->area?->barangay?->name ?? 'Not recorded' }}@endif</dd></div>
-            <div><dt>Recorded address / Sitio / Purok</dt><dd>{{ $association->area?->address ?? 'Not recorded' }}</dd></div>
+            <div><dt>City / Municipality</dt><dd>@if($prefix === 'admin' && $locationBarangay?->municipality)<a href="{{ route('admin.municipalities.show', $locationBarangay->municipality_id) }}">{{ $locationBarangay->municipality->name }}</a>@else{{ $locationBarangay?->municipality?->name ?? 'Not recorded' }}@endif</dd></div>
+            <div><dt>Barangay</dt><dd>@if($prefix === 'admin' && $locationBarangay)<a href="{{ route('admin.barangays.show', $locationBarangay->id) }}">{{ $locationBarangay->name }}</a>@else{{ $locationBarangay?->name ?? 'Not recorded' }}@endif</dd></div>
+            <div><dt>{{ app(\App\Services\AssociationGeographyService::class)->usesDirectGeography() ? 'Specific Area' : 'Recorded address / Sitio / Purok' }}</dt><dd>{{ $association->area?->address ?? 'Not recorded' }}</dd></div>
+            @if(app(\App\Services\AssociationGeographyService::class)->usesDirectGeography())<div><dt>Association Address / Sitio / Purok</dt><dd>{{ $association->specific_address ?? 'Not recorded' }}</dd></div>@endif
         </dl>
-        @if($association->area && (!$association->area->is_active || !$association->area->barangay?->is_active || !$association->area->barangay?->municipality?->is_active))<p class="association-section-note">This location includes inactive geographic references, retained for historical accuracy.</p>@endif
+        @if(($association->area && !$association->area->is_active) || ($locationBarangay && (!$locationBarangay->is_active || !$locationBarangay->municipality?->is_active)))<p class="association-section-note">This location includes inactive geographic references, retained for historical accuracy.</p>@endif
     </section>
     <section class="card association-register" aria-labelledby="related-association-records">
         <div class="association-section-heading"><div><h2 id="related-association-records">Related records</h2><p>Select a record group. Each list is paginated and limited to this association.</p></div></div>

@@ -48,7 +48,7 @@ class MemberDirectoryUiTest extends TestCase
     {
         // This schema exists only in the guarded SQLite in-memory connection.
         DB::unprepared(<<<'SQL'
-            CREATE TABLE roles (id INTEGER PRIMARY KEY, code TEXT, is_active BOOLEAN);
+            CREATE TABLE roles (id INTEGER PRIMARY KEY, code TEXT, is_active BOOLEAN, name TEXT, description TEXT, created_at TEXT, updated_at TEXT);
             CREATE TABLE user_profiles (id TEXT PRIMARY KEY, role_id INTEGER, display_name TEXT, is_active BOOLEAN, created_at TEXT, updated_at TEXT);
             CREATE TABLE user_invitations (id TEXT PRIMARY KEY, auth_user_id TEXT, status TEXT, last_error_code TEXT, accepted_at TEXT, last_attempt_at TEXT, created_at TEXT);
             CREATE TABLE municipalities (id TEXT PRIMARY KEY, name TEXT);
@@ -64,6 +64,26 @@ class MemberDirectoryUiTest extends TestCase
             CREATE TABLE member_applications (id TEXT PRIMARY KEY, association_id TEXT, submitted_by_user_id TEXT, first_name TEXT, middle_name TEXT, last_name TEXT, suffix TEXT, birth_date TEXT, sex_id INTEGER, contact_number TEXT, fishr_registration_number TEXT, position_id INTEGER, position_other_text TEXT, endorsement_letter TEXT, applicant_photo_path TEXT, status TEXT, reviewed_by TEXT, reviewed_at TEXT, rejection_reason TEXT, created_at TEXT, updated_at TEXT);
             CREATE TABLE member_application_classifications (member_application_id TEXT, classification_id INTEGER);
             SQL);
+    }
+
+    public function test_cutover_members_and_applications_keep_geography_and_ownership_without_areas(): void
+    {
+        DB::statement('ALTER TABLE associations ADD COLUMN barangay_id TEXT');
+        DB::statement('UPDATE associations SET barangay_id=(SELECT barangay_id FROM areas WHERE areas.id=associations.area_id), area_id=NULL');
+        config(['associations.geography_schema_ready' => true]);
+        $this->member(101);
+        $this->member(102, ['association_id' => $this->id(12), 'first_name' => 'OutsideOwner']);
+        $this->application(201);
+        $this->application(202, ['association_id' => $this->id(12), 'first_name' => 'OutsideApplicant']);
+        $this->get('/admin/members')->assertOk()->assertSee('Test Municipality')->assertSee('Test Barangay');
+        $this->identity = $this->id(2);
+        $this->get('/field-officer/members')->assertOk()->assertSee('Test Municipality')->assertDontSee('OutsideOwner');
+        $this->get('/field-officer/member-applications')->assertOk()->assertSee('Test Barangay')->assertDontSee('OutsideApplicant');
+        $this->identity = $this->id(4);
+        $this->get('/association/member-applications')->assertOk()->assertSee('Test Municipality')->assertSee('Test Barangay')->assertDontSee('OutsideApplicant');
+        $this->get('/admin/members')->assertForbidden();
+        $this->assertDatabaseCount('members', 2);
+        $this->assertDatabaseHas('member_applications', ['id' => $this->id(201), 'association_id' => $this->id(11), 'submitted_by_user_id' => $this->id(4)]);
     }
 
     private function fixtures(): void

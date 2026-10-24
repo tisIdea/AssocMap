@@ -3,13 +3,16 @@
 namespace App\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 class StoreAreaRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return true;
+        $user = $this->attributes->get('current_user');
+
+        return $user?->canAccessApplication() && $user->role?->code === 'system_admin';
     }
 
     protected function prepareForValidation(): void
@@ -24,11 +27,19 @@ class StoreAreaRequest extends FormRequest
     public function rules(): array
     {
         return [
+            'municipality_id' => [
+                'bail',
+                'required',
+                'uuid',
+                Rule::exists('municipalities', 'id')->where('is_active', true),
+            ],
             'barangay_id' => [
+                'bail',
                 'required',
                 'uuid',
                 Rule::exists('barangays', 'id')
-                    ->where('is_active', true),
+                    ->where('is_active', true)
+                    ->where('municipality_id', Str::isUuid($this->input('municipality_id')) ? $this->input('municipality_id') : null),
             ],
 
             'address' => [
@@ -41,8 +52,10 @@ class StoreAreaRequest extends FormRequest
     public function messages(): array
     {
         return [
+            'municipality_id.required' => 'Please select a municipality / city.',
+            'municipality_id.exists' => 'The selected municipality / city is invalid or inactive.',
             'barangay_id.required' => 'Please select a barangay.',
-            'barangay_id.exists' => 'The selected barangay is invalid or inactive.',
+            'barangay_id.exists' => 'Select an active barangay in the selected municipality / city.',
             'address.required' => 'Area address is required.',
         ];
     }

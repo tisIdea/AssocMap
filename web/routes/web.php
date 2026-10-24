@@ -4,6 +4,7 @@ use App\Http\Controllers\Auth\StaffAuthController;
 use App\Http\Controllers\Auth\InvitationActivationController;
 use App\Http\Controllers\Admin\UserInvitationController;
 use App\Http\Controllers\Admin\UserManagementController;
+use App\Http\Controllers\Admin\UserAccessController;
 use App\Http\Controllers\Admin\FieldOfficerAssignmentController;
 
 use App\Http\Controllers\Admin\MunicipalityController;
@@ -74,6 +75,38 @@ Route::post(
     [StaffAuthController::class, 'destroy']
 )->name('logout');
 
+Route::middleware('throttle:password-recovery')->group(function () {
+    $controller = \App\Http\Controllers\Auth\PasswordRecoveryController::class;
+    Route::get('/forgot-password', [$controller, 'showRequest'])->name('password.forgot');
+    Route::get('/forgot-password/email', [$controller, 'editRequest'])->block(120, 3)->name('password.request.edit');
+    Route::post('/forgot-password', [$controller, 'requestLink'])->block(120, 3)->name('password.request');
+    Route::post('/forgot-password/resend', [$controller, 'requestLink'])->block(120, 3)->name('password.resend');
+    Route::get('/password-recovery', [$controller, 'callback'])->block(120, 3)->name('password.recovery');
+    Route::post('/password-recovery/verify', [$controller, 'verify'])->block(120, 3)->name('password.verify');
+    Route::get('/password-recovery/password', [$controller, 'showPassword'])->block(120, 3)->name('password.reset');
+    Route::post('/password-recovery/password', [$controller, 'updatePassword'])->block(120, 3)->name('password.update');
+});
+
+Route::prefix('account-email-change')->name('account-email-change.')->middleware('throttle:20,1,account-email-change:')->group(function () {
+    $controller = \App\Http\Controllers\Auth\AccountEmailChangeController::class;
+    Route::get('/result', [$controller, 'result'])->block(120, 3)->name('result');
+    Route::get('/{reference}/{mailbox}', [$controller, 'callback'])->where('reference', '[A-Za-z0-9]{64}')->where('mailbox', 'old|confirm')->block(120, 3)->name('callback');
+    Route::post('/{reference}/old', [$controller, 'verifyOld'])->where('reference', '[A-Za-z0-9]{64}')->block(120, 3)->name('verify-old');
+    Route::get('/{reference}/progress', [$controller, 'progress'])->where('reference', '[A-Za-z0-9]{64}')->block(120, 3)->name('progress');
+    Route::post('/{reference}/begin', [$controller, 'begin'])->where('reference', '[A-Za-z0-9]{64}')->block(120, 3)->name('begin');
+    Route::post('/{reference}/confirm', [$controller, 'confirm'])->where('reference', '[A-Za-z0-9]{64}')->block(120, 3)->name('confirm');
+    Route::post('/{reference}/password', [$controller, 'complete'])->where('reference', '[A-Za-z0-9]{64}')->block(120, 3)->name('complete');
+});
+
+Route::prefix('account-reactivation')->name('account-reactivation.')->middleware('throttle:20,1,account-reactivation:')->group(function () {
+    $controller = \App\Http\Controllers\Auth\AccountReactivationController::class;
+    Route::get('/password', [$controller, 'password'])->block(120, 3)->name('password');
+    Route::post('/password', [$controller, 'complete'])->block(120, 3)->name('complete');
+    Route::get('/result', [$controller, 'result'])->block(120, 3)->name('result');
+    Route::get('/{reference}', [$controller, 'callback'])->where('reference', '[A-Za-z0-9]{64}')->block(120, 3)->name('callback');
+    Route::post('/{reference}/verify', [$controller, 'verify'])->where('reference', '[A-Za-z0-9]{64}')->block(120, 3)->name('verify');
+});
+
 Route::middleware([\App\Http\Middleware\GisRequestGuard::class, 'throttle:gis-read'])->group(function () {
     Route::get('/map', [\App\Http\Controllers\PublicGisController::class, 'index'])->name('public.gis');
     Route::get('/map/data', [\App\Http\Controllers\PublicGisController::class, 'data'])->name('public.gis.data');
@@ -82,6 +115,13 @@ Route::middleware([\App\Http\Middleware\GisRequestGuard::class, 'throttle:gis-re
 
 Route::prefix('invitation')->name('invitation.')->middleware('throttle:invitation-activation')
     ->group(function () {
+        $restart = \App\Http\Controllers\Auth\InvitationRestartController::class;
+        Route::get('/restart', [$restart, 'show'])->name('restart');
+        Route::post('/restart', [$restart, 'requestLink'])->middleware('throttle:password-recovery')->block(120, 3)->name('restart.store');
+        Route::get('/restart/{reference}', [$restart, 'callback'])->where('reference', '[A-Za-z0-9]{64}')
+            ->block(120, 3)->name('restart.callback');
+        Route::post('/restart/{reference}/verify', [$restart, 'verify'])->where('reference', '[A-Za-z0-9]{64}')
+            ->block(120, 3)->name('restart.verify');
         Route::get('/', [InvitationActivationController::class, 'showVerification'])->block(120, 3)->name('verify');
         Route::post('/verify', [InvitationActivationController::class, 'verify'])->block(120, 3)->name('verify.store');
         Route::get('/password', [InvitationActivationController::class, 'showPassword'])->block(120, 3)->name('password');
@@ -113,6 +153,18 @@ Route::middleware([
 ])->group(function () {
 
     Route::get('/admin/users', [UserManagementController::class, 'index'])->name('admin.users.index');
+    Route::prefix('/admin/users/{userProfile}/email-change')->whereUuid('userProfile')->name('admin.users.email-change.')
+        ->middleware('throttle:6,1,account-email-change-admin:')->group(function () {
+            $controller = \App\Http\Controllers\Admin\AccountEmailChangeController::class;
+            Route::get('/', [$controller, 'edit'])->name('edit');
+            Route::post('/review', [$controller, 'review'])->name('review');
+            Route::post('/', [$controller, 'store'])->name('store');
+            Route::post('/cancel', [$controller, 'cancel'])->name('cancel');
+        });
+    Route::get('/admin/users/{userProfile}/reactivate', [\App\Http\Controllers\Admin\AccountReactivationController::class, 'edit'])
+        ->whereUuid('userProfile')->name('admin.users.reactivation.edit');
+    Route::post('/admin/users/{userProfile}/reactivate', [\App\Http\Controllers\Admin\AccountReactivationController::class, 'store'])
+        ->whereUuid('userProfile')->middleware('throttle:6,1,account-reactivation-admin:')->name('admin.users.reactivation.store');
     Route::get('/admin/users/{userProfile}/associations', [FieldOfficerAssignmentController::class, 'edit'])
         ->whereUuid('userProfile')->name('admin.users.assignments.edit');
     Route::patch('/admin/users/{userProfile}/associations', [FieldOfficerAssignmentController::class, 'update'])
@@ -120,6 +172,12 @@ Route::middleware([
 
     Route::get('/admin/users/{userProfile}', [UserManagementController::class, 'show'])
         ->whereUuid('userProfile')->name('admin.users.show');
+
+    Route::patch('/admin/users/{userProfile}/revoke', [UserAccessController::class, 'revoke'])
+        ->whereUuid('userProfile')->name('admin.users.revoke');
+
+    Route::post('/admin/users/{userProfile}/resend-invitation', [\App\Http\Controllers\Admin\UserInvitationResendController::class, 'store'])
+        ->whereUuid('userProfile')->middleware('throttle:user-invitations')->name('admin.users.invitation.resend');
 
     Route::get('/admin/user-invitations/create', [UserInvitationController::class, 'create'])
         ->name('admin.user-invitations.create');
@@ -679,6 +737,17 @@ Route::middleware([
 
     Route::get('/association/dashboard', [\App\Http\Controllers\DashboardController::class, 'index'])->name('association.dashboard');
 
+    Route::get('/association/projects', [\App\Http\Controllers\AssociationAccount\ProjectController::class, 'index'])->name('association.projects.index');
+    Route::get('/association/projects/{project}', [\App\Http\Controllers\AssociationAccount\ProjectController::class, 'show'])
+        ->whereUuid('project')->name('association.projects.show');
+
+    Route::get('/association/trainings', [\App\Http\Controllers\AssociationAccount\ProgramController::class, 'trainings'])->name('association.trainings.index');
+    Route::get('/association/trainings/{training}', [\App\Http\Controllers\AssociationAccount\ProgramController::class, 'training'])
+        ->whereUuid('training')->name('association.trainings.show');
+    Route::get('/association/program-activities', [\App\Http\Controllers\AssociationAccount\ProgramController::class, 'activities'])->name('association.program-activities.index');
+    Route::get('/association/program-activities/{activity}', [\App\Http\Controllers\AssociationAccount\ProgramController::class, 'activity'])
+        ->whereUuid('activity')->name('association.program-activities.show');
+
     Route::get(
         '/association/member-applications',
         [
@@ -738,6 +807,12 @@ foreach (['admin' => 'system_admin', 'field-officer' => 'field_officer', 'associ
             if ($role === 'association_account') Route::get('/', [$controller, 'index'])->name('index');
             if ($role !== 'association_account') {
                 Route::get('/create', [$controller, 'createPage'])->name('create');
+                Route::post('/{monitoringRecord}/daily-production', [$controller, 'initializeHarvest'])->whereUuid('monitoringRecord')->name('harvest.initialize');
+                Route::post('/{monitoringRecord}/production/{productionId}/harvests', [$controller, 'saveHarvest'])->whereUuid(['monitoringRecord', 'productionId'])->name('harvest.store');
+                Route::get('/{monitoringRecord}/production/{productionId}/harvests/{entryId}/edit', [$controller, 'harvestPage'])->whereUuid(['monitoringRecord', 'productionId', 'entryId'])->name('harvest.edit');
+                Route::patch('/{monitoringRecord}/production/{productionId}/harvests/{entryId}', [$controller, 'saveHarvest'])->whereUuid(['monitoringRecord', 'productionId', 'entryId'])->name('harvest.update');
+                Route::patch('/{monitoringRecord}/production/{productionId}/harvests/{entryId}/void', [$controller, 'voidHarvest'])->whereUuid(['monitoringRecord', 'productionId', 'entryId'])->name('harvest.void');
+                Route::patch('/{monitoringRecord}/production/{productionId}/goal', [$controller, 'saveHarvestGoal'])->whereUuid(['monitoringRecord', 'productionId'])->name('harvest.goal');
                 Route::get('/{monitoringRecord}/edit', [$controller, 'editOverview'])->whereUuid('monitoringRecord')->name('overview.edit');
                 Route::patch('/{monitoringRecord}/overview', [$controller, 'saveOverview'])->whereUuid('monitoringRecord')->name('overview.update');
                 Route::get('/{monitoringRecord}/sections/{section}/edit', [$controller, 'editSection'])->whereUuid('monitoringRecord')->whereIn('section', ['production', 'income', 'materials'])->name('section.edit');
@@ -748,6 +823,7 @@ foreach (['admin' => 'system_admin', 'field-officer' => 'field_officer', 'associ
                 Route::patch('/{monitoringRecord}/visits/{reportId}', [$controller, 'saveVisit'])->whereUuid('monitoringRecord')->whereUuid('reportId')->name('visit.update');
             }
             Route::get('/{monitoringRecord}/workspace/{section?}', [$controller, 'workspace'])->whereUuid('monitoringRecord')->whereIn('section', ['overview', 'production', 'income', 'materials'])->name('workspace');
+            Route::get('/{monitoringRecord}/production/{productionId}/harvests', [$controller, 'harvestPage'])->whereUuid(['monitoringRecord', 'productionId'])->name('harvest.index');
             Route::get('/{monitoringRecord}/visits', [$controller, 'visits'])->whereUuid('monitoringRecord')->name('visits');
             Route::get('/{monitoringRecord}/visits/{reportId}', [$controller, 'visitPage'])->whereUuid('monitoringRecord')->whereUuid('reportId')->name('visit.view');
         });

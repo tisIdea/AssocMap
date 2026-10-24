@@ -94,8 +94,8 @@ class LocalRequestTimingTest extends TestCase
 
         $this->assertSame('unchanged response', $response->getContent());
         $this->assertSame(200, $response->getStatusCode());
-        $this->assertSame(4, $summaries[0]['db_query_count']);
-        $this->assertSame('4', $response->headers->get('X-AssocMap-DB-Queries'));
+        $this->assertSame(3, $summaries[0]['db_query_count']);
+        $this->assertSame('3', $response->headers->get('X-AssocMap-DB-Queries'));
         $this->assertSame($summaries[0]['timing_id'], $response->headers->get('X-AssocMap-Timing-Id'));
         $this->assertStringContainsString('laravel;dur=', $response->headers->get('Server-Timing'));
         $this->assertStringContainsString('auth;dur=', $response->headers->get('Server-Timing'));
@@ -176,10 +176,10 @@ class LocalRequestTimingTest extends TestCase
         $response = $this->withSession(['supabase_access_token' => 'synthetic-secret-access-token'])
             ->withServerVariables(['REQUEST_TIME_FLOAT' => microtime(true)])
             ->get('/association/_timing-check?__timing=1');
-        $response->assertOk()->assertSee('original page')->assertHeader('X-AssocMap-DB-Queries', '4');
+        $response->assertOk()->assertSee('original page')->assertHeader('X-AssocMap-DB-Queries', '3');
         $response->assertHeader('X-AssocMap-Timing-Id', $summaries[0]['timing_id']);
         $this->assertSame('association.timing-check', $summaries[0]['route']);
-        $this->assertSame(4, $summaries[0]['db_query_count']);
+        $this->assertSame(3, $summaries[0]['db_query_count']);
     }
 
     public function test_diagnostic_log_failure_does_not_break_the_page(): void

@@ -29,10 +29,11 @@ class DashboardServiceTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        config(['associations.geography_schema_ready' => false, 'associations.direct_geography' => false]);
         config(['database.connections.dashboard_test' => ['driver' => 'sqlite', 'database' => ':memory:', 'prefix' => '', 'foreign_key_constraints' => true]]);
         DB::setDefaultConnection('dashboard_test');
         $this->assertSame(':memory:', DB::connection()->getConfig('database'));
-        Schema::create('roles', function (Blueprint $table) { $table->id(); $table->string('code'); $table->boolean('is_active'); });
+        Schema::create('roles', function (Blueprint $table) { $table->id(); $table->string('code'); $table->boolean('is_active'); $table->string('name')->nullable(); $table->text('description')->nullable(); $table->timestamps(); });
         Schema::create('user_profiles', function (Blueprint $table) {
             $table->uuid('id')->primary(); $table->integer('role_id'); $table->string('display_name'); $table->boolean('is_active'); $table->timestamps();
         });
@@ -107,6 +108,23 @@ class DashboardServiceTest extends TestCase
         $request->attributes->set('current_user', UserProfile::with('role')->findOrFail(self::USER));
 
         return $request;
+    }
+
+    public function test_cutover_dashboard_keeps_area_less_associations_in_existing_contract_and_scope(): void
+    {
+        Schema::table('associations', function (Blueprint $table) {
+            $table->integer('area_id')->nullable()->change(); $table->integer('barangay_id')->nullable();
+        });
+        DB::statement('UPDATE associations SET barangay_id=1,area_id=NULL');
+        foreach ([false, true] as $direct) {
+            config(['associations.geography_schema_ready' => true, 'associations.direct_geography' => $direct]);
+            $result = app(DashboardService::class)->load($this->request());
+            $this->assertSame('assocmap.dashboard.v1', $result['version']);
+            $this->assertSame(1, $result['scope_count']);
+            $this->assertSame('Synthetic municipality', $result['associations'][0]['municipality']);
+            $this->assertSame(self::OWN, $result['associations'][0]['id']);
+            $this->assertStringNotContainsString(self::OUTSIDE, json_encode($result));
+        }
     }
 
     private function metrics(array $dashboard): array
@@ -221,7 +239,7 @@ class DashboardServiceTest extends TestCase
         $queryCount = 0;
         DB::listen(static function () use (&$queryCount) { $queryCount++; });
         $dashboard = app(DashboardService::class)->load($request);
-        $this->assertSame(match ($roleId) { 2 => 20, 1 => 19, 3 => 26 }, $queryCount);
+        $this->assertSame(match ($roleId) { 2 => 18, 1 => 17, 3 => 20 }, $queryCount);
         $metrics = $this->metrics($dashboard);
         $admin = $roleId === 2;
         $this->assertSame($admin ? 4 : 1, $dashboard['scope_count']);
@@ -274,6 +292,27 @@ class DashboardServiceTest extends TestCase
         $this->getJson('/api/v1/association/dashboard')->assertUnauthorized()->assertJsonPath('error.code', 'unauthenticated');
     }
 
+    public function test_mobile_dashboard_uses_verified_identity_and_never_the_client_association_id(): void
+    {
+        DB::table('user_profiles')->where('id', self::USER)->update(['role_id' => 3]);
+        DB::table('association_accounts')->insert(['id' => self::OTHER, 'user_id' => self::USER,
+            'association_id' => self::OWN, 'is_active' => true]);
+        config(['services.supabase.url' => 'https://auth.example.test',
+            'services.supabase.publishable_key' => 'sb_publishable_synthetic_test_only',
+            'services.supabase.service_role_key' => null]);
+        \Illuminate\Support\Facades\Http::fake(['https://auth.example.test/auth/v1/user' =>
+            \Illuminate\Support\Facades\Http::response(['id' => self::USER, 'email' => 'synthetic@example.test'])]);
+        $headers = ['Authorization' => 'Bearer synthetic.header.signature'];
+        $response = $this->getJson('/api/v1/association/dashboard?association_id='.self::OUTSIDE, $headers)
+            ->assertOk()->assertJsonPath('data.version', 'assocmap.dashboard.v1')
+            ->assertJsonPath('data.role', 'association_account')->assertJsonPath('data.scope_count', 1)
+            ->assertJsonPath('data.association.id', self::OWN);
+        $this->assertStringNotContainsString(self::OUTSIDE, $response->getContent());
+        $this->assertStringContainsString('no-store', $response->headers->get('Cache-Control'));
+        DB::table('association_accounts')->update(['is_active' => false]);
+        $this->getJson('/api/v1/association/dashboard', $headers)->assertForbidden();
+    }
+
     public function test_assignment_revocation_during_assembly_prevents_dashboard_release(): void
     {
         $changed = false;
@@ -290,6 +329,44 @@ class DashboardServiceTest extends TestCase
             $this->assertTrue($changed);
             $this->assertSame(403, $error->getStatusCode());
         }
+    }
+
+    #[DataProvider('finalEligibilityChanges')]
+    public function test_final_dashboard_check_detects_access_changes_after_the_initial_snapshot(string $change): void
+    {
+        $this->completeDashboardTables();
+        DB::table('user_profiles')->where('id', self::USER)->update(['role_id' => 3]);
+        DB::table('association_accounts')->insert(['id' => self::USER, 'user_id' => self::USER,
+            'association_id' => self::OWN, 'is_active' => true]);
+        $request = $this->request();
+        $changed = false;
+        DB::listen(function ($query) use (&$changed, $change) {
+            if ($changed || ! str_contains($query->sql, 'from "members" as "m"')) return;
+            $changed = true;
+            match ($change) {
+                'inactive profile' => DB::table('user_profiles')->where('id', self::USER)->update(['is_active' => false]),
+                'inactive role' => DB::table('roles')->where('id', 3)->update(['is_active' => false]),
+                'changed role' => DB::table('user_profiles')->where('id', self::USER)->update(['role_id' => 2]),
+                'missing role' => DB::table('user_profiles')->where('id', self::USER)->update(['role_id' => 999]),
+                'pending invitation' => DB::table('user_invitations')->insert(['id' => self::USER, 'auth_user_id' => self::USER,
+                    'email' => 'synthetic@example.test', 'status' => 'sent', 'created_at' => '2026-01-01']),
+                'inactive account link' => DB::table('association_accounts')->where('user_id', self::USER)->update(['is_active' => false]),
+            };
+        });
+        try {
+            app(DashboardService::class)->load($request);
+            $this->fail('The final fresh eligibility check must deny the assembled dashboard.');
+        } catch (HttpExceptionInterface $error) {
+            $this->assertTrue($changed);
+            $this->assertSame(403, $error->getStatusCode());
+        }
+    }
+
+    public static function finalEligibilityChanges(): array
+    {
+        return array_map(fn ($change) => [$change], [
+            'inactive profile', 'inactive role', 'changed role', 'missing role', 'pending invitation', 'inactive account link',
+        ]);
     }
 
     public function test_transient_scope_expansion_cannot_enter_dashboard_aggregates(): void
@@ -424,14 +501,22 @@ class DashboardServiceTest extends TestCase
         $dashboard = $this->roleDashboard($roleId);
         $html = $this->dashboardPage($role, $prefix, $dashboard);
         $xpath = $this->dashboardDocument($html);
-        $metrics = $xpath->query('//main//section[@aria-label="Dashboard summary"]/article');
-        $this->assertSame(count($dashboard['metrics']), $metrics->length);
-        foreach ($dashboard['metrics'] as $index => $metric) {
+        $metrics = $xpath->query('//main//section[@aria-label="Dashboard summary"]/a/article');
+        $primary = match ($role) {
+            'system_admin' => ['associations_total' => 'Total Associations', 'members_total' => 'Total Members', 'projects_total' => 'Total Projects'],
+            'field_officer' => ['associations_active' => 'Assigned Associations', 'members_total' => 'Total Members', 'applications_pending' => 'Pending Applications'],
+            default => ['applications_pending' => 'Pending Applications'],
+        };
+        $this->assertSame(count($primary), $metrics->length);
+        $index = 0;
+        foreach ($primary as $key => $label) {
+            $metric = collect($dashboard['metrics'])->firstWhere('key', $key);
             $card = $metrics->item($index);
-            $this->assertSame($metric['label'], $xpath->evaluate('string(./div/span[1])', $card));
+            $this->assertSame($label, $xpath->evaluate('string(./div/span[1])', $card));
             $this->assertSame($metric['value'] === null ? 'Unavailable' : number_format($metric['value']),
                 $xpath->evaluate('string(./strong/span[@data-summary-counter])', $card));
             $this->assertSame($metric['note'], $xpath->evaluate('string(./small)', $card));
+            $index++;
         }
         $shortcuts = match ($role) {
             'system_admin' => ['associations.index', 'users.index', 'association-officers.index', 'projects.index', 'trainings.index', 'monitoring.index', 'reports.index', 'gis.index'],
@@ -489,7 +574,13 @@ class DashboardServiceTest extends TestCase
     public function test_dashboard_empty_and_unavailable_widgets_remain_distinct(string $role, string $prefix, int $roleId): void
     {
         $dashboard = $this->roleDashboard($roleId);
-        $dashboard['metrics'][0]['value'] = null;
+        $unavailableKey = match ($role) {
+            'system_admin' => 'associations_total', 'field_officer' => 'associations_active', default => 'applications_pending',
+        };
+        foreach ($dashboard['metrics'] as &$metric) {
+            if ($metric['key'] === $unavailableKey) $metric['value'] = null;
+        }
+        unset($metric);
         $dashboard['scope_count'] = 0;
         $dashboard['associations'] = $dashboard['recent_projects'] = $dashboard['activities'] = [];
         $dashboard['applications'] = $dashboard['training'] = $dashboard['monitoring'] = $dashboard['officer_attention'] = null;

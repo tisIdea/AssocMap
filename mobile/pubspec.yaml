@@ -1,5 +1,5 @@
 name: mobile
-description: "AssocMap mobile public GIS and association account prototype."
+description: "AssocMap public GIS and authorized Association Account application."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -37,6 +37,8 @@ dependencies:
   flutter_map: 8.3.2
   latlong2: 0.10.1
   http: 1.6.0
+  supabase_flutter: 2.18.3
+  flutter_secure_storage: 11.2.0
 
 dev_dependencies:
   flutter_test:

@@ -24,6 +24,7 @@ class AssociationAccount extends Model
         return [
             'is_active' => 'boolean',
             'linked_at' => 'datetime',
+            'ended_at' => 'datetime',
         ];
     }
 

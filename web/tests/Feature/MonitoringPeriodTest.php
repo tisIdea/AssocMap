@@ -66,6 +66,7 @@ class MonitoringPeriodTest extends TestCase
         Schema::create('roles', function (Blueprint $table) {
             $table->id(); $table->string('code'); $table->string('name'); $table->boolean('is_active');
             $table->timestamps();
+            $table->text('description')->nullable();
         });
         Schema::create('user_profiles', function (Blueprint $table) {
             $table->uuid('id')->primary(); $table->unsignedBigInteger('role_id');

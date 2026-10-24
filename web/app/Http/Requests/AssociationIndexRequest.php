@@ -14,7 +14,7 @@ class AssociationIndexRequest extends FormRequest
 
         return $actor?->canAccessApplication()
             && in_array($actor->role?->code, ['system_admin', 'field_officer'], true)
-            && (!$this->filled('editor') || $actor->role->code === 'system_admin');
+            && ((!$this->filled('editor') && !$this->filled('accreditation')) || $actor->role->code === 'system_admin');
     }
 
     protected function getRedirectUrl()
@@ -44,7 +44,8 @@ class AssociationIndexRequest extends FormRequest
             'origin' => ['nullable', 'string', Rule::in(['register', 'officers'])],
             'page' => ['nullable', 'integer', 'min:1'],
             'related_page' => ['nullable', 'integer', 'min:1'],
-            'editor' => ['nullable', 'string', function ($attribute, $value, $fail) {
+            'accreditation' => ['nullable', 'uuid'],
+            'editor' => ['required_with:accreditation', 'nullable', 'string', function ($attribute, $value, $fail) {
                 if ($value !== 'create' && !Str::isUuid($value)) $fail('Select a valid association editor.');
             }],
         ];

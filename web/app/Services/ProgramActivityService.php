@@ -12,7 +12,8 @@ use Illuminate\Validation\ValidationException;
 
 class ProgramActivityService
 {
-    public function __construct(private AssociationLifecycleService $lifecycle, private ProjectLifecycleService $projects) {}
+    public function __construct(private AssociationLifecycleService $lifecycle, private ProjectLifecycleService $projects,
+        private ProgramActorService $actors) {}
 
     private const EXCLUDED_ACTIVITY_CODES = [
         // Dedicated Project module
@@ -51,6 +52,7 @@ class ProgramActivityService
             $activity,
             $relatedProject
         ) {
+            $currentUser = $this->actors->lock($currentUser);
             $this->lifecycle->lockOperational([$association?->id]);
             $this->projects->lockNotFinalized([$relatedProject?->id]);
             $association = $this->resolveAssociationForUser($association?->id, $currentUser);
@@ -147,6 +149,7 @@ class ProgramActivityService
             $activity,
             $relatedProject
         ) {
+            $currentUser = $this->actors->lock($currentUser);
             $record = $this->lockForMutation($record, $currentUser, [$association?->id], [$relatedProject?->id]);
             if ($record->archived_at !== null) {
                 throw ValidationException::withMessages(['program_activity' => 'Archived program activities cannot be edited.']);
@@ -208,6 +211,7 @@ class ProgramActivityService
         UserProfile $currentUser
     ): void {
         DB::transaction(function () use ($record, $currentUser) {
+            $currentUser = $this->actors->lock($currentUser);
             $record = $this->lockForMutation($record, $currentUser);
             if ($record->archived_at !== null) return;
             $record->update([
@@ -223,6 +227,7 @@ class ProgramActivityService
         UserProfile $currentUser
     ): void {
         DB::transaction(function () use ($record, $currentUser) {
+            $currentUser = $this->actors->lock($currentUser);
             $record = $this->lockForMutation($record, $currentUser);
             if ($record->archived_at === null) return;
             $record->update([

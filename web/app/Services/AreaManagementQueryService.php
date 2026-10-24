@@ -14,6 +14,16 @@ use Illuminate\Support\Str;
 
 class AreaManagementQueryService
 {
+    public function __construct(private AssociationGeographyService $geography) {}
+
+    private function associationGeography(): Builder
+    {
+        $query = Association::query()->leftJoin('areas', 'areas.id', '=', 'associations.area_id');
+
+        return $query->join('barangays', 'barangays.id', '=',
+            $this->geography->usesDirectGeography() ? 'associations.barangay_id' : 'areas.barangay_id');
+    }
+
     public function summary(): array
     {
         $counts = DB::query()
@@ -30,9 +40,7 @@ class AreaManagementQueryService
     {
         return Municipality::query()->select(['municipalities.id', 'name', 'psgc_code', 'province', 'region',
             'locality_type', 'source', 'is_active', 'created_at'])->withCount('barangays')
-            ->addSelect(['associations_count' => Association::query()
-                ->join('areas', 'areas.id', '=', 'associations.area_id')
-                ->join('barangays', 'barangays.id', '=', 'areas.barangay_id')
+            ->addSelect(['associations_count' => $this->associationGeography()
                 ->whereColumn('barangays.municipality_id', 'municipalities.id')
                 ->selectRaw('COUNT(DISTINCT associations.id)')]);
     }
@@ -41,9 +49,10 @@ class AreaManagementQueryService
     {
         return Barangay::query()->select(['barangays.id', 'municipality_id', 'name', 'psgc_code', 'source', 'is_active', 'created_at'])
             ->with('municipality:id,name,province,region,is_active')
-            ->addSelect(['associations_count' => Association::query()
-                ->join('areas', 'areas.id', '=', 'associations.area_id')
-                ->whereColumn('areas.barangay_id', 'barangays.id')->selectRaw('COUNT(DISTINCT associations.id)')]);
+            ->addSelect(['associations_count' => $this->geography->usesDirectGeography()
+                ? Association::query()->whereColumn('associations.barangay_id', 'barangays.id')->selectRaw('COUNT(*)')
+                : Association::query()->join('areas', 'areas.id', '=', 'associations.area_id')
+                    ->whereColumn('areas.barangay_id', 'barangays.id')->selectRaw('COUNT(DISTINCT associations.id)')]);
     }
 
     public function records(array $filters): LengthAwarePaginator
@@ -81,8 +90,7 @@ class AreaManagementQueryService
 
     public function associations(): Builder
     {
-        return Association::query()->join('areas', 'areas.id', '=', 'associations.area_id')
-            ->join('barangays', 'barangays.id', '=', 'areas.barangay_id')
+        return $this->associationGeography()
             ->select(['associations.id', 'associations.name', 'associations.status', 'associations.archived_at',
                 'areas.id as area_id', 'areas.address', 'areas.is_active as area_active',
                 'barangays.id as barangay_id', 'barangays.name as barangay_name', 'barangays.municipality_id'])
@@ -139,7 +147,7 @@ class AreaManagementQueryService
         $municipalities ??= Municipality::query()->where('is_active', true)->orderBy('name')->get(['id', 'name', 'is_active']);
         $catalog['options']['municipality_records'] = $municipalities->where('is_active', true)
             ->map(fn ($record) => ['value' => $record->id, 'label' => $record->name])->values()->all();
-        $catalog['options']['barangay_records'] = $barangay?->is_active ? [
+        $catalog['options']['barangay_records'] = $barangay?->is_active && $barangay->municipality?->is_active ? [
             ['value' => $barangay->id, 'label' => $barangay->name, 'municipality_id' => $barangay->municipality_id],
         ] : [];
         if ($barangay) {

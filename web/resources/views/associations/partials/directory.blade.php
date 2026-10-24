@@ -39,7 +39,10 @@
                                 @include('associations.partials.person-name', ['person' => $association->currentPresident])
                             @endif
                         </td>
-                        @if(!$officerDirectory)<td>{{ $association->area?->barangay?->municipality?->name ?? 'Municipality unavailable' }}<small>{{ $association->area?->barangay?->name ?? 'Barangay unavailable' }}</small></td>@endif
+                        @if(!$officerDirectory)
+                            @php($locationBarangay = $association->locationBarangay())
+                            <td>{{ $locationBarangay?->municipality?->name ?? 'Municipality unavailable' }}<small>{{ $locationBarangay?->name ?? 'Barangay unavailable' }}</small></td>
+                        @endif
                         <td><x-status-badge :value="ucfirst($association->status)" />@if($association->archived_at)<span class="badge badge-neutral">Archived</span>@endif</td>
                         <td>{{ number_format($officerDirectory ? $association->officers_count : $association->members_count) }}</td>
                         <td>@include('associations.partials.actions', ['allowRecordChanges' => !$officerDirectory])</td>

@@ -15,9 +15,12 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
+use Tests\Support\CreatesLifecycleAuditTable;
 
 class UserInvitationWorkflowTest extends TestCase
 {
+    use CreatesLifecycleAuditTable;
+
     private const ADMIN = '11111111-1111-4111-8111-111111111111';
     private const RECIPIENT = '22222222-2222-4222-8222-222222222222';
     private const ASSOCIATION = '33333333-3333-4333-8333-333333333333';
@@ -44,6 +47,8 @@ class UserInvitationWorkflowTest extends TestCase
         $this->assertSame(':memory:', DB::connection()->getConfig('database'));
         $this->withoutVite();
         $this->schema();
+        $this->createLifecycleAuditTable();
+        (require database_path('migrations/2026_10_22_010000_support_association_account_replacement.php'))->up();
         $this->fixture();
         Http::swap((new Factory)->preventStrayRequests());
         Http::fake([self::PROVIDER.'/auth/v1/*' => function (ProviderRequest $request) {
@@ -86,6 +91,7 @@ class UserInvitationWorkflowTest extends TestCase
         Schema::create('roles', function (Blueprint $table) {
             $table->id(); $table->string('code')->unique(); $table->string('name');
             $table->boolean('is_active'); $table->timestamps();
+            $table->text('description')->nullable();
         });
         Schema::create('user_profiles', function (Blueprint $table) {
             $table->uuid('id')->primary(); $table->unsignedBigInteger('role_id');
@@ -137,6 +143,95 @@ class UserInvitationWorkflowTest extends TestCase
     private function administratorSession(): array
     {
         return ['supabase_access_token' => 'synthetic_admin_access'];
+    }
+
+    private function existingHolder(): string
+    {
+        $holder = '55555555-5555-4555-8555-555555555555';
+        DB::table('user_profiles')->insert(['id' => $holder, 'role_id' => 3, 'display_name' => 'Former synthetic holder',
+            'is_active' => true, 'activated_at' => now()->subDays(2), 'created_at' => now()->subDays(3)]);
+        DB::table('association_accounts')->insert(['id' => $holder, 'user_id' => $holder, 'association_id' => self::ASSOCIATION,
+            'is_active' => true, 'linked_by' => self::ADMIN, 'linked_at' => now()->subDays(2)]);
+
+        return $holder;
+    }
+
+    public function test_replacement_revokes_old_holder_preserves_history_and_activates_a_separate_identity_once(): void
+    {
+        $old = $this->existingHolder();
+        $associationBefore = DB::table('associations')->get()->toJson();
+        $this->withSession($this->administratorSession())->patchJson('/admin/users/'.$old.'/revoke', ['confirm_revocation' => '1'])->assertOk();
+        $historyBefore = DB::table('association_accounts')->where('id', $old)->first();
+        $this->assertFalse(UserProfile::findOrFail($old)->is_active);
+        $this->assertFalse((bool) $historyBefore->is_active);
+        $this->assertNotNull($historyBefore->ended_at);
+        $this->get('/admin/user-invitations/create')->assertOk()->assertSee('value="'.self::ASSOCIATION.'"', false);
+        $this->postJson('/admin/user-invitations', $this->data(3))->assertCreated();
+        $activation = app(InvitationActivationService::class);
+        $context = $activation->identify(['auth_user_id' => self::RECIPIENT, 'email' => 'recipient@example.test']);
+        $context['expires_at'] = time() + 600;
+        $activation->claimPassword($context, 'synthetic_replacement_claim');
+        $context['phase'] = 'password_confirmed';
+        $activation->finish($context, 'synthetic_replacement_claim');
+        $activation->finish($context, 'synthetic_replacement_claim');
+        $this->assertSame($associationBefore, DB::table('associations')->get()->toJson());
+        $this->assertEquals($historyBefore, DB::table('association_accounts')->where('id', $old)->first());
+        $this->assertDatabaseCount('association_accounts', 2);
+        $this->assertSame(self::RECIPIENT, DB::table('association_accounts')->where('is_active', true)->sole()->user_id);
+        $this->assertFalse(UserProfile::findOrFail($old)->is_active);
+        $this->assertTrue(UserProfile::findOrFail(self::RECIPIENT)->is_active);
+        foreach (['END ASSOCIATION ACCOUNT LINK', 'REVOKE USER ACCESS', 'REQUEST USER INVITATION',
+            'SEND USER INVITATION', 'ISSUE USER INVITATION', 'ACTIVATE USER ACCOUNT'] as $action) {
+            $this->assertSame(1, DB::table('audit_logs')->where('action_type', $action)->count());
+        }
+        $this->assertSame(1, $this->inviteRequests);
+    }
+
+    public function test_uncertain_replacement_invitation_reserves_the_association_without_restoring_the_old_holder(): void
+    {
+        $old = $this->existingHolder();
+        $this->withSession($this->administratorSession())->patchJson('/admin/users/'.$old.'/revoke', ['confirm_revocation' => '1'])->assertOk();
+        $this->timeout = true;
+        $this->postJson('/admin/user-invitations', $this->data(3))->assertStatus(202);
+        $competing = $this->data(3);
+        $competing['email'] = 'another-replacement@example.test';
+        $this->postJson('/admin/user-invitations', $competing)->assertUnprocessable()->assertJsonValidationErrors('association_id');
+        $this->assertSame(1, $this->inviteRequests);
+        $this->assertSame(0, DB::table('association_accounts')->where('is_active', true)->count());
+        $this->assertFalse(UserProfile::findOrFail($old)->is_active);
+        $this->assertDatabaseCount('association_accounts', 1);
+    }
+
+    public function test_required_invitation_audit_failure_prevents_provider_requests(): void
+    {
+        DB::statement("CREATE TRIGGER reject_invitation_audit BEFORE INSERT ON audit_logs BEGIN SELECT RAISE(ABORT, 'Synthetic audit rejection'); END");
+        $this->withSession($this->administratorSession())->postJson('/admin/user-invitations', $this->data(3))->assertStatus(503);
+        $this->assertSame(0, $this->inviteRequests);
+        $this->assertDatabaseCount('user_invitations', 0);
+        $this->assertDatabaseCount('audit_logs', 0);
+    }
+
+    public function test_required_activation_audit_failure_preserves_inactive_replacement_and_ended_history(): void
+    {
+        $old = $this->existingHolder();
+        $this->withSession($this->administratorSession())->patchJson('/admin/users/'.$old.'/revoke', ['confirm_revocation' => '1'])->assertOk();
+        $this->postJson('/admin/user-invitations', $this->data(3))->assertCreated();
+        $activation = app(InvitationActivationService::class);
+        $context = $activation->identify(['auth_user_id' => self::RECIPIENT, 'email' => 'recipient@example.test']);
+        $context['expires_at'] = time() + 600;
+        $activation->claimPassword($context, 'synthetic_replacement_claim');
+        $context['phase'] = 'password_confirmed';
+        DB::statement("CREATE TRIGGER reject_activation_audit BEFORE INSERT ON audit_logs WHEN NEW.action_type = 'ACTIVATE USER ACCOUNT' BEGIN SELECT RAISE(ABORT, 'Synthetic audit rejection'); END");
+        try {
+            $activation->finish($context, 'synthetic_replacement_claim');
+            $this->fail('Activation must roll back when its required audit fails.');
+        } catch (QueryException $exception) {
+            $this->assertFalse(UserProfile::findOrFail(self::RECIPIENT)->is_active);
+            $this->assertSame(0, DB::table('association_accounts')->where('is_active', true)->count());
+            $this->assertDatabaseCount('association_accounts', 1);
+            $this->assertSame('sent', UserInvitation::sole()->status);
+            $this->assertSame('synthetic_replacement_claim', UserInvitation::sole()->last_error_code);
+        }
     }
 
     public function test_authorized_form_uses_current_roles_and_eligible_associations(): void
@@ -222,6 +317,76 @@ class UserInvitationWorkflowTest extends TestCase
         $this->assertSame(1, $this->inviteRequests);
     }
 
+    public function test_association_conflict_names_the_existing_relationship_without_sending(): void
+    {
+        $this->withSession($this->administratorSession())->postJson('/admin/user-invitations', $this->data(3))->assertCreated();
+        $profile = UserProfile::findOrFail(self::RECIPIENT);
+        $profile->is_active = true;
+        $profile->activated_at = now();
+        $profile->save();
+        DB::table('user_invitations')->where('auth_user_id', self::RECIPIENT)->update(['status' => 'accepted', 'accepted_at' => now()]);
+        DB::table('association_accounts')->insert(['id' => '55555555-5555-4555-8555-555555555555',
+            'user_id' => self::RECIPIENT, 'association_id' => self::ASSOCIATION, 'is_active' => true, 'linked_at' => now()]);
+        $data = $this->data(3);
+        $data['email'] = 'another@example.test';
+        $this->postJson('/admin/user-invitations', $data)->assertUnprocessable()->assertJsonPath('errors.association_id.0',
+            'This association already has an assigned Association Account: Eligible Synthetic Association. Review the existing account details.');
+        $this->assertSame(1, $this->inviteRequests);
+        $this->assertSame(1, UserInvitation::count());
+    }
+
+    public function test_inactive_association_and_another_unresolved_invitation_have_distinct_feedback(): void
+    {
+        DB::table('associations')->where('id', self::ASSOCIATION)->update(['status' => 'inactive']);
+        $this->withSession($this->administratorSession())->postJson('/admin/user-invitations', $this->data(3))
+            ->assertUnprocessable()->assertJsonPath('errors.association_id.0', 'This association is not currently eligible for account invitation.');
+        DB::table('associations')->where('id', self::ASSOCIATION)->update(['status' => 'active']);
+        $this->postJson('/admin/user-invitations', $this->data(3))->assertCreated();
+        $data = $this->data(3);
+        $data['email'] = 'another@example.test';
+        $this->postJson('/admin/user-invitations', $data)->assertUnprocessable()->assertJsonPath('errors.association_id.0',
+            'This association already has another unresolved invitation: Eligible Synthetic Association. Review that operation before inviting another account.');
+        $this->assertSame(1, $this->inviteRequests);
+    }
+
+    #[DataProvider('recipientRoles')]
+    public function test_contradictory_provider_success_never_binds_or_activates_an_account_or_resends(int $role): void
+    {
+        Http::swap((new Factory)->preventStrayRequests());
+        Http::fake([
+            self::PROVIDER.'/auth/v1/user' => Http::response(['id' => self::ADMIN, 'email' => 'administrator@example.test']),
+            self::PROVIDER.'/auth/v1/admin/users*' => function (ProviderRequest $request) {
+                parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
+                $last = http_build_query(['filter' => $query['filter'], 'page' => 0, 'per_page' => 100]);
+
+                return Http::response(['users' => []], 200, [
+                    'X-Total-Count' => '0', 'Link' => '</auth/v1/admin/users?'.$last.'>; rel="last"',
+                ]);
+            },
+            self::PROVIDER.'/auth/v1/invite*' => function (ProviderRequest $request) {
+                $this->inviteRequests++;
+
+                return Http::response(['id' => self::RECIPIENT, 'email' => $request['email'],
+                    'created_at' => now()->utc()->addSecond()->toIso8601String(),
+                    'error' => 'Synthetic private provider detail']);
+            },
+        ]);
+
+        $this->withSession($this->administratorSession())->postJson('/admin/user-invitations', $this->data($role))
+            ->assertStatus(202)->assertJsonPath('code', 'provider_response_invalid')
+            ->assertJsonPath('status', 'failed')->assertDontSee('Synthetic private provider detail');
+        $invitation = UserInvitation::sole();
+        $this->assertNull($invitation->auth_user_id);
+        $this->assertNull($invitation->accepted_at);
+        $this->assertSame('provider_response_invalid', $invitation->last_error_code);
+        $this->assertNull(UserProfile::find(self::RECIPIENT));
+        $this->assertSame(0, DB::table('association_accounts')->count());
+        $this->postJson('/admin/user-invitations', $this->data($role))
+            ->assertStatus(409)->assertJsonPath('code', 'reconciliation_required');
+        $this->assertSame(1, UserInvitation::count());
+        $this->assertSame(1, $this->inviteRequests);
+    }
+
     public function test_inactive_invited_role_and_inactive_administrator_role_are_denied(): void
     {
         DB::table('roles')->where('id', 2)->update(['is_active' => false]);
@@ -259,10 +424,10 @@ class UserInvitationWorkflowTest extends TestCase
         return [['inactive'], ['archived']];
     }
 
-    public function test_existing_account_link_and_elevated_role_are_rejected(): void
+    public function test_existing_active_account_link_and_elevated_role_are_rejected(): void
     {
         DB::table('association_accounts')->insert(['id' => '55555555-5555-4555-8555-555555555555',
-            'user_id' => self::ADMIN, 'association_id' => self::ASSOCIATION, 'is_active' => false, 'linked_at' => now()]);
+            'user_id' => self::ADMIN, 'association_id' => self::ASSOCIATION, 'is_active' => true, 'linked_at' => now()]);
         $this->withSession($this->administratorSession())->postJson('/admin/user-invitations', $this->data(3))
             ->assertUnprocessable()->assertJsonValidationErrors('association_id');
         $this->postJson('/admin/user-invitations', $this->data(1))->assertUnprocessable()->assertJsonValidationErrors('role_id');
@@ -346,7 +511,7 @@ class UserInvitationWorkflowTest extends TestCase
         $context['phase'] = 'password_confirmed';
         $activation->finish($context, 'synthetic_confirmed_claim');
         $this->post('/logout')->assertRedirect(route('login'));
-        $destination = $role === 2 ? 'field-officer.member-applications.index' : 'association.member-applications.index';
+        $destination = $role === 2 ? 'field-officer.dashboard' : 'association.dashboard';
         $this->post('/login', ['email' => 'recipient@example.test', 'password' => 'Synthetic-Password42!'])
             ->assertRedirect(route($destination))->assertSessionHas('user_profile_id', self::RECIPIENT)
             ->assertSessionHas('user_role', $role === 2 ? 'field_officer' : 'association_account');

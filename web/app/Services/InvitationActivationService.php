@@ -9,6 +9,7 @@ use App\Models\Role;
 use App\Models\UserInvitation;
 use App\Models\UserProfile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 
 class InvitationActivationService
@@ -99,6 +100,14 @@ class InvitationActivationService
             $invitation->accepted_at = $activatedAt;
             $invitation->last_error_code = null;
             $invitation->save();
+            if (($context['recovery_origin'] ?? null) === 'invitation_restart') {
+                app(InvitationRestartAudit::class)->record($invitation, 'activation_completed', true);
+            } else {
+                $request = new Request;
+                $request->attributes->set('current_user', $profile);
+                app(AuditLogService::class)->record($request, 'ACTIVATE USER ACCOUNT', 'User Management', 'user_invitation', $invitation->id,
+                    ['status' => 'sent'], ['status' => 'accepted', 'outcome' => 'activation_completed'], ['status', 'outcome']);
+            }
         });
     }
 
@@ -146,14 +155,14 @@ class InvitationActivationService
         }
 
         if (! $association || $association->status !== 'active' || $association->archived_at !== null
-            || AssociationAccount::where('association_id', $association->id)->exists()
+            || AssociationAccount::where('association_id', $association->id)->where('is_active', true)->exists()
             || UserInvitation::where('association_id', $association->id)->where('id', '!=', $invitation->id)
                 ->whereIn('status', UserInvitation::UNRESOLVED_STATUSES)->exists()) $this->deny();
     }
 
     private function assertCompleted(UserInvitation $invitation, UserProfile $profile, Role $role, ?Association $association): void
     {
-        $link = AssociationAccount::where('user_id', $profile->id)->first();
+        $link = AssociationAccount::where('user_id', $profile->id)->where('is_active', true)->first();
         if ($invitation->accepted_at === null || ! $profile->is_active || $profile->activated_at === null
             || $invitation->last_error_code !== null
             || ($role->code === 'field_officer' && ($link !== null || $invitation->association_id !== null))

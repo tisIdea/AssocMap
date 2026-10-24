@@ -3,8 +3,12 @@
 namespace Tests\Unit;
 
 use App\Services\SupabaseStorageService;
+use GuzzleHttp\Promise\Create;
+use GuzzleHttp\Psr7\Response as ProviderResponse;
+use GuzzleHttp\Psr7\Utils;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class SupabaseStorageServiceTest extends TestCase
@@ -230,5 +234,75 @@ class SupabaseStorageServiceTest extends TestCase
         });
         $this->assertSame('unavailable', (new SupabaseStorageService)->delete(self::PATH)['outcome']);
         $this->assertSame(1, $attempts);
+    }
+
+    public static function downloadLengths(): array
+    {
+        return [
+            'matching length' => ['matching', 'downloaded'],
+            'no length header' => ['missing', 'downloaded'],
+            'leading zeros' => ['leading zeros', 'downloaded'],
+            'truncated body' => ['truncated', 'unavailable'],
+            'extra body bytes' => ['extra bytes', 'unavailable'],
+            'malformed length' => ['malformed', 'unavailable'],
+            'length exceeds limit' => ['oversized', 'unavailable'],
+            'nonempty body declared empty' => ['zero', 'unavailable'],
+        ];
+    }
+
+    #[DataProvider('downloadLengths')]
+    public function test_download_checks_declared_body_length_and_closes_the_stream(string $scenario, string $outcome): void
+    {
+        $contents = $this->png();
+        $length = match ($scenario) {
+            'matching' => (string) strlen($contents),
+            'missing' => null,
+            'leading zeros' => '000'.strlen($contents),
+            'truncated' => (string) (strlen($contents) + 1),
+            'extra bytes' => (string) (strlen($contents) - 1),
+            'malformed' => 'invalid-length',
+            'oversized' => '2097153',
+            'zero' => '0',
+        };
+        $headers = ['Content-Type' => 'image/png'];
+        if ($length !== null) $headers['Content-Length'] = $length;
+        $stream = Utils::streamFor($contents);
+        Http::fake([self::URL.'/object/authenticated/'.self::BUCKET.'/'.self::PATH =>
+            Create::promiseFor(new ProviderResponse(200, $headers, $stream))]);
+
+        $result = (new SupabaseStorageService)->download(self::PATH);
+
+        $this->assertSame($outcome, $result['outcome']);
+        if ($outcome === 'downloaded') $this->assertSame($contents, $result['contents']);
+        else $this->assertArrayNotHasKey('contents', $result);
+        $this->assertFalse($stream->isReadable());
+        Http::assertSentCount(1);
+    }
+
+    public function test_incomplete_upload_acknowledgement_is_uncertain_without_retry_or_cleanup(): void
+    {
+        $contents = json_encode(['Key' => self::BUCKET.'/'.self::PATH]);
+        $stream = Utils::streamFor($contents);
+        Http::fake([self::URL.'/object/'.self::BUCKET.'/'.self::PATH =>
+            Create::promiseFor(new ProviderResponse(200, ['Content-Length' => strlen($contents) + 1], $stream))]);
+
+        $result = (new SupabaseStorageService)->upload(self::PATH, $this->png(), 'image/png');
+
+        $this->assertSame(['outcome' => 'unknown', 'code' => 'photo_upload_outcome_uncertain'], $result);
+        $this->assertFalse($stream->isReadable());
+        Http::assertSentCount(1);
+        Http::assertNotSent(fn (Request $request) => $request->method() !== 'POST');
+    }
+
+    public function test_incomplete_cleanup_response_is_not_confirmed(): void
+    {
+        $contents = json_encode([['name' => self::PATH]]);
+        $stream = Utils::streamFor($contents);
+        Http::fake([self::URL.'/object/'.self::BUCKET =>
+            Create::promiseFor(new ProviderResponse(200, ['Content-Length' => strlen($contents) + 1], $stream))]);
+
+        $this->assertSame('unavailable', (new SupabaseStorageService)->delete(self::PATH)['outcome']);
+        $this->assertFalse($stream->isReadable());
+        Http::assertSentCount(1);
     }
 }

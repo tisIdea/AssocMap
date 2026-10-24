@@ -1,11 +1,11 @@
 import 'dart:convert';
 import 'dart:io';
 
-import '../lib/app/configuration/app_config.dart';
-import '../lib/data/models/analytics_report.dart';
-import '../lib/data/models/association_dashboard.dart';
-import '../lib/data/remote/api_analytics_repository.dart';
-import '../lib/data/repositories/analytics_repository.dart';
+import 'package:mobile/app/configuration/app_config.dart';
+import 'package:mobile/data/models/analytics_report.dart';
+import 'package:mobile/data/models/association_dashboard.dart';
+import 'package:mobile/data/remote/api_analytics_repository.dart';
+import 'package:mobile/data/repositories/analytics_repository.dart';
 
 // Uses synthetic exports from the isolated PostgreSQL harness; no network or session.
 Future<void> main(List<String> arguments) async {

@@ -4,7 +4,6 @@ namespace App\Services\Reporting;
 
 use App\Exceptions\ReportingUnavailableException;
 use App\Models\UserProfile;
-use App\Models\Role;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -15,8 +14,7 @@ class ReportScope
     {
         $identity = $request->attributes->get('current_user');
         abort_unless($identity instanceof UserProfile, 403);
-        $actor = UserProfile::query()->useWritePdo()->find($identity->id);
-        if ($actor) $actor->setRelation('role', Role::query()->useWritePdo()->find($actor->role_id));
+        $actor = UserProfile::findWithRole($identity->id, useWritePdo: true);
         abort_unless($actor?->canAccessApplication(throwOnDatabaseError: true)
             && $actor->role?->code === $identity->role?->code
             && in_array($actor->role?->code, ['system_admin', 'field_officer', 'association_account'], true), 403);
@@ -29,21 +27,25 @@ class ReportScope
     {
         abort_unless($actor->canAccessApplication(throwOnDatabaseError: true)
             && in_array($actor->role?->code, ['system_admin', 'field_officer', 'association_account'], true), 403);
-        $query = DB::table('associations as a')->useWritePdo()
-            ->join('areas as ar', 'ar.id', '=', 'a.area_id')
-            ->join('barangays as b', 'b.id', '=', 'ar.barangay_id')
-            ->join('municipalities as mu', 'mu.id', '=', 'b.municipality_id');
+        $query = app(\App\Services\AssociationGeographyService::class)
+            ->joinGeography(DB::table('associations as a')->useWritePdo(), 'mu');
         if ($actor->role->code === 'field_officer') {
             $query->where('a.primary_field_officer_id', $actor->id)
                 ->where('a.status', 'active')->whereNull('a.archived_at');
         } elseif ($actor->role->code === 'association_account') {
             // Match the existing mobile eligibility policy, including inconsistent-link denial.
-            $links = DB::table('association_accounts')->useWritePdo()->where('user_id', $actor->id)->limit(2)->get();
-            abort_unless($links->count() === 1 && in_array($links[0]->is_active, [true, 1, '1', 't'], true), 403);
-            $id = $links[0]->association_id;
-            abort_unless(DB::table('association_accounts')->useWritePdo()->where('association_id', $id)->count() === 1, 403);
-            $query->where('a.id', $id)->where('a.status', 'active')->whereNull('a.archived_at');
-            abort_unless((clone $query)->exists(), 403);
+            $associationLinkCount = DB::table('association_accounts as association_links')->selectRaw('COUNT(*)')
+                ->whereColumn('association_links.association_id', 'account_link.association_id')->where('association_links.is_active', true);
+            $eligibleAssociation = (clone $query)->whereColumn('a.id', 'account_link.association_id')
+                ->where('a.status', 'active')->whereNull('a.archived_at')->select('a.id')->limit(1);
+            $links = DB::table('association_accounts as account_link')->useWritePdo()
+                ->select(['account_link.association_id', 'account_link.is_active'])
+                ->selectSub($associationLinkCount, 'association_link_count')
+                ->selectSub($eligibleAssociation, 'eligible_association_id')
+                ->where('account_link.user_id', $actor->id)->where('account_link.is_active', true)->limit(2)->get();
+            abort_unless($links->count() === 1 && in_array($links[0]->is_active, [true, 1, '1', 't'], true)
+                && (int) $links[0]->association_link_count === 1 && $links[0]->eligible_association_id !== null, 403);
+            $query->where('a.id', $links[0]->association_id)->where('a.status', 'active')->whereNull('a.archived_at');
         }
 
         return $query;

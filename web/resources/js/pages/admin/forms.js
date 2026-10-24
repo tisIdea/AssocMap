@@ -6,17 +6,23 @@ function syncForm(form) {
         const municipality = $('[data-association-municipality]', form);
         const barangay = $('[data-association-barangay]', form);
         const area = $('[name=area_id]', form);
+        const directGeography = form.dataset.directGeography === 'true';
         const populate = (select, choices, label) => {
             const selected = select.value;
-            select.replaceChildren(new Option(choices.length ? label : 'No choices available', ''));
+            select.replaceChildren(new Option(choices.length || (directGeography && select === area) ? label : 'No choices available', ''));
             choices.forEach(choice => select.add(new Option(choice.label, choice.value)));
             select.value = choices.some(choice => choice.value === selected) ? selected : '';
         };
         const matching = records.filter(record => municipality.value && record.municipality_id === municipality.value);
-        const barangays = new Map(matching.filter(record => record.barangay_id)
-            .map(record => [record.barangay_id, { value: record.barangay_id, label: record.barangay }]));
+        const barangays = directGeography
+            ? new Map(JSON.parse(form.dataset.barangayRecords).filter(record => record.municipality_id === municipality.value)
+                .map(record => [record.value, record]))
+            : new Map(matching.filter(record => record.barangay_id)
+                .map(record => [record.barangay_id, { value: record.barangay_id, label: record.barangay }]));
         populate(barangay, Array.from(barangays.values()), 'Select barangay');
-        populate(area, matching.filter(record => barangay.value && record.barangay_id === barangay.value), 'Select specific area');
+        const previousArea = area.value;
+        populate(area, matching.filter(record => barangay.value && record.barangay_id === barangay.value), directGeography ? 'No Specific Area' : 'Select specific area');
+        if (directGeography && previousArea && !area.value) $('[data-association-area-cleared]', form).hidden = false;
         const registration = $('[data-association-registration]', form);
         if (registration) {
             const editing = !$('[data-association-method]', form).disabled;
@@ -301,8 +307,6 @@ export function initForms() {
         form.addEventListener('submit', event => {
             if (form.matches('[data-area-form]')) {
                 syncForm(form);
-                const typeField = $('select[name=area_type]', form);
-                if (typeField.value === 'Specific Area') typeField.disabled = true;
             }
             else if (!form.matches('[data-association-form]')) event.preventDefault();
         });

@@ -32,13 +32,14 @@ function eventTarget() {
     };
 }
 
-function page(readyState = 'loading', hash = `#token_hash=${syntheticHash}`) {
+function page(readyState = 'loading', hash = `#token_hash=${syntheticHash}`, pathname = '/invitation', invalidMessage = null) {
     const field = { value: '' };
     const button = { disabled: true, textContent: 'Verify invitation' };
     const attributes = {};
     const note = {
         hidden: false,
         textContent: 'Initialization has not run.',
+        getAttribute(name) { return name === 'data-invalid-message' ? invalidMessage : null; },
         setAttribute(name, value) { attributes[`note:${name}`] = value; },
     };
     const form = {
@@ -57,10 +58,10 @@ function page(readyState = 'loading', hash = `#token_hash=${syntheticHash}`) {
     };
     const window = {
         ...eventTarget(),
-        location: { hash, pathname: '/invitation' },
+        location: { hash, pathname },
         history: {
             replaceState(_state, _title, path) {
-                assert.equal(path, '/invitation');
+                assert.equal(path, pathname);
                 window.location.hash = '';
             },
         },
@@ -92,6 +93,26 @@ test('initialization waits for parsing, scrubs the fragment, then enables a vali
     assert.equal(fixture.note.hidden, true);
     assert.equal(fixture.field.value, '');
     assert.equal(fixture.attributes['form:aria-busy'], undefined);
+});
+
+test('activation restart scrubs its proof while retaining the callback path and explicit submission', () => {
+    const path = `/invitation/restart/${'R'.repeat(64)}`;
+    const fixture = page('complete', `#token_hash=${syntheticHash}`, path);
+    assert.equal(fixture.window.location.hash, '');
+    assert.equal(fixture.window.location.pathname, path);
+    assert.equal(fixture.field.value, '');
+    assert.equal(fixture.button.disabled, false);
+    assert.equal(fixture.submit().prevented, false);
+    assert.equal(fixture.field.value, syntheticHash);
+    assert.equal(fixture.submit().prevented, true);
+});
+
+test('activation restart invalid proof directs the recipient to the latest recovery email', () => {
+    const message = 'Reopen the latest activation recovery email or contact an Administrator.';
+    const fixture = page('complete', '#access_token=unused', '/invitation/restart/reference', message);
+    assert.equal(fixture.note.textContent, message);
+    assert.equal(fixture.button.disabled, true);
+    assert.equal(fixture.field.value, '');
 });
 
 for (const state of ['interactive', 'complete']) {

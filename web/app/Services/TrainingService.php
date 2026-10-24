@@ -22,9 +22,9 @@ class TrainingService
     ];
 
     public function __construct(
-        private MemberPositionIntegrityService $positions,
         private AssociationLifecycleService $lifecycle,
         private ProjectLifecycleService $projects,
+        private ProgramActorService $actors,
     ) {}
 
     public function create(
@@ -60,6 +60,7 @@ class TrainingService
             $relatedProject,
             $participants
         ) {
+            $currentUser = $this->actors->lock($currentUser);
             $this->lifecycle->lockOperational([$association->id]);
             $this->projects->lockNotFinalized([$relatedProject?->id]);
             $association = $this->resolveAssociationForUser($association->id, $currentUser);
@@ -130,7 +131,7 @@ class TrainingService
     {
         return DB::transaction(function () use ($training, $data, $currentUser) {
             abort_unless(in_array($currentUser->role?->code, ['system_admin', 'field_officer'], true), 403);
-            $actor = $this->positions->lockActor($currentUser, $currentUser->role->code);
+            $actor = $this->actors->lock($currentUser);
             $associationIds = array_unique([$training->association_id, strtolower($data['association_id'])]);
             $this->lifecycle->lockOperational($associationIds);
             $locked = Training::whereKey($training->id)->lockForUpdate()->firstOrFail();
@@ -224,6 +225,7 @@ class TrainingService
         UserProfile $currentUser
     ): void {
         DB::transaction(function () use ($training, $currentUser) {
+            $currentUser = $this->actors->lock($currentUser);
             $training = $this->lockForMutation($training, $currentUser);
             if ($training->archived_at !== null) return;
             $training->update([
@@ -239,6 +241,7 @@ class TrainingService
         UserProfile $currentUser
     ): void {
         DB::transaction(function () use ($training, $currentUser) {
+            $currentUser = $this->actors->lock($currentUser);
             $training = $this->lockForMutation($training, $currentUser);
             if ($training->archived_at === null) return;
             $training->update([

@@ -3,15 +3,19 @@
 namespace Tests\Feature;
 
 use App\Models\Association;
+use App\Models\MonitoringRecord;
 use App\Models\ProgramActivityRecord;
 use App\Models\Project;
 use App\Models\Training;
 use App\Models\UserProfile;
+use App\Services\AssociationDirectoryQueryService;
 use App\Services\AssociationLifecycleService;
 use App\Services\AssociationService;
 use App\Services\AuditLogService;
+use App\Services\MonitoringService;
 use App\Services\ProgramActivityService;
 use App\Services\ProjectService;
+use App\Services\SupabaseAuthService;
 use App\Services\TrainingService;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Bootstrap\HandleExceptions;
@@ -23,22 +27,30 @@ use LogicException;
 use Mockery;
 use PHPUnit\Framework\Attributes\DataProvider;
 use RuntimeException;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\Support\IsolatedDatabaseManager;
 use Tests\TestCase;
 
 class AssociationLifecycleTest extends TestCase
 {
     private const ADMIN = '11111111-1111-4111-8111-111111111111';
+
     private const OFFICER = '22222222-2222-4222-8222-222222222222';
+
     private const ASSOCIATION = '33333333-3333-4333-8333-333333333333';
+
     private const DESTINATION = '44444444-4444-4444-8444-444444444444';
+
     private const PROJECT = '55555555-5555-4555-8555-555555555555';
+
     private const TRAINING = '66666666-6666-4666-8666-666666666666';
+
     private const ACTIVITY = '77777777-7777-4777-8777-777777777777';
 
     protected function setUp(): void
     {
         parent::setUp();
+        config(['associations.geography_schema_ready' => false, 'associations.direct_geography' => false]);
         $this->assertInstanceOf(IsolatedDatabaseManager::class, DB::getFacadeRoot());
         $this->assertSame('sqlite', DB::connection()->getDriverName());
         $this->assertSame(':memory:', DB::connection()->getConfig('database'));
@@ -62,87 +74,179 @@ class AssociationLifecycleTest extends TestCase
     {
         // Isolated fixtures exercise service decisions, not PostgreSQL row-lock behavior.
         Schema::create('roles', function (Blueprint $table) {
-            $table->id(); $table->string('code'); $table->boolean('is_active'); $table->timestamps();
+            $table->id();
+            $table->string('code');
+            $table->boolean('is_active');
+            $table->timestamps();
+            $table->string('name')->nullable();
+            $table->text('description')->nullable();
         });
         Schema::create('user_profiles', function (Blueprint $table) {
-            $table->uuid('id')->primary(); $table->unsignedBigInteger('role_id');
-            $table->string('display_name'); $table->boolean('is_active'); $table->timestamps();
+            $table->uuid('id')->primary();
+            $table->unsignedBigInteger('role_id');
+            $table->string('display_name');
+            $table->boolean('is_active');
+            $table->timestamp('activated_at')->nullable();
+            $table->timestamps();
+        });
+        Schema::create('association_accounts', function (Blueprint $table) {
+            $table->uuid('id')->primary();
+            $table->uuid('user_id')->unique();
+            $table->uuid('association_id')->unique();
+            $table->boolean('is_active');
         });
         Schema::create('user_invitations', function (Blueprint $table) {
-            $table->uuid('id')->primary(); $table->uuid('auth_user_id')->nullable(); $table->string('status');
-            $table->string('last_error_code')->nullable(); $table->timestamp('accepted_at')->nullable();
-            $table->timestamp('last_attempt_at')->nullable(); $table->timestamps();
+            $table->uuid('id')->primary();
+            $table->uuid('auth_user_id')->nullable();
+            $table->string('status');
+            $table->string('last_error_code')->nullable();
+            $table->timestamp('accepted_at')->nullable();
+            $table->timestamp('last_attempt_at')->nullable();
+            $table->timestamps();
         });
         Schema::create('associations', function (Blueprint $table) {
-            $table->uuid('id')->primary(); $table->string('name'); $table->string('acronym')->nullable();
-            $table->uuid('area_id')->nullable(); $table->date('saad_phase2_join_date')->nullable();
-            $table->uuid('primary_field_officer_id'); $table->string('status');
-            $table->timestamp('archived_at')->nullable(); $table->uuid('archived_by')->nullable();
-            $table->uuid('created_by')->nullable(); $table->uuid('updated_by')->nullable(); $table->timestamps();
+            $table->uuid('id')->primary();
+            $table->string('name');
+            $table->string('acronym')->nullable();
+            $table->uuid('area_id')->nullable();
+            $table->date('saad_phase2_join_date')->nullable();
+            $table->uuid('primary_field_officer_id');
+            $table->string('status');
+            $table->timestamp('archived_at')->nullable();
+            $table->uuid('archived_by')->nullable();
+            $table->uuid('created_by')->nullable();
+            $table->uuid('updated_by')->nullable();
+            $table->timestamps();
         });
         Schema::create('audit_logs', function (Blueprint $table) {
-            $table->uuid('id')->primary(); $table->uuid('actor_user_id'); $table->string('action_type');
-            $table->string('module'); $table->string('entity_type'); $table->string('entity_id');
-            $table->text('old_values')->nullable(); $table->text('new_values')->nullable(); $table->timestamp('performed_at');
+            $table->uuid('id')->primary();
+            $table->uuid('actor_user_id');
+            $table->string('action_type');
+            $table->string('module');
+            $table->string('entity_type');
+            $table->string('entity_id');
+            $table->text('old_values')->nullable();
+            $table->text('new_values')->nullable();
+            $table->timestamp('performed_at');
         });
         Schema::create('saad_activities', function (Blueprint $table) {
-            $table->id(); $table->string('code'); $table->string('name'); $table->boolean('is_active'); $table->timestamps();
+            $table->id();
+            $table->string('code');
+            $table->string('name');
+            $table->boolean('is_active');
+            $table->timestamps();
         });
         Schema::create('fisheries_project_categories', function (Blueprint $table) {
-            $table->id(); $table->string('name'); $table->boolean('is_active'); $table->timestamps();
+            $table->id();
+            $table->string('name');
+            $table->boolean('is_active');
+            $table->timestamps();
         });
         Schema::create('commodities', function (Blueprint $table) {
-            $table->uuid('id')->primary(); $table->unsignedBigInteger('category_id'); $table->string('name'); $table->timestamps();
+            $table->uuid('id')->primary();
+            $table->unsignedBigInteger('category_id');
+            $table->string('name');
+            $table->timestamps();
         });
         Schema::create('projects', function (Blueprint $table) {
-            $table->uuid('id')->primary(); $table->uuid('association_id');
-            $table->unsignedBigInteger('saad_activity_id'); $table->unsignedBigInteger('fisheries_category_id');
-            $table->uuid('commodity_id')->nullable(); $table->string('title'); $table->text('description')->nullable();
-            $table->integer('program_year'); $table->date('implementation_start_date');
-            $table->date('implementation_end_date')->nullable(); $table->string('status'); $table->text('remarks')->nullable();
-            $table->timestamp('archived_at')->nullable(); $table->uuid('archived_by')->nullable();
-            $table->uuid('created_by')->nullable(); $table->uuid('updated_by')->nullable(); $table->timestamps();
+            $table->uuid('id')->primary();
+            $table->uuid('association_id');
+            $table->unsignedBigInteger('saad_activity_id');
+            $table->unsignedBigInteger('fisheries_category_id');
+            $table->uuid('commodity_id')->nullable();
+            $table->string('title');
+            $table->text('description')->nullable();
+            $table->integer('program_year');
+            $table->date('implementation_start_date');
+            $table->date('implementation_end_date')->nullable();
+            $table->string('status');
+            $table->text('remarks')->nullable();
+            $table->timestamp('archived_at')->nullable();
+            $table->uuid('archived_by')->nullable();
+            $table->uuid('created_by')->nullable();
+            $table->uuid('updated_by')->nullable();
+            $table->timestamps();
         });
         foreach (['project_products', 'project_materials'] as $name) {
             Schema::create($name, function (Blueprint $table) {
-                $table->uuid('id')->primary(); $table->uuid('project_id'); $table->timestamps();
+                $table->uuid('id')->primary();
+                $table->uuid('project_id');
+                $table->timestamps();
             });
         }
         Schema::create('monitoring_records', function (Blueprint $table) {
-            $table->uuid('id')->primary(); $table->uuid('project_id');
+            $table->uuid('id')->primary();
+            $table->uuid('project_id');
         });
         Schema::create('trainings', function (Blueprint $table) {
-            $table->uuid('id')->primary(); $table->uuid('association_id'); $table->uuid('related_project_id')->nullable();
-            $table->unsignedBigInteger('saad_activity_id'); $table->string('title'); $table->text('description')->nullable();
-            $table->integer('program_year'); $table->date('start_date'); $table->date('end_date')->nullable();
-            $table->string('venue')->nullable(); $table->string('conducted_by')->nullable();
-            $table->decimal('training_cost', 14, 2)->nullable(); $table->string('status'); $table->text('remarks')->nullable();
-            $table->timestamp('archived_at')->nullable(); $table->uuid('archived_by')->nullable();
-            $table->uuid('created_by')->nullable(); $table->uuid('updated_by')->nullable(); $table->timestamps();
+            $table->uuid('id')->primary();
+            $table->uuid('association_id');
+            $table->uuid('related_project_id')->nullable();
+            $table->unsignedBigInteger('saad_activity_id');
+            $table->string('title');
+            $table->text('description')->nullable();
+            $table->integer('program_year');
+            $table->date('start_date');
+            $table->date('end_date')->nullable();
+            $table->string('venue')->nullable();
+            $table->string('conducted_by')->nullable();
+            $table->decimal('training_cost', 14, 2)->nullable();
+            $table->string('status');
+            $table->text('remarks')->nullable();
+            $table->timestamp('archived_at')->nullable();
+            $table->uuid('archived_by')->nullable();
+            $table->uuid('created_by')->nullable();
+            $table->uuid('updated_by')->nullable();
+            $table->timestamps();
         });
         Schema::create('training_participants', function (Blueprint $table) {
-            $table->uuid('id')->primary(); $table->uuid('training_id'); $table->uuid('member_id');
-            $table->string('attendance_status'); $table->text('remarks')->nullable(); $table->timestamps();
+            $table->uuid('id')->primary();
+            $table->uuid('training_id');
+            $table->uuid('member_id');
+            $table->string('attendance_status');
+            $table->text('remarks')->nullable();
+            $table->timestamps();
         });
         Schema::create('members', function (Blueprint $table) {
-            $table->uuid('id')->primary(); $table->uuid('association_id');
-            $table->string('member_status'); $table->timestamp('archived_at')->nullable();
+            $table->uuid('id')->primary();
+            $table->uuid('association_id');
+            $table->string('member_status');
+            $table->timestamp('archived_at')->nullable();
         });
         Schema::create('program_activity_records', function (Blueprint $table) {
-            $table->uuid('id')->primary(); $table->uuid('association_id')->nullable(); $table->uuid('related_project_id')->nullable();
-            $table->unsignedBigInteger('saad_activity_id'); $table->string('title'); $table->text('description')->nullable();
-            $table->integer('program_year'); $table->date('activity_date'); $table->string('venue')->nullable();
-            $table->string('status'); $table->string('conducted_by')->nullable(); $table->uuid('conducted_by_user_id')->nullable();
-            $table->text('remarks')->nullable(); $table->timestamp('archived_at')->nullable(); $table->uuid('archived_by')->nullable();
-            $table->uuid('created_by')->nullable(); $table->uuid('updated_by')->nullable(); $table->timestamps();
+            $table->uuid('id')->primary();
+            $table->uuid('association_id')->nullable();
+            $table->uuid('related_project_id')->nullable();
+            $table->unsignedBigInteger('saad_activity_id');
+            $table->string('title');
+            $table->text('description')->nullable();
+            $table->integer('program_year');
+            $table->date('activity_date');
+            $table->string('venue')->nullable();
+            $table->string('status');
+            $table->string('conducted_by')->nullable();
+            $table->uuid('conducted_by_user_id')->nullable();
+            $table->text('remarks')->nullable();
+            $table->timestamp('archived_at')->nullable();
+            $table->uuid('archived_by')->nullable();
+            $table->uuid('created_by')->nullable();
+            $table->uuid('updated_by')->nullable();
+            $table->timestamps();
         });
         Schema::create('registration_agencies', function (Blueprint $table) {
-            $table->id(); $table->boolean('is_active');
+            $table->id();
+            $table->boolean('is_active');
         });
         Schema::create('association_registrations', function (Blueprint $table) {
-            $table->uuid('id')->primary(); $table->uuid('association_id'); $table->unsignedBigInteger('agency_id');
-            $table->string('registration_number'); $table->date('registration_date'); $table->date('expiration_date')->nullable();
-            $table->boolean('is_primary'); $table->text('remarks')->nullable(); $table->timestamps();
+            $table->uuid('id')->primary();
+            $table->uuid('association_id');
+            $table->unsignedBigInteger('agency_id');
+            $table->string('registration_number');
+            $table->date('registration_date');
+            $table->date('expiration_date')->nullable();
+            $table->boolean('is_primary');
+            $table->text('remarks')->nullable();
+            $table->timestamps();
         });
     }
 
@@ -152,7 +256,7 @@ class AssociationLifecycleTest extends TestCase
             DB::table('roles')->insert(['id' => $id, 'code' => $code, 'is_active' => true]);
         }
         foreach ([self::ADMIN => 1, self::OFFICER => 2] as $id => $role) {
-            DB::table('user_profiles')->insert(['id' => $id, 'role_id' => $role, 'display_name' => 'Synthetic Actor', 'is_active' => true]);
+            DB::table('user_profiles')->insert(['id' => $id, 'role_id' => $role, 'display_name' => 'Synthetic Actor', 'is_active' => true, 'activated_at' => now()->subDay()]);
         }
         foreach ([self::ASSOCIATION, self::DESTINATION] as $id) {
             DB::table('associations')->insert(['id' => $id, 'name' => $id, 'status' => 'active',
@@ -176,6 +280,7 @@ class AssociationLifecycleTest extends TestCase
     private function payload(string $module, string $associationId = self::ASSOCIATION): array
     {
         $base = ['association_id' => $associationId, 'title' => 'Synthetic record', 'program_year' => 2026];
+
         return $base + match ($module) {
             'project' => ['saad_activity_id' => 1, 'fisheries_category_id' => 1, 'implementation_start_date' => '2026-01-01', 'status' => 'planned'],
             'training' => ['saad_activity_id' => 2, 'start_date' => '2026-01-01', 'status' => 'scheduled'],
@@ -208,6 +313,140 @@ class AssociationLifecycleTest extends TestCase
             $this->assertArrayHasKey('association_id', $exception->errors());
             $this->assertSame(422, $exception->status);
         }
+    }
+
+    public static function programMutations(): array
+    {
+        $cases = [];
+        foreach (['project', 'activity', 'training'] as $module) {
+            foreach (['create', 'update', 'archive', 'unarchive'] as $operation) {
+                $cases[$module.' '.$operation] = [$module, $operation];
+            }
+        }
+
+        return $cases;
+    }
+
+    public static function staleProgramActors(): array
+    {
+        $cases = [];
+        foreach (self::programMutations() as $name => [$module, $operation]) {
+            foreach (['admin', 'officer'] as $role) {
+                foreach (['revoked', 'disabled_role', 'changed_role', 'email_hold', 'pending_invitation', 'session_cutoff'] as $state) {
+                    $cases[$name.' '.$role.' '.$state] = [$module, $operation, $role, $state];
+                }
+            }
+        }
+
+        return $cases;
+    }
+
+    #[DataProvider('staleProgramActors')]
+    public function test_program_writes_reject_actors_who_became_ineligible_after_authorization(
+        string $module, string $operation, string $role, string $state
+    ): void {
+        $cached = UserProfile::with('role')->findOrFail($role === 'admin' ? self::ADMIN : self::OFFICER);
+        $this->assertTrue($cached->canAccessApplication());
+        $this->prepareProgramMutation($module, $operation);
+        match ($state) {
+            'revoked' => DB::table('user_profiles')->where('id', $cached->id)->update(['is_active' => false]),
+            'disabled_role' => DB::table('roles')->where('id', $cached->role_id)->update(['is_active' => false]),
+            'changed_role' => DB::table('user_profiles')->where('id', $cached->id)->update(['role_id' => $role === 'admin' ? 2 : 1]),
+            'email_hold' => $this->placeProgramActorOnHold($cached),
+            'session_cutoff' => $this->advanceProgramActorCutoff($cached),
+            'pending_invitation' => DB::table('user_invitations')->insert(['id' => self::DESTINATION,
+                'auth_user_id' => $cached->id, 'status' => 'sent', 'created_at' => now(), 'updated_at' => now()]),
+        };
+        $before = $this->programMutationSnapshot();
+        try {
+            $this->runProgramMutation($module, $operation, $cached);
+            $this->fail('A stale actor must not commit a program mutation.');
+        } catch (HttpException $exception) {
+            $this->assertSame(403, $exception->getStatusCode());
+        }
+        $this->assertSame($before, $this->programMutationSnapshot());
+    }
+
+    #[DataProvider('programMutations')]
+    public function test_program_writes_recheck_assignment_after_an_earlier_scope_check(string $module, string $operation): void
+    {
+        $cached = UserProfile::with('role')->findOrFail(self::OFFICER);
+        $this->assertTrue($cached->canAccessApplication());
+        $this->prepareProgramMutation($module, $operation);
+        DB::table('user_profiles')->insert(['id' => self::DESTINATION, 'role_id' => 2,
+            'display_name' => 'Synthetic replacement officer', 'is_active' => true, 'activated_at' => now()]);
+        DB::table('associations')->update(['primary_field_officer_id' => self::DESTINATION]);
+        $before = $this->programMutationSnapshot();
+        try {
+            $this->runProgramMutation($module, $operation, $cached);
+            $this->fail('The previous officer must not retain write scope.');
+        } catch (ValidationException $exception) {
+            $this->assertSame(422, $exception->status);
+        }
+        $this->assertSame($before, $this->programMutationSnapshot());
+    }
+
+    #[DataProvider('programMutations')]
+    public function test_eligible_program_writes_preserve_gis_identity_and_attribution(string $module, string $operation): void
+    {
+        $this->prepareProgramMutation($module, $operation);
+        $gis = DB::table('gis_locations')->get()->toJson();
+        $this->runProgramMutation($module, $operation, UserProfile::with('role')->findOrFail(self::OFFICER));
+        $this->assertSame($gis, DB::table('gis_locations')->get()->toJson());
+        $this->assertSame(self::OFFICER, Association::findOrFail(self::ASSOCIATION)->primary_field_officer_id);
+    }
+
+    private function placeProgramActorOnHold(UserProfile $actor): void
+    {
+        Schema::table('user_profiles', fn (Blueprint $table) => $table->uuid('email_change_hold_id')->nullable());
+        DB::table('user_profiles')->where('id', $actor->id)->update(['email_change_hold_id' => self::DESTINATION]);
+    }
+
+    private function advanceProgramActorCutoff(UserProfile $actor): void
+    {
+        Schema::table('user_profiles', fn (Blueprint $table) => $table->timestampTz('auth_sessions_valid_after')->nullable());
+        DB::table('user_profiles')->where('id', $actor->id)->update(['auth_sessions_valid_after' => now()]);
+    }
+
+    private function prepareProgramMutation(string $module, string $operation): void
+    {
+        if ($operation === 'unarchive') {
+            $this->record($module)->update(['archived_at' => now()]);
+        }
+        Schema::create('gis_locations', function (Blueprint $table) {
+            $table->uuid('id')->primary();
+            $table->uuid('project_id');
+            $table->text('geom');
+            $table->boolean('is_published');
+            $table->uuid('created_by');
+            $table->uuid('published_by');
+        });
+        // Text geometry is a preservation sentinel; native PostGIS checks are separate.
+        DB::table('gis_locations')->insert(['id' => self::DESTINATION, 'project_id' => self::PROJECT,
+            'geom' => '{"type":"Point","coordinates":[123,10]}', 'is_published' => true,
+            'created_by' => self::OFFICER, 'published_by' => self::ADMIN]);
+    }
+
+    private function runProgramMutation(string $module, string $operation, UserProfile $actor): void
+    {
+        $service = $this->service($module);
+        if ($operation === 'create') {
+            $service->create($this->payload($module), $actor);
+        } elseif ($operation === 'update') {
+            $record = $this->record($module);
+            $service->update($record, $this->payload($module) + [
+                'expected_updated_at' => $record->updated_at?->format('Y-m-d\TH:i:s.uP'),
+            ], $actor);
+        } else {
+            $service->$operation($this->record($module), $actor);
+        }
+    }
+
+    private function programMutationSnapshot(): array
+    {
+        return collect(['user_profiles', 'associations', 'projects', 'project_products', 'project_materials',
+            'trainings', 'training_participants', 'program_activity_records', 'audit_logs', 'gis_locations'])
+            ->mapWithKeys(fn ($table) => [$table => DB::table($table)->orderBy('id')->get()->toJson()])->all();
     }
 
     public static function readOnlyStates(): array
@@ -263,8 +502,10 @@ class AssociationLifecycleTest extends TestCase
     #[DataProvider('revokedLifecycleActors')]
     public function test_archive_and_restore_revalidate_the_actor_inside_the_transaction(string $operation, string $revocation): void
     {
-        if ($operation === 'unarchive') DB::table('associations')->where('id', self::ASSOCIATION)
-            ->update(['archived_at' => '2026-01-01', 'archived_by' => self::ADMIN]);
+        if ($operation === 'unarchive') {
+            DB::table('associations')->where('id', self::ASSOCIATION)
+                ->update(['archived_at' => '2026-01-01', 'archived_by' => self::ADMIN]);
+        }
         $actor = $this->actor();
         $actor->canAccessApplication();
         match ($revocation) {
@@ -279,7 +520,7 @@ class AssociationLifecycleTest extends TestCase
         try {
             app(AssociationService::class)->{$operation}(Association::findOrFail(self::ASSOCIATION), $actor);
             $this->fail('Revoked administrators must not change association lifecycle.');
-        } catch (\Symfony\Component\HttpKernel\Exception\HttpException $exception) {
+        } catch (HttpException $exception) {
             $this->assertSame(403, $exception->getStatusCode());
         }
         $this->assertSame($before, Association::findOrFail(self::ASSOCIATION)->getRawOriginal());
@@ -289,8 +530,12 @@ class AssociationLifecycleTest extends TestCase
     public static function revokedLifecycleActors(): array
     {
         $cases = [];
-        foreach (['archive', 'unarchive'] as $operation) foreach (['inactive profile', 'inactive role', 'changed role',
-            'missing profile', 'unaccepted invitation'] as $revocation) $cases[] = [$operation, $revocation];
+        foreach (['archive', 'unarchive'] as $operation) {
+            foreach (['inactive profile', 'inactive role', 'changed role',
+                'missing profile', 'unaccepted invitation'] as $revocation) {
+                $cases[] = [$operation, $revocation];
+            }
+        }
 
         return $cases;
     }
@@ -298,8 +543,10 @@ class AssociationLifecycleTest extends TestCase
     #[DataProvider('lifecycleOperations')]
     public function test_lifecycle_audit_failure_rolls_back_the_association(string $operation): void
     {
-        if ($operation === 'unarchive') DB::table('associations')->where('id', self::ASSOCIATION)
-            ->update(['archived_at' => '2026-01-01', 'archived_by' => self::ADMIN]);
+        if ($operation === 'unarchive') {
+            DB::table('associations')->where('id', self::ASSOCIATION)
+                ->update(['archived_at' => '2026-01-01', 'archived_by' => self::ADMIN]);
+        }
         $before = Association::findOrFail(self::ASSOCIATION)->getRawOriginal();
         $audit = Mockery::mock(AuditLogService::class);
         $audit->shouldReceive('record')->once()->andThrow(new RuntimeException('Synthetic audit failure'));
@@ -369,8 +616,12 @@ class AssociationLifecycleTest extends TestCase
                 $before = $record->getRawOriginal();
                 DB::table('associations')->where('id', $blockedId)->update(['status' => $status, 'archived_at' => $archivedAt]);
                 $data = $this->payload($module, self::DESTINATION);
-                if ($module === 'training') $data['expected_updated_at'] = $record->updated_at->format('Y-m-d\TH:i:s.uP');
-                if ($module === 'project') $data['new_commodity_name'] = 'Must not be created';
+                if ($module === 'training') {
+                    $data['expected_updated_at'] = $record->updated_at->format('Y-m-d\TH:i:s.uP');
+                }
+                if ($module === 'project') {
+                    $data['new_commodity_name'] = 'Must not be created';
+                }
                 $this->reject(fn () => $this->service($module)->update($record, $data, $this->actor()));
                 $this->assertSame($before, $record->fresh()->getRawOriginal());
                 DB::table('associations')->where('id', $blockedId)->update(['status' => 'active', 'archived_at' => null]);
@@ -387,7 +638,9 @@ class AssociationLifecycleTest extends TestCase
         foreach (['project', 'training', 'activity'] as $module) {
             foreach (['archive', 'unarchive'] as $method) {
                 $record = $this->record($module);
-                if ($method === 'unarchive') $record->forceFill(['archived_at' => '2025-01-01'])->save();
+                if ($method === 'unarchive') {
+                    $record->forceFill(['archived_at' => '2025-01-01'])->save();
+                }
                 $before = $record->getRawOriginal();
                 $this->reject(fn () => $this->service($module)->{$method}($record, $this->actor()));
                 $this->assertSame($before, $record->fresh()->getRawOriginal());
@@ -437,7 +690,8 @@ class AssociationLifecycleTest extends TestCase
         $this->assertSame('inactive', $restored->status);
         $this->reject(fn () => DB::transaction(fn () => app(AssociationLifecycleService::class)->lockOperational([self::ASSOCIATION])));
         $data = ['name' => $restored->name, 'area_id' => self::DESTINATION,
-            'saad_phase2_join_date' => '2025-01-01', 'primary_field_officer_id' => self::OFFICER, 'status' => 'active'];
+            'saad_phase2_join_date' => '2025-01-01', 'primary_field_officer_id' => self::OFFICER,
+            'expected_primary_field_officer_id' => self::OFFICER, 'status' => 'active'];
         $reactivated = $service->update($restored, $data, $this->actor());
         $this->assertSame('active', $reactivated->status);
         $this->assertSame(self::ASSOCIATION, app(ProjectService::class)->create($this->payload('project'), $this->actor())->association_id);
@@ -453,7 +707,8 @@ class AssociationLifecycleTest extends TestCase
     {
         $stale = Association::findOrFail(self::ASSOCIATION);
         $data = ['name' => 'Must not change', 'area_id' => self::DESTINATION,
-            'saad_phase2_join_date' => '2025-01-01', 'primary_field_officer_id' => self::OFFICER];
+            'saad_phase2_join_date' => '2025-01-01', 'primary_field_officer_id' => self::OFFICER,
+            'expected_primary_field_officer_id' => self::OFFICER];
         foreach ([['inactive', null], ['active', '2026-01-01']] as [$status, $archivedAt]) {
             DB::table('associations')->where('id', self::ASSOCIATION)->update(['status' => $status, 'archived_at' => $archivedAt]);
             $before = Association::findOrFail(self::ASSOCIATION)->getRawOriginal();
@@ -487,20 +742,32 @@ class AssociationLifecycleTest extends TestCase
     public function test_association_listing_filters_use_only_existing_lifecycle_columns(): void
     {
         Schema::create('areas', function (Blueprint $table) {
-            $table->uuid('id')->primary(); $table->uuid('barangay_id')->nullable();
-            $table->string('address'); $table->boolean('is_active');
+            $table->uuid('id')->primary();
+            $table->uuid('barangay_id')->nullable();
+            $table->string('address');
+            $table->boolean('is_active');
         });
         Schema::create('barangays', function (Blueprint $table) {
-            $table->uuid('id')->primary(); $table->uuid('municipality_id'); $table->string('name');
+            $table->uuid('id')->primary();
+            $table->uuid('municipality_id');
+            $table->string('name');
         });
-        Schema::create('municipalities', function (Blueprint $table) { $table->uuid('id')->primary(); $table->string('name'); });
-        Schema::create('association_positions', function (Blueprint $table) { $table->id(); $table->string('code'); });
+        Schema::create('municipalities', function (Blueprint $table) {
+            $table->uuid('id')->primary();
+            $table->string('name');
+        });
+        Schema::create('association_positions', function (Blueprint $table) {
+            $table->id();
+            $table->string('code');
+        });
         Schema::table('members', function (Blueprint $table) {
             $table->unsignedBigInteger('position_id')->nullable();
-            foreach (['first_name', 'middle_name', 'last_name', 'suffix'] as $column) $table->string($column)->nullable();
+            foreach (['first_name', 'middle_name', 'last_name', 'suffix'] as $column) {
+                $table->string($column)->nullable();
+            }
         });
         DB::table('associations')->where('id', self::DESTINATION)->update(['status' => 'inactive', 'archived_at' => '2026-01-01']);
-        $directory = app(\App\Services\AssociationDirectoryQueryService::class);
+        $directory = app(AssociationDirectoryQueryService::class);
         $filters = ['status' => '', 'q' => '', 'municipality' => '', 'barangay' => '', 'field_officer' => '', 'sort' => 'az'];
         foreach (['' => self::ASSOCIATION, 'active' => self::ASSOCIATION, 'archived' => self::DESTINATION] as $status => $expected) {
             $records = $directory->records($this->actor(), array_replace($filters, ['status' => $status]));
@@ -512,5 +779,49 @@ class AssociationLifecycleTest extends TestCase
         $this->assertFalse(app('router')->has('admin.associations.terminate'));
         $this->assertFalse(app('router')->has('field-officer.associations.terminate'));
         $this->assertFalse(Schema::hasColumn('associations', 'terminated_at'));
+    }
+
+    public static function initialAssignmentStatuses(): array
+    {
+        return [['active'], ['inactive']];
+    }
+
+    #[DataProvider('initialAssignmentStatuses')]
+    public function test_initial_assignment_preserves_status_and_only_grants_operational_access_after_activation(string $status): void
+    {
+        $data = ['name' => 'Initial designation '.$status, 'area_id' => self::DESTINATION, 'saad_phase2_join_date' => '2025-01-01',
+            'primary_field_officer_id' => self::OFFICER, 'status' => $status];
+        $created = app(AssociationService::class)->create($data, $this->actor());
+        $officer = UserProfile::with('role')->findOrFail(self::OFFICER);
+        $this->assertSame($status, $created->status);
+        $this->assertSame(self::OFFICER, $created->primary_field_officer_id);
+        $this->assertTrue($officer->canAccessApplication());
+        $event = DB::table('audit_logs')->sole();
+        $this->assertSame('ASSIGN FIELD OFFICER', $event->action_type);
+        $this->assertSame($created->id, $event->entity_id);
+
+        if ($status === 'inactive') {
+            $project = (array) DB::table('projects')->where('id', self::PROJECT)->first();
+            $project['id'] = '88888888-8888-4888-8888-888888888888';
+            $project['association_id'] = $created->id;
+            DB::table('projects')->insert($project);
+            $recordId = '99999999-9999-4999-8999-999999999999';
+            DB::table('monitoring_records')->insert(['id' => $recordId, 'project_id' => $project['id']]);
+            $this->partialMock(SupabaseAuthService::class, function ($mock) {
+                $mock->shouldReceive('getUser')->andReturn(['id' => self::OFFICER, 'email' => 'synthetic@example.test']);
+            });
+            $this->withSession(['supabase_access_token' => 'synthetic_officer'])->get('/field-officer/monitoring/'.$recordId.'/workspace')->assertNotFound();
+            $this->reject(fn () => DB::transaction(fn () => app(MonitoringService::class)
+                ->lockRecordForMutation(MonitoringRecord::findOrFail($recordId), $officer)));
+        }
+        if ($created->status === 'inactive') {
+            $created = app(AssociationService::class)->update($created, array_replace($data,
+                ['status' => 'active', 'expected_primary_field_officer_id' => self::OFFICER]), $this->actor());
+        }
+        $this->assertSame('active', $created->status);
+        $this->assertSame(self::OFFICER, $created->primary_field_officer_id);
+        $this->assertDatabaseCount('audit_logs', 1);
+        $project = app(ProjectService::class)->create($this->payload('project', $created->id), $officer);
+        $this->assertSame($created->id, $project->association_id);
     }
 }

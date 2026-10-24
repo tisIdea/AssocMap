@@ -2,7 +2,11 @@
 
 namespace App\Http\Requests;
 
+use App\Models\Association;
+use App\Models\AssociationRegistration;
+use App\Services\AssociationGeographyService;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 class StoreAssociationRequest extends FormRequest
@@ -16,6 +20,15 @@ class StoreAssociationRequest extends FormRequest
 
     protected function prepareForValidation(): void
     {
+        foreach (['primary_field_officer_id', 'expected_primary_field_officer_id'] as $field) {
+            if (is_string($this->input($field))) {
+                $this->merge([$field => strtolower(trim($this->input($field)))]);
+            }
+        }
+        if ($this->exists('specific_address') && is_string($this->input('specific_address'))) {
+            $address = trim($this->input('specific_address'));
+            $this->merge(['specific_address' => $address === '' ? null : $address]);
+        }
         $this->merge([
             'name' => is_string($this->name)
                 ? trim($this->name)
@@ -52,12 +65,7 @@ class StoreAssociationRequest extends FormRequest
                 'max:50',
             ],
 
-            'area_id' => [
-                'required',
-                'uuid',
-                Rule::exists('areas', 'id')
-                    ->where('is_active', true),
-            ],
+            ...app(AssociationGeographyService::class)->rules($this->all(), ! $this->isMethod('POST')),
 
             'saad_phase2_join_date' => [
                 'required',
@@ -67,25 +75,60 @@ class StoreAssociationRequest extends FormRequest
             'primary_field_officer_id' => [
                 'required',
                 'uuid',
-                Rule::exists('user_profiles', 'id')
-                    ->where('is_active', true),
+                Rule::exists('user_profiles', 'id'),
             ],
+            'expected_primary_field_officer_id' => [$this->isMethod('POST') ? 'prohibited' : 'required', 'uuid'],
 
             'status' => [
                 'required',
                 Rule::in(['active', 'inactive']),
             ],
-            'registration' => $this->isMethod('POST')
-                ? ['sometimes', 'array:agency_id,registration_number,registration_date,expiration_date,is_primary,remarks']
-                : ['prohibited'],
+            ...$this->registrationRules($agencyId),
+        ];
+    }
+
+    private function registrationRules(int|false $agencyId): array
+    {
+        if (! $this->isMethod('POST')) {
+            $association = $this->route('association');
+            $id = $this->input('registration.id');
+            $record = $association instanceof Association && Str::isUuid($id)
+                ? AssociationRegistration::query()->whereKey($id)->where('association_id', $association->id)
+                    ->whereHas('agency', fn ($query) => $query->where('registration_kind', 'accreditation')->where('is_active', true))->first()
+                : null;
+
+            return [
+                'registration' => ['sometimes', 'array:id,expected_updated_at,registration_number,registration_date,expiration_date,remarks',
+                    'required_array_keys:id,expected_updated_at,registration_number,registration_date'],
+                'registration.id' => ['bail', 'required_with:registration', 'uuid', function ($attribute, $value, $fail) use ($record) {
+                    if (! $record) {
+                        $fail('Select an existing accreditation record for this association with an active issuing agency.');
+                    }
+                }],
+                'registration.expected_updated_at' => ['required_with:registration', 'string', 'max:50'],
+                'registration.agency_id' => ['prohibited'],
+                'registration.is_primary' => ['prohibited'],
+                'registration.registration_number' => ['bail', 'required_with:registration', 'string', 'max:150',
+                    Rule::unique('association_registrations', 'registration_number')->where('agency_id', $record?->agency_id)->ignore($record?->id)],
+                'registration.registration_date' => ['bail', 'required_with:registration', 'string', 'date_format:Y-m-d',
+                    Rule::when($record?->is_primary === true && is_string($this->input('saad_phase2_join_date')), ['before_or_equal:saad_phase2_join_date'])],
+                'registration.expiration_date' => ['bail', 'sometimes', 'nullable', 'string', 'date_format:Y-m-d',
+                    Rule::when(is_string($this->input('registration.registration_date')), ['after_or_equal:registration.registration_date'])],
+                'registration.remarks' => ['sometimes', 'nullable', 'string', 'max:4000'],
+            ];
+        }
+
+        return [
+            'registration' => ['sometimes', 'array:agency_id,registration_number,registration_date,expiration_date,is_primary,remarks'],
             'registration.agency_id' => ['bail', 'required_with:registration', 'integer',
                 Rule::exists('registration_agencies', 'id')->where('is_active', true)],
             'registration.registration_number' => ['bail', 'required_with:registration', 'string', 'max:150',
                 Rule::unique('association_registrations', 'registration_number')->where('agency_id',
                     $agencyId === false ? null : $agencyId)],
-            'registration.registration_date' => ['required_with:registration', 'date_format:Y-m-d',
-                Rule::when($this->boolean('registration.is_primary'), ['before_or_equal:saad_phase2_join_date'])],
-            'registration.expiration_date' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:registration.registration_date'],
+            'registration.registration_date' => ['bail', 'required_with:registration', 'string', 'date_format:Y-m-d',
+                Rule::when($this->boolean('registration.is_primary') && is_string($this->input('saad_phase2_join_date')), ['before_or_equal:saad_phase2_join_date'])],
+            'registration.expiration_date' => ['bail', 'nullable', 'string', 'date_format:Y-m-d',
+                Rule::when(is_string($this->input('registration.registration_date')), ['after_or_equal:registration.registration_date'])],
             'registration.is_primary' => ['nullable', 'boolean'],
             'registration.remarks' => ['nullable', 'string', 'max:4000'],
         ];

@@ -83,17 +83,18 @@ class WelcomeScreen extends StatelessWidget {
                       const SizedBox(height: 6),
                       Text(
                         (switch (config.gisMode) {
-                          GisDataMode.mock =>
-                            'The offline GIS demonstration uses fictional associations and geometries. '
-                            'It does not represent actual organizational records.',
-                          GisDataMode.live =>
-                            'The public map uses the configured Laravel public GIS endpoint. '
-                            'Availability depends on backend connectivity.',
-                          GisDataMode.invalid =>
-                            'The public GIS data source configuration needs correction.',
-                        }) + (config.mode == DataMode.mock
-                          ? ' Association sign-in uses synthetic demo identities; real sign-in is pending.'
-                          : ' Real association sign-in remains pending.'),
+                              GisDataMode.mock =>
+                                'The offline GIS demonstration uses fictional associations and geometries. '
+                                    'It does not represent actual organizational records.',
+                              GisDataMode.live =>
+                                'The public map uses the configured Laravel public GIS endpoint. '
+                                    'Availability depends on backend connectivity.',
+                              GisDataMode.invalid =>
+                                'The public GIS data source configuration needs correction.',
+                            }) +
+                            (config.mode == DataMode.mock
+                                ? ' Association sign-in uses synthetic demo identities; real sign-in is pending.'
+                                : ' Association Accounts sign in securely to view their authorized dashboard and reports.'),
                         style: const TextStyle(height: 1.5),
                       ),
                       const SizedBox(height: 16),

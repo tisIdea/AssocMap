@@ -15,9 +15,12 @@ use Illuminate\Support\Str;
 use PHPUnit\Framework\Attributes\DataProvider;
 use RuntimeException;
 use Tests\TestCase;
+use Tests\Support\CreatesLifecycleAuditTable;
 
 class InvitationActivationServiceTest extends TestCase
 {
+    use CreatesLifecycleAuditTable;
+
     private InvitationActivationService $activation;
 
     protected function setUp(): void
@@ -31,12 +34,14 @@ class InvitationActivationServiceTest extends TestCase
         DB::setDefaultConnection('activation_test');
         $this->assertSame(':memory:', DB::connection()->getConfig('database'));
         $this->activation = app(InvitationActivationService::class);
+        $this->createLifecycleAuditTable();
 
         Schema::create('roles', function (Blueprint $table) {
             $table->id();
             $table->string('code');
             $table->boolean('is_active');
             $table->timestamps();
+            $table->string('name')->nullable(); $table->text('description')->nullable();
         });
         Schema::create('user_profiles', function (Blueprint $table) {
             $table->uuid('id')->primary();
@@ -238,7 +243,7 @@ class InvitationActivationServiceTest extends TestCase
                 DB::table('association_accounts')->insert([
                     'id' => (string) Str::uuid(), 'association_id' => $scenario === 'association_link' ? $context['association_id'] : (string) Str::uuid(),
                     'user_id' => $scenario === 'user_link' ? $context['auth_user_id'] : (string) Str::uuid(),
-                    'is_active' => false, 'linked_at' => now(),
+                    'is_active' => $scenario === 'association_link', 'linked_at' => now(),
                 ]);
                 break;
             case 'conflicting_invitation':

@@ -54,7 +54,9 @@ void main() {
     ];
     for (final key in ['title', 'location_type', 'address', 'description']) {
       final json = pointFeature();
-      (json['properties'] as Map<String, dynamic>)[key] = 123;
+      final properties = Map<String, dynamic>.from(json['properties'] as Map);
+      properties[key] = 123;
+      json['properties'] = properties;
       cases.add(json);
     }
     for (final json in cases) {

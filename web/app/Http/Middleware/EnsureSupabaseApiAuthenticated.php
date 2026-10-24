@@ -41,6 +41,9 @@ class EnsureSupabaseApiAuthenticated
         }
 
         $context = $this->access->resolve($result['identity']);
+        if (! app(\App\Services\SupabaseSessionBoundary::class)->allows($context['profile'], $result['identity'], $accessToken)) {
+            return ApiRequestGuard::error('account_unavailable', 'Fresh sign-in is required for this account.', 403);
+        }
         $request->attributes->set('supabase_identity', $result['identity']);
         $request->attributes->set('current_user', $context['profile']);
         $request->attributes->set('mobile_context', $context['mobile']);

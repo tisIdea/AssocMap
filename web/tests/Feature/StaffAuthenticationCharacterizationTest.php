@@ -30,7 +30,7 @@ class StaffAuthenticationCharacterizationTest extends TestCase
         $this->withoutVite();
         Http::fake([]);
         DB::unprepared(<<<'SQL'
-            CREATE TABLE roles (id INTEGER PRIMARY KEY, code TEXT, is_active BOOLEAN);
+            CREATE TABLE roles (id INTEGER PRIMARY KEY, code TEXT, is_active BOOLEAN, name TEXT, description TEXT, created_at TEXT, updated_at TEXT);
             CREATE TABLE user_profiles (id TEXT PRIMARY KEY, role_id INTEGER, display_name TEXT, is_active BOOLEAN, created_at TEXT, updated_at TEXT);
             CREATE TABLE user_invitations (id TEXT PRIMARY KEY, auth_user_id TEXT, email TEXT, status TEXT, last_error_code TEXT, accepted_at TEXT, last_attempt_at TEXT, created_at TEXT);
             SQL);
@@ -65,6 +65,16 @@ class StaffAuthenticationCharacterizationTest extends TestCase
         $this->withCookie($cookie->getName(), $cookie->getValue());
 
         return $cookie->getValue();
+    }
+
+    public function test_login_page_links_password_recovery_and_preserves_sign_in(): void
+    {
+        $this->get('/login')->assertOk()
+            ->assertSee('Forgot password?')->assertSee(route('password.forgot'))
+            ->assertSee('action="'.route('login.store').'"', false)
+            ->assertSee('name="_token"', false)
+            ->assertSee('name="email"', false)->assertSee('name="password"', false);
+        Http::assertNothingSent();
     }
 
     #[DataProvider('webRoles')]
@@ -103,7 +113,7 @@ class StaffAuthenticationCharacterizationTest extends TestCase
             $cookie = $login->getCookie(config('session.cookie'));
             $this->withCookie($cookie->getName(), $cookie->getValue())->get('/_tests/authentication-probe')
                 ->assertStatus($role === 'system_admin' ? 200 : 403);
-            $this->assertCount(3, DB::getQueryLog(), 'Authenticated requests must retain fresh profile, role and invitation checks.');
+            $this->assertCount(2, DB::getQueryLog(), 'Authenticated requests read a fresh joined profile/role and invitation eligibility.');
             Http::assertSentCount(2);
         } finally {
             DB::disableQueryLog();
@@ -134,6 +144,44 @@ class StaffAuthenticationCharacterizationTest extends TestCase
     public static function accountRestrictions(): array
     {
         return array_map(fn ($restriction) => [$restriction], ['inactive profile', 'inactive role', 'missing role', 'unregistered', 'unsupported role', 'pending invitation']);
+    }
+
+    #[DataProvider('accountRestrictions')]
+    public function test_authenticated_requests_keep_profile_role_and_invitation_denials(string $restriction): void
+    {
+        match ($restriction) {
+            'inactive profile' => DB::table('user_profiles')->update(['is_active' => false]),
+            'inactive role' => DB::table('roles')->update(['is_active' => false]),
+            'missing role' => DB::table('user_profiles')->update(['role_id' => 999]),
+            'unregistered' => DB::table('user_profiles')->delete(),
+            'unsupported role' => DB::table('roles')->update(['code' => 'unsupported_role']),
+            'pending invitation' => DB::table('user_invitations')->insert(['id' => 'pending', 'auth_user_id' => self::ID,
+                'email' => self::EMAIL, 'status' => 'sent', 'created_at' => '2026-01-01']),
+        };
+        Http::fake([self::PROVIDER.'user' => Http::response($this->tokens()['user'])]);
+        $response = $this->withSession(['supabase_access_token' => 'synthetic-access'])
+            ->get('/_tests/authentication-probe')->assertDontSee(self::ID);
+        if ($restriction === 'unsupported role') $response->assertForbidden();
+        else $response->assertRedirect(route('login'))->assertSessionMissing('supabase_access_token');
+        Http::assertSentCount(1);
+    }
+
+    #[DataProvider('invitationStates')]
+    public function test_joined_middleware_profile_preserves_invitation_eligibility(string $status, bool $allowed): void
+    {
+        DB::table('user_invitations')->insert(['id' => 'synthetic-invitation', 'auth_user_id' => self::ID,
+            'email' => self::EMAIL, 'status' => $status, 'created_at' => '2026-01-01',
+            'accepted_at' => $allowed ? '2026-01-02' : null]);
+        Http::fake([self::PROVIDER.'user' => Http::response($this->tokens()['user'])]);
+        $response = $this->withSession(['supabase_access_token' => 'synthetic-access'])->get('/_tests/authentication-probe');
+        if ($allowed) $response->assertOk()->assertJsonPath('id', self::ID);
+        else $response->assertRedirect(route('login'))->assertSessionMissing('supabase_access_token');
+        Http::assertSentCount(1);
+    }
+
+    public static function invitationStates(): array
+    {
+        return [['pending', false], ['sent', false], ['failed', false], ['accepted', true]];
     }
 
     public function test_invalid_credentials_restore_only_the_email_and_do_not_create_authentication_state(): void
