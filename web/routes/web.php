@@ -11,7 +11,6 @@ use App\Http\Controllers\Admin\MunicipalityController;
 use App\Http\Controllers\Admin\BarangayController;
 use App\Http\Controllers\Admin\AreaController;
 use App\Http\Controllers\Admin\AssociationController;
-use App\Http\Controllers\Admin\MemberController;
 use App\Http\Controllers\AssociationOfficerController;
 use App\Http\Controllers\ProjectClosureController;
 use App\Http\Controllers\Admin\ProjectController as AdminProjectController;
@@ -282,10 +281,7 @@ Route::middleware([
     |--------------------------------------------------------------------------
     */
 
-    Route::get(
-        '/admin/members',
-        [MemberController::class, 'index']
-    )->name('admin.members.index');
+    require __DIR__.'/admin/members.php';
 
     /*
     |--------------------------------------------------------------------------
