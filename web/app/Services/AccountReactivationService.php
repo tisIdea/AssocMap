@@ -18,6 +18,8 @@ final class AccountReactivationService
 {
     public const LIFETIME_SECONDS = 600;
 
+    public const ASSOCIATION_APPOINTMENT_REQUIRED = 'A separately authorized association appointment is required before this Association Account can be reactivated. Reactivation does not restore former association links.';
+
     public function __construct(private AuditLogService $audit, private ProfileAuthIdentityService $identities,
         private SupabasePasswordRecoveryProvider $provider, private SupabaseAuthService $auth,
         private PasswordRecoveryContext $contexts) {}
@@ -176,7 +178,9 @@ final class AccountReactivationService
             $this->deny();
         }
         if (! UserInvitation::where('auth_user_id', $targetId)->where('role_id', $target->role_id)
-            ->where('email', $email)->where('status', 'accepted')->whereNotNull('accepted_at')->exists()) {
+            ->when($target->getAttribute('approved_email') === null, fn ($query) => $query->where('email', $email))
+            ->where('status', 'accepted')->whereNotNull('accepted_at')->exists()
+            || ($target->getAttribute('approved_email') !== null && $target->approved_email !== $email)) {
             $this->deny();
         }
         if (UserInvitation::whereIn('status', UserInvitation::UNRESOLVED_STATUSES)->where(fn ($query) => $query
@@ -195,12 +199,16 @@ final class AccountReactivationService
             $this->deny();
         }
         $links = AssociationAccount::where('user_id', $targetId)->orderBy('id')->lockForUpdate()->get();
+        $activeLinks = $links->where('is_active', true);
         $assignments = collect();
         if ($target->role->code === 'association_account') {
-            $link = $links->count() === 1 ? $links->first() : null;
+            $link = $activeLinks->count() === 1 ? $activeLinks->first() : null;
+            if ($activeLinks->isEmpty()) {
+                $this->deny(self::ASSOCIATION_APPOINTMENT_REQUIRED);
+            }
             $association = $link ? $linkedAssociations->get($link->association_id) : null;
             if (! $link?->is_active || ! $association || $association->status !== 'active' || $association->archived_at !== null
-                || AssociationAccount::where('association_id', $link->association_id)->count() !== 1
+                || AssociationAccount::where('association_id', $link->association_id)->where('is_active', true)->count() !== 1
                 || Association::where('primary_field_officer_id', $targetId)->exists()) {
                 $this->deny();
             }
@@ -221,7 +229,7 @@ final class AccountReactivationService
         }
 
         return ['actor' => $actor, 'target' => $target, 'email' => $email, 'assignments' => $assignments,
-            'links' => $links, 'review_hash' => $reviewHash, 'revocation_count' => $revocationCount];
+            'links' => $activeLinks, 'review_hash' => $reviewHash, 'revocation_count' => $revocationCount];
     }
 
     private function lockApproval(object $approval, string $state): void

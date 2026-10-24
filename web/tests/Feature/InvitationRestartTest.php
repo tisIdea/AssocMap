@@ -151,6 +151,25 @@ class InvitationRestartTest extends TestCase
         DB::table('user_invitations')->where('id', self::INVITATION)->update(['role_id' => 3, 'association_id' => self::ASSOCIATION]);
     }
 
+    public function test_replacement_can_restart_interrupted_activation_without_restoring_the_former_holder(): void
+    {
+        $this->associationRole();
+        (require database_path('migrations/2026_10_22_010000_support_association_account_replacement.php'))->up();
+        DB::table('user_profiles')->insert(['id' => self::ASSOCIATION, 'role_id' => 3,
+            'display_name' => 'Former synthetic holder', 'is_active' => false, 'activated_at' => now()->subDays(2)]);
+        DB::table('association_accounts')->insert(['id' => self::ASSOCIATION, 'user_id' => self::ASSOCIATION,
+            'association_id' => self::ASSOCIATION, 'is_active' => false, 'linked_at' => now()->subDays(2), 'ended_at' => now()->subDay()]);
+        $before = DB::table('association_accounts')->sole();
+        $this->requestLink()->assertRedirect(route('invitation.restart'));
+        $this->verify()->assertRedirect(route('invitation.password'));
+        $this->complete()->assertSessionHas('invitation_activation_succeeded', true);
+        $this->assertEquals($before, DB::table('association_accounts')->where('id', self::ASSOCIATION)->first());
+        $this->assertSame(self::USER, DB::table('association_accounts')->where('is_active', true)->sole()->user_id);
+        $this->assertFalse(UserProfile::findOrFail(self::ASSOCIATION)->is_active);
+        $this->assertSame(1, $this->passwordWrites);
+        $this->assertDatabaseCount('association_accounts', 2);
+    }
+
     private function requestLink(): TestResponse
     {
         return $this->remember($this->post('/invitation/restart', ['email' => ' Recipient@Example.test ']));

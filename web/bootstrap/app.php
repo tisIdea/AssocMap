@@ -13,6 +13,7 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        $middleware->prepend(\App\Http\Middleware\ProtectAccountEmailChange::class);
         $middleware->prepend(\App\Http\Middleware\ProtectAccountReactivation::class);
         $middleware->trimStrings(except: ['completion_confirmation', 'termination_confirmation']);
         $middleware->prepend(\App\Http\Middleware\ProtectInvitationActivation::class);
@@ -35,6 +36,16 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
+        $exceptions->dontReportWhen(fn (\Throwable $exception) => \App\Http\Middleware\ProtectAccountEmailChange::applies(request()));
+        $exceptions->render(function (\Throwable $exception, Request $request) {
+            if (! \App\Http\Middleware\ProtectAccountEmailChange::applies($request)) return null;
+            $status = $exception instanceof \Symfony\Component\HttpKernel\Exception\HttpExceptionInterface ? $exception->getStatusCode() : 503;
+            if ($exception instanceof \Illuminate\Http\Exceptions\HttpResponseException) {
+                return \App\Http\Middleware\ProtectInvitationActivation::secure($exception->getResponse(), $request);
+            }
+            return \App\Http\Middleware\ProtectInvitationActivation::secure(response()->view('auth.email-change',
+                ['step' => 'unavailable'], $status), $request);
+        });
         $exceptions->dontReportWhen(fn (\Throwable $exception) => \App\Http\Middleware\ProtectAccountReactivation::applies(request()));
         $exceptions->render(function (\Throwable $exception, Request $request) {
             if (! \App\Http\Middleware\ProtectAccountReactivation::applies($request)) return null;

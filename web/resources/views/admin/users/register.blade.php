@@ -74,7 +74,9 @@
                                 </div>
                             </div></td>
                             <td><span @class(['badge', 'user-role-admin' => $user['role_code'] === 'system_admin', 'user-role-officer' => $user['role_code'] === 'field_officer', 'user-role-association' => $user['role_code'] === 'association_account', 'badge-neutral' => !$user['role_code']])>{{ $user['role'] }}</span>@if(!$user['role_active'])<p class="field-help">Role inactive or unavailable</p>@endif</td>
-                            <td><x-status-badge :value="$user['is_active'] ? 'Active' : ($user['revoked_at'] ? 'Revoked' : 'Inactive')" /></td>
+                            <td><x-status-badge :value="$user['is_active'] ? 'Active' : ($user['revoked_at'] ? 'Revoked' : 'Inactive')" />
+                                @if($user['revoked_at'] && $user['reactivation_blocked_reason'])<p class="field-help">{{ $user['reactivation_blocked_reason'] }}</p>@endif
+                            </td>
                             <td>
                                 @if($user['role_code'] === 'association_account' || $user['association_integrity_issue'])
                                     <span>{{ $user['association'] ?? $user['association_relationship_status'] }}</span>
@@ -88,7 +90,7 @@
                                     <summary aria-label="Actions for {{ $user['display_name'] }}" title="Actions for {{ $user['display_name'] }}"><x-icon name="ellipsis" /></summary>
                                     <div class="user-actions-panel" data-user-actions-panel>
                                         <a href="{{ $detailUrl }}"><x-icon name="eye" /><span>View Account Details</span></a>
-                                        @if(config('services.supabase.account_reactivation_enabled') === true && $user['revoked_at'] && $user['activated_at'] && $user['role_active'])<a href="{{ route('admin.users.reactivation.edit', $user['id']) }}"><x-icon name="user" /><span>Reactivate Account</span></a>@endif
+                                        @if(config('services.supabase.account_reactivation_enabled') === true && $user['revoked_at'] && $user['activated_at'] && $user['role_active'] && !$user['reactivation_blocked_reason'])<a href="{{ route('admin.users.reactivation.edit', $user['id']) }}"><x-icon name="user" /><span>Reactivate Account</span></a>@endif
                                         @if($user['role_code'] === 'field_officer' && $user['is_active'] && $user['role_active'])<a href="{{ route('admin.users.assignments.edit', $user['id']) }}"><x-icon name="building" /><span>Association assignments</span></a>@endif
                                         <button type="button" disabled><x-icon name="settings" /><span>Reset Password<small>Coming soon</small></span></button>
                                         @if($user['id'] !== $currentUser->id)<a href="{{ $detailUrl }}#user-access"><x-icon name="archive" /><span>Manage access</span></a>@else<button type="button" disabled title="You cannot revoke your own access."><x-icon name="archive" /><span>Revoke Access<small>Your account</small></span></button>@endif

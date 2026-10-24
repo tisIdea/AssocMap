@@ -30,12 +30,12 @@ class MobileAssociationAccessService
         // Read the current link and lifecycle together; never choose among inconsistent links.
         $links = DB::table('association_accounts as aa')->useWritePdo()
             ->leftJoin('associations as a', 'a.id', '=', 'aa.association_id')
-            ->where('aa.user_id', $profile->id)->limit(2)
+            ->where('aa.user_id', $profile->id)->where('aa.is_active', true)->limit(2)
             ->select(['aa.id as link_id', 'aa.association_id', 'aa.is_active as link_is_active',
                 'a.id as resolved_association_id', 'a.name as association_name',
                 'a.status as association_status', 'a.archived_at'])
             ->selectSub(fn ($query) => $query->from('association_accounts as other_links')->selectRaw('COUNT(*)')
-                ->whereColumn('other_links.association_id', 'aa.association_id'), 'association_link_count')->get();
+                ->whereColumn('other_links.association_id', 'aa.association_id')->where('other_links.is_active', true), 'association_link_count')->get();
         if ($links->count() !== 1) {
             return ['profile' => $profile, 'mobile' => $this->ineligible('association_link_unavailable')];
         }

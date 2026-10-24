@@ -16,14 +16,16 @@ class AuditLogService
     private const MAX_SNAPSHOT_BYTES = 131072;
 
     private const DISPLAY_FIELDS = [
+        'email_change_request' => ['user_id', 'requested_by', 'phase'],
         'account_reactivation' => ['user_id', 'requested_by', 'outcome'],
         'association' => ['primary_field_officer_id'],
+        'association_account' => ['association_id', 'user_id', 'is_active', 'ended_at', 'ended_by'],
         'monitoring_harvest_entry' => ['monitoring_production_id', 'harvest_date', 'quantity', 'remarks',
             'created_by', 'updated_by', 'voided_at', 'voided_by', 'void_reason'],
         'monitoring_production_goal' => ['target_output', 'reason'],
         'monitoring_daily_production' => ['monitoring_record_id', 'project_product_id', 'quantity_source', 'unit'],
         'user_invitation' => ['status', 'attempt_count', 'outcome'],
-        'user_profile' => ['is_active', 'invitation_statuses', 'cancelled_invitation_ids', 'cancelled_reactivation_id'],
+        'user_profile' => ['is_active', 'invitation_statuses', 'cancelled_invitation_ids', 'cancelled_reactivation_id', 'ended_association_link_ids'],
         'association_lifecycle' => ['association_id', 'status', 'archived_at', 'archived_by', 'updated_by'],
         'project_closure' => ['project_id', 'association_id', 'status', 'closed_at', 'closed_by', 'actor_role'],
         'project_termination' => ['project_id', 'association_id', 'status', 'closed_at', 'closed_by', 'actor_role'],

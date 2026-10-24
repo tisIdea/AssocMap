@@ -28,8 +28,16 @@
             @elseif($account['auth_link'] === 'unavailable')<p class="notice">Auth metadata lookup unavailable; linkage is unverified.</p>@endif
             @if($account['email_mismatch'])<p class="notice">Current Auth email differs from invitation history. Review before changing the account.</p>@endif
             @if($account['email'] === null && $account['invitation_email'])<p class="field-help">Historical invitation email: {{ $account['invitation_email'] }}</p>@endif
-            <p class="field-help">Profile status does not confirm sign-in availability. Eligible users can request password recovery from the sign-in page. Email changes are not available in this release.</p>
-            @if($account['role_code'] === 'association_account' && $account['association'])<p class="field-help">Account access and the retained association relationship are separate. Revoking access does not remove this relationship.</p>@endif
+            <p class="field-help">Profile status does not confirm sign-in availability. Eligible users can request password recovery from the sign-in page.</p>
+            @if(config('services.supabase.account_email_change_enabled') === true)
+                <a class="button" href="{{ route('admin.users.email-change.edit', $account['id']) }}">Change Email / Review Request</a>
+                <p class="field-help">Same holder only. Eligibility is checked again before approval. A different representative requires revocation and a separate invitation.</p>
+            @endif
+            @if($account['role_code'] === 'association_account')<p class="field-help">Revoking access ends the active association appointment and preserves its history. A replacement representative receives a separate invitation and identity.</p>@endif
+            @if($account['association_history'])
+                <h3>Ended association appointments</h3>
+                <ul>@foreach($account['association_history'] as $historical)<li>{{ $historical['association'] }} — ended {{ $historical['ended_at']?->timezone('Asia/Manila')->format('M d, Y g:i A') ?? '(time not recorded)' }}</li>@endforeach</ul>
+            @endif
         </section>
 
         @if(!$account['is_active'] && !$account['activated_at'] && !$account['revoked_at'] && $account['role_active']
@@ -51,8 +59,21 @@
             <h2 id="user-access-title">Account access</h2>
             @if($account['revoked_at'])
                 <p role="status">Access revoked on {{ $account['revoked_at']->timezone('Asia/Manila')->format('M d, Y g:i A') }}. Organizational records were preserved.</p>
+                @if($account['reactivation_blocked_reason'])<p class="field-help" role="status">{{ $account['reactivation_blocked_reason'] }}</p>@endif
                 @if(config('services.supabase.account_reactivation_enabled') === true && $account['activated_at'] && $account['role_active'])
-                    <a class="button button-primary" href="{{ route('admin.users.reactivation.edit', $account['id']) }}">Reactivate Account</a>
+                    @if(!$account['reactivation_blocked_reason'])
+                        <a class="button button-primary" href="{{ route('admin.users.reactivation.edit', $account['id']) }}">Reactivate Account</a>
+                        <p class="field-help">Eligibility is checked again during review and submission. Completion requires mailbox verification, a new password and a fresh sign-in.</p>
+                    @endif
+                @endif
+                @if($account['role_code'] === 'association_account' && $account['link_active'] === true)
+                    <p class="field-help">This revoked account still holds an active appointment. Ending it releases the association for a separately authorized replacement and preserves its history.</p>
+                    <form method="POST" action="{{ route('admin.users.revoke', $account['id']) }}" data-feedback-error-bag="default">
+                        @csrf @method('PATCH')
+                        <p><label><input type="checkbox" name="confirm_revocation" value="1" required> Keep access revoked, end this retained appointment and cancel any pending reactivation approval.</label></p>
+                        <button type="submit" class="button button-danger-outline">End Retained Appointment</button>
+                    </form>
+                @elseif(config('services.supabase.account_reactivation_enabled') === true && $account['activated_at'] && $account['role_active'])
                     <form method="POST" action="{{ route('admin.users.revoke', $account['id']) }}">
                         @csrf @method('PATCH')
                         <p><label><input type="checkbox" name="confirm_revocation" value="1" required> Keep access revoked and cancel any pending reactivation approval.</label></p>

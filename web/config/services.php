@@ -54,6 +54,7 @@ return [
     'activation_cache_store' => env('SUPABASE_ACTIVATION_CACHE_STORE', 'database'),
     'invitation_restart_enabled' => env('SUPABASE_INVITATION_RESTART_ENABLED', false),
     'account_reactivation_enabled' => env('SUPABASE_ACCOUNT_REACTIVATION_ENABLED', false),
+    'account_email_change_enabled' => env('SUPABASE_ACCOUNT_EMAIL_CHANGE_ENABLED', false),
 ],
 
 ];

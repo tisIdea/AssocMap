@@ -87,6 +87,17 @@ Route::middleware('throttle:password-recovery')->group(function () {
     Route::post('/password-recovery/password', [$controller, 'updatePassword'])->block(120, 3)->name('password.update');
 });
 
+Route::prefix('account-email-change')->name('account-email-change.')->middleware('throttle:20,1,account-email-change:')->group(function () {
+    $controller = \App\Http\Controllers\Auth\AccountEmailChangeController::class;
+    Route::get('/result', [$controller, 'result'])->block(120, 3)->name('result');
+    Route::get('/{reference}/{mailbox}', [$controller, 'callback'])->where('reference', '[A-Za-z0-9]{64}')->where('mailbox', 'old|confirm')->block(120, 3)->name('callback');
+    Route::post('/{reference}/old', [$controller, 'verifyOld'])->where('reference', '[A-Za-z0-9]{64}')->block(120, 3)->name('verify-old');
+    Route::get('/{reference}/progress', [$controller, 'progress'])->where('reference', '[A-Za-z0-9]{64}')->block(120, 3)->name('progress');
+    Route::post('/{reference}/begin', [$controller, 'begin'])->where('reference', '[A-Za-z0-9]{64}')->block(120, 3)->name('begin');
+    Route::post('/{reference}/confirm', [$controller, 'confirm'])->where('reference', '[A-Za-z0-9]{64}')->block(120, 3)->name('confirm');
+    Route::post('/{reference}/password', [$controller, 'complete'])->where('reference', '[A-Za-z0-9]{64}')->block(120, 3)->name('complete');
+});
+
 Route::prefix('account-reactivation')->name('account-reactivation.')->middleware('throttle:20,1,account-reactivation:')->group(function () {
     $controller = \App\Http\Controllers\Auth\AccountReactivationController::class;
     Route::get('/password', [$controller, 'password'])->block(120, 3)->name('password');
@@ -142,6 +153,14 @@ Route::middleware([
 ])->group(function () {
 
     Route::get('/admin/users', [UserManagementController::class, 'index'])->name('admin.users.index');
+    Route::prefix('/admin/users/{userProfile}/email-change')->whereUuid('userProfile')->name('admin.users.email-change.')
+        ->middleware('throttle:6,1,account-email-change-admin:')->group(function () {
+            $controller = \App\Http\Controllers\Admin\AccountEmailChangeController::class;
+            Route::get('/', [$controller, 'edit'])->name('edit');
+            Route::post('/review', [$controller, 'review'])->name('review');
+            Route::post('/', [$controller, 'store'])->name('store');
+            Route::post('/cancel', [$controller, 'cancel'])->name('cancel');
+        });
     Route::get('/admin/users/{userProfile}/reactivate', [\App\Http\Controllers\Admin\AccountReactivationController::class, 'edit'])
         ->whereUuid('userProfile')->name('admin.users.reactivation.edit');
     Route::post('/admin/users/{userProfile}/reactivate', [\App\Http\Controllers\Admin\AccountReactivationController::class, 'store'])

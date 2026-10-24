@@ -38,6 +38,7 @@ class GisFinalizedProjectMaintenanceTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        config(['associations.geography_schema_ready' => false, 'associations.direct_geography' => false]);
         config(['app.key' => 'base64:'.base64_encode(str_repeat('g', 32))]);
         Http::preventStrayRequests();
         $this->withoutVite();

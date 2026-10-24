@@ -8,6 +8,7 @@ use App\Models\Role;
 use App\Models\UserInvitation;
 use App\Models\UserProfile;
 use Illuminate\Database\QueryException;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
@@ -20,7 +21,7 @@ class UserInvitationService
         'provider_auth_rejected', 'provider_rate_limited',
     ];
 
-    public function __construct(private SupabaseAuthService $auth)
+    public function __construct(private SupabaseAuthService $auth, private AuditLogService $audit)
     {
     }
 
@@ -28,7 +29,7 @@ class UserInvitationService
     {
         try {
             $invitation = DB::transaction(function () use ($data, $administrator) {
-                $this->validateScope($data, $administrator);
+                $actor = $this->validateScope($data, $administrator);
                 $existing = UserInvitation::where('email', $data['email'])
                     ->whereIn('status', UserInvitation::UNRESOLVED_STATUSES)->lockForUpdate()->first();
                 if ($existing) {
@@ -42,6 +43,7 @@ class UserInvitationService
                 $invitation->invited_by = $administrator->id;
                 $invitation->status = 'pending';
                 $invitation->save();
+                $this->record($actor, $invitation, 'REQUEST USER INVITATION', 'reserved');
 
                 return $invitation;
             }, 3);
@@ -106,11 +108,12 @@ class UserInvitationService
 
         try {
             $ready = DB::transaction(function () use ($data, $administrator, $invitation) {
-                $this->validateScope($data, $administrator);
+                $actor = $this->validateScope($data, $administrator);
                 $locked = UserInvitation::whereKey($invitation->id)->lockForUpdate()->firstOrFail();
                 if ($locked->status !== 'processing' || $locked->last_error_code !== null) return false;
                 $locked->last_error_code = 'provider_request_started';
                 $locked->save();
+                $this->record($actor, $locked, 'SEND USER INVITATION', 'request_started');
                 return true;
             }, 3);
         } catch (HttpException $exception) {
@@ -136,7 +139,8 @@ class UserInvitationService
         }
 
         try {
-            return DB::transaction(function () use ($invitation, $provider) {
+            return DB::transaction(function () use ($invitation, $provider, $data, $administrator) {
+                $actor = $this->validateScope($data, $administrator);
                 $locked = UserInvitation::whereKey($invitation->id)->lockForUpdate()->firstOrFail();
                 $profile = UserProfile::whereKey($provider['auth_user_id'])->lockForUpdate()->first();
                 $canBind = $this->canBindIdentity($locked, $profile, $provider['auth_created_at']);
@@ -177,9 +181,13 @@ class UserInvitationService
                 $locked->status = 'sent';
                 $locked->last_error_code = null;
                 $locked->save();
+                $this->record($actor, $locked, 'ISSUE USER INVITATION', 'provider_accepted');
 
                 return $this->result($locked, 'provider_accepted', 'Supabase accepted the invitation request. Email delivery is unverified; the account remains inactive until the recipient completes activation.', 201);
             }, 3);
+        } catch (ValidationException|HttpException $exception) {
+            return $this->recordFailure($invitation, 'scope_changed_after_provider', 'Auth accepted the invitation, but authorization or association eligibility changed. Reconciliation is required; do not resend.', 409,
+                authId: $provider['auth_user_id'], providerAccepted: true);
         } catch (QueryException $exception) {
             return $this->recordFailure($invitation, 'profile_sync_failed', 'Auth accepted the request, but application synchronization failed. Reconcile this operation; do not resend.', 503,
                 authId: $provider['auth_user_id'], providerAccepted: true);
@@ -194,22 +202,30 @@ class UserInvitationService
         return $profile->created_at !== null && $profile->created_at->gte($invitation->last_attempt_at)
             && $profile->activated_at === null
             && (string) $profile->role_id === (string) $invitation->role_id
-            && ! $profile->associationAccount()->exists() && ! $profile->assignedAssociations()->exists();
+            && ! $profile->associationAccountHistory()->exists() && ! $profile->assignedAssociations()->exists();
     }
 
-    private function validateScope(array $data, UserProfile $administrator): void
+    private function validateScope(array $data, UserProfile $administrator): UserProfile
     {
+        $roles = Role::where(fn ($query) => $query->where('code', 'system_admin')->orWhere('id', $data['role_id']))
+            ->orderBy('id')->sharedLock()->get()->keyBy('id');
+        $actorRole = $roles->firstWhere('code', 'system_admin');
         $actor = UserProfile::whereKey($administrator->id)->sharedLock()->first();
-        $actorRole = $actor ? Role::whereKey($actor->role_id)->sharedLock()->first() : null;
-        abort_unless($actor?->is_active && $actorRole?->is_active && $actorRole->code === 'system_admin', 403);
-        $role = Role::whereKey($data['role_id'])->sharedLock()->first();
+        if ($actor) $actor->setRelation('role', $actorRole);
+        abort_unless($actor && (string) $actor->role_id === (string) $actorRole?->id
+            && $actor->canAccessApplication(throwOnDatabaseError: true), 403);
+        if (array_key_exists('email_change_hold_id', $actor->getAttributes())
+            && DB::table('email_change_requests')->where('status', 'pending')->whereRaw('lower(new_email) = ?', [$data['email']])->exists()) {
+            throw ValidationException::withMessages(['email' => 'This destination is reserved by an unresolved email change. Review that request before inviting another identity.']);
+        }
+        $role = $roles->get($data['role_id']);
         if (! $role?->is_active || ! in_array($role->code, ['field_officer', 'association_account'], true)) {
             throw ValidationException::withMessages(['role_id' => 'Select an active Field Officer or Association Account role.']);
         }
         $associationId = $data['association_id'] ?? null;
         if ($role->code === 'field_officer') {
             if ($associationId !== null) throw ValidationException::withMessages(['association_id' => 'Field Officer invitations do not change association assignments.']);
-            return;
+            return $actor;
         }
         $association = $associationId ? Association::whereKey($associationId)->lockForUpdate()->first() : null;
         if (! $association) {
@@ -225,13 +241,23 @@ class UserInvitationService
             ->whereIn('status', UserInvitation::UNRESOLVED_STATUSES)->exists()) {
             throw ValidationException::withMessages(['association_id' => 'This association already has another unresolved invitation: '.$association->name.'. Review that operation before inviting another account.']);
         }
+
+        return $actor;
+    }
+
+    private function record(UserProfile $actor, UserInvitation $invitation, string $action, string $outcome): void
+    {
+        $request = new Request;
+        $request->attributes->set('current_user', $actor);
+        $this->audit->record($request, $action, 'User Management', 'user_invitation', $invitation->id, null,
+            ['status' => $invitation->status, 'outcome' => $outcome], ['status', 'outcome']);
     }
 
     public function associationConflictMessage(Association $association): ?string
     {
-        $links = AssociationAccount::where('association_id', $association->id)->get(['user_id']);
+        $links = AssociationAccount::where('association_id', $association->id)->where('is_active', true)->get(['user_id']);
         if ($links->isEmpty()) return null;
-        if ($links->count() !== 1 || AssociationAccount::where('user_id', $links->first()->user_id)->count() !== 1
+        if ($links->count() !== 1 || AssociationAccount::where('user_id', $links->first()->user_id)->where('is_active', true)->count() !== 1
             || ! UserProfile::whereKey($links->first()->user_id)->whereHas('role', fn ($role) => $role->where('code', 'association_account'))->exists()) {
             return 'This association has inconsistent account relationships: '.$association->name.'. Review User Management; no account was reassigned.';
         }

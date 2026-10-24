@@ -75,7 +75,12 @@ class Association extends Model
 
     public function associationAccount(): HasOne
     {
-        return $this->hasOne(AssociationAccount::class, 'association_id');
+        return $this->hasOne(AssociationAccount::class, 'association_id')->where('is_active', true);
+    }
+
+    public function associationAccountHistory(): HasMany
+    {
+        return $this->hasMany(AssociationAccount::class, 'association_id');
     }
 
     public function currentPresident(): HasOne

@@ -145,6 +145,21 @@ class MobileAuthenticationTest extends TestCase
         return $this->getJson('/api/v1/me', ['Authorization' => 'Bearer '.self::TOKEN]);
     }
 
+    public function test_ended_appointments_do_not_block_current_holder_or_authorize_former_holder(): void
+    {
+        DB::table('user_profiles')->insert(['id' => self::OTHER_RECORD, 'role_id' => 1, 'display_name' => 'Former synthetic holder', 'is_active' => false]);
+        DB::table('association_accounts')->insert([
+            ['id' => self::OTHER_RECORD, 'user_id' => self::USER, 'association_id' => self::OTHER_ASSOCIATION, 'is_active' => false],
+            ['id' => self::OTHER_ASSOCIATION, 'user_id' => self::OTHER_RECORD, 'association_id' => self::ASSOCIATION, 'is_active' => false],
+        ]);
+        $this->me()->assertOk()->assertJsonPath('data.mobile.eligible', true)->assertJsonPath('data.mobile.association.id', self::ASSOCIATION);
+        $this->getJson('/api/v1/_mobile-test/records/'.self::OWN_RECORD, ['Authorization' => 'Bearer '.self::TOKEN])->assertOk();
+        $this->getJson('/api/v1/_mobile-test/records/'.self::OTHER_RECORD, ['Authorization' => 'Bearer '.self::TOKEN])->assertNotFound();
+        $this->fakeProvider(Http::response(['id' => self::OTHER_RECORD, 'email' => 'former@example.test']));
+        $this->me()->assertForbidden()->assertJsonPath('error.code', 'account_unavailable');
+        $this->assertSame(1, DB::table('association_accounts')->where('is_active', true)->count());
+    }
+
     private function assertPrivateResponse(TestResponse $response): void
     {
         $this->assertStringContainsString('no-store', $response->headers->get('Cache-Control'));

@@ -35,6 +35,15 @@ class SupabasePasswordRecoveryProvider
         $this->sendRecovery($email, '/account-reactivation/'.$reference);
     }
 
+    public function requestEmailChange(string $email, string $reference): void
+    {
+        if (config('services.supabase.account_email_change_enabled') !== true
+            || ! preg_match('/\A[A-Za-z0-9]{64}\z/D', $reference)) {
+            throw new RuntimeException('email_change_unavailable');
+        }
+        $this->sendRecovery($email, '/account-email-change/'.$reference.'/old');
+    }
+
     public function signOutEverywhere(string $token): void
     {
         if (! $this->auth->activationConfigurationAvailable() || ! SupabaseAuthResponse::isBearerToken($token)) {

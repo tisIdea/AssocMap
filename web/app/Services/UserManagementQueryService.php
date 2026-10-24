@@ -82,7 +82,7 @@ class UserManagementQueryService
         $identities = $this->identities->read($ids);
         $links = AssociationAccount::whereIn('user_id', $ids)->with('association:id,name,status,archived_at')->get();
         $associationCounts = AssociationAccount::whereIn('association_id', $links->pluck('association_id')->unique())
-            ->groupBy('association_id')->selectRaw('association_id, COUNT(*) AS total')->pluck('total', 'association_id');
+            ->where('is_active', true)->groupBy('association_id')->selectRaw('association_id, COUNT(*) AS total')->pluck('total', 'association_id');
         $links = $links->groupBy('user_id');
         $invitations = UserInvitation::whereIn('auth_user_id', $ids)->orderByDesc('created_at')->orderByDesc('id')
             ->get(['id', 'auth_user_id', 'email', 'status'])->unique('auth_user_id')->keyBy('auth_user_id');
@@ -95,18 +95,31 @@ class UserManagementQueryService
             $invitation = $invitations->get($profile->id);
             $email = is_string($identity?->email) && filter_var($identity->email, FILTER_VALIDATE_EMAIL)
                 ? $identity->email : null;
-            $accountLinks = $links->get($profile->id, collect());
+            $allLinks = $links->get($profile->id, collect());
+            $accountLinks = $allLinks->where('is_active', true);
             $link = $accountLinks->count() === 1 ? $accountLinks->first() : null;
             $association = $link?->association;
-            $integrityIssue = $accountLinks->count() > 1 || ($link !== null && ($association === null
+            $integrityIssue = ($allLinks->isNotEmpty() && $profile->role?->code !== 'association_account')
+                || $accountLinks->count() > 1 || ($link !== null && ($association === null
                 || (int) $associationCounts->get($link->association_id, 0) !== 1 || $profile->role?->code !== 'association_account'));
             $relationshipStatus = match (true) {
                 $integrityIssue => 'Relationship needs review',
-                $link === null => 'No association linked',
-                ! $link->is_active => 'Inactive relationship',
+                $link === null => 'No active association linked',
                 $association->archived_at !== null => 'Association archived',
                 $association->status !== 'active' => 'Association inactive',
                 default => 'Active relationship',
+            };
+            // Relationship hints do not replace the transactional reactivation checks.
+            $reactivationBlockedReason = match (true) {
+                $integrityIssue => 'Account relationships need review before reactivation.',
+                $profile->role?->code === 'association_account' && ($link === null || ! $link->is_active)
+                    => AccountReactivationService::ASSOCIATION_APPOINTMENT_REQUIRED,
+                $profile->role?->code === 'association_account'
+                    && ($association->status !== 'active' || $association->archived_at !== null)
+                    => 'The linked association must be active and unarchived before reactivation.',
+                $profile->role?->code === 'association_account' && $profile->assigned_associations_count > 0
+                    => 'Conflicting Field Officer assignments need review before reactivation.',
+                default => null,
             };
 
             return [
@@ -119,12 +132,18 @@ class UserManagementQueryService
                 'invitation_status' => $invitation?->status,
                 'invitation_email' => $invitation?->email,
                 'email_mismatch' => $email !== null && $invitation !== null
+                    && ($profile->getAttribute('approved_email') === null || mb_strtolower(trim($email)) !== $profile->approved_email)
                     && mb_strtolower(trim($email)) !== mb_strtolower(trim($invitation->email)),
                 'assigned_count' => $profile->assigned_associations_count,
                 'archived_assigned_count' => $profile->archived_assignments_count,
                 'association' => $integrityIssue ? null : $association?->name,
                 'association_relationship_status' => $relationshipStatus,
                 'association_integrity_issue' => $integrityIssue,
+                'association_history' => $allLinks->where('is_active', false)->map(fn ($historical) => [
+                    'id' => $historical->id, 'association' => $historical->association?->name ?? 'Association unavailable',
+                    'ended_at' => $historical->ended_at,
+                ])->values()->all(),
+                'reactivation_blocked_reason' => $reactivationBlockedReason,
                 'association_status' => $integrityIssue || $association === null ? null
                     : ($association->archived_at !== null ? 'Archived' : ucfirst($association->status)),
                 'link_active' => $integrityIssue ? null : $link?->is_active,
@@ -151,7 +170,8 @@ class UserManagementQueryService
             $links = AssociationAccount::where('association_id', $associationId)->with('userProfile:id,display_name')->get();
             foreach ($links as $link) {
                 if ($link->userProfile) $references->push(['id' => $link->userProfile->id,
-                    'name' => $link->userProfile->display_name, 'reason' => 'Existing relationship with the selected association']);
+                    'name' => $link->userProfile->display_name, 'reason' => $link->is_active
+                        ? 'Current relationship with the selected association' : 'Ended appointment with the selected association']);
             }
         }
 

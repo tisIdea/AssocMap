@@ -118,7 +118,7 @@ class UserInvitationResendService
                 ->where('entity_type', 'user_profile')->where('entity_id', $targetId)->exists()) $this->deny();
         if ($role->code === 'field_officer' && $invitation->association_id !== null) $this->deny();
         if ($role->code === 'association_account' && (! $association || $association->status !== 'active'
-            || $association->archived_at !== null || AssociationAccount::where('association_id', $association->id)->exists()
+            || $association->archived_at !== null || AssociationAccount::where('association_id', $association->id)->where('is_active', true)->exists()
             || UserInvitation::where('association_id', $association->id)->where('id', '!=', $invitation->id)
                 ->whereIn('status', UserInvitation::UNRESOLVED_STATUSES)->exists())) $this->deny();
 

@@ -56,5 +56,8 @@ python-reporting/.env
 Thumbs.db
 
 # Local testing evidence
-/docs
-/mobile/docs/
+/docs/testing
+/docs/proposed-migrations
+/output
+/tmp/reconciliation
+/mobile/android/build/

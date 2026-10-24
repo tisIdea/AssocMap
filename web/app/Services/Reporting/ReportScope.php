@@ -35,14 +35,14 @@ class ReportScope
         } elseif ($actor->role->code === 'association_account') {
             // Match the existing mobile eligibility policy, including inconsistent-link denial.
             $associationLinkCount = DB::table('association_accounts as association_links')->selectRaw('COUNT(*)')
-                ->whereColumn('association_links.association_id', 'account_link.association_id');
+                ->whereColumn('association_links.association_id', 'account_link.association_id')->where('association_links.is_active', true);
             $eligibleAssociation = (clone $query)->whereColumn('a.id', 'account_link.association_id')
                 ->where('a.status', 'active')->whereNull('a.archived_at')->select('a.id')->limit(1);
             $links = DB::table('association_accounts as account_link')->useWritePdo()
                 ->select(['account_link.association_id', 'account_link.is_active'])
                 ->selectSub($associationLinkCount, 'association_link_count')
                 ->selectSub($eligibleAssociation, 'eligible_association_id')
-                ->where('account_link.user_id', $actor->id)->limit(2)->get();
+                ->where('account_link.user_id', $actor->id)->where('account_link.is_active', true)->limit(2)->get();
             abort_unless($links->count() === 1 && in_array($links[0]->is_active, [true, 1, '1', 't'], true)
                 && (int) $links[0]->association_link_count === 1 && $links[0]->eligible_association_id !== null, 403);
             $query->where('a.id', $links[0]->association_id)->where('a.status', 'active')->whereNull('a.archived_at');

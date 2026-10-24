@@ -16,7 +16,8 @@ use Illuminate\Validation\ValidationException;
 
 class ProjectService
 {
-    public function __construct(private AssociationLifecycleService $lifecycle, private ProjectLifecycleService $projects) {}
+    public function __construct(private AssociationLifecycleService $lifecycle, private ProjectLifecycleService $projects,
+        private ProgramActorService $actors) {}
 
     public function create(
         array $data,
@@ -42,6 +43,7 @@ class ProjectService
             $category,
             $saadActivity
         ) {
+            $currentUser = $this->actors->lock($currentUser);
             $this->lifecycle->lockOperational([$association->id]);
             $association = $this->resolveAssociationForUser($association->id, $currentUser);
             $commodity = $this->resolveCommodity(
@@ -172,6 +174,7 @@ class ProjectService
             $category,
             $saadActivity
         ) {
+            $currentUser = $this->actors->lock($currentUser);
             $project = $this->lockForMutation($project, $currentUser, [$association->id]);
             if ($project->archived_at !== null) {
                 throw ValidationException::withMessages(['project' => 'Archived projects cannot be edited.']);
@@ -318,6 +321,7 @@ class ProjectService
         UserProfile $currentUser
     ): void {
         DB::transaction(function () use ($project, $currentUser) {
+            $currentUser = $this->actors->lock($currentUser);
             $project = $this->lockForMutation($project, $currentUser);
             if ($project->archived_at !== null) return;
             $project->update([
@@ -333,6 +337,7 @@ class ProjectService
         UserProfile $currentUser
     ): void {
         DB::transaction(function () use ($project, $currentUser) {
+            $currentUser = $this->actors->lock($currentUser);
             $project = $this->lockForMutation($project, $currentUser);
             if ($project->archived_at === null) return;
             $project->update([

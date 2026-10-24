@@ -315,6 +315,140 @@ class AssociationLifecycleTest extends TestCase
         }
     }
 
+    public static function programMutations(): array
+    {
+        $cases = [];
+        foreach (['project', 'activity', 'training'] as $module) {
+            foreach (['create', 'update', 'archive', 'unarchive'] as $operation) {
+                $cases[$module.' '.$operation] = [$module, $operation];
+            }
+        }
+
+        return $cases;
+    }
+
+    public static function staleProgramActors(): array
+    {
+        $cases = [];
+        foreach (self::programMutations() as $name => [$module, $operation]) {
+            foreach (['admin', 'officer'] as $role) {
+                foreach (['revoked', 'disabled_role', 'changed_role', 'email_hold', 'pending_invitation', 'session_cutoff'] as $state) {
+                    $cases[$name.' '.$role.' '.$state] = [$module, $operation, $role, $state];
+                }
+            }
+        }
+
+        return $cases;
+    }
+
+    #[DataProvider('staleProgramActors')]
+    public function test_program_writes_reject_actors_who_became_ineligible_after_authorization(
+        string $module, string $operation, string $role, string $state
+    ): void {
+        $cached = UserProfile::with('role')->findOrFail($role === 'admin' ? self::ADMIN : self::OFFICER);
+        $this->assertTrue($cached->canAccessApplication());
+        $this->prepareProgramMutation($module, $operation);
+        match ($state) {
+            'revoked' => DB::table('user_profiles')->where('id', $cached->id)->update(['is_active' => false]),
+            'disabled_role' => DB::table('roles')->where('id', $cached->role_id)->update(['is_active' => false]),
+            'changed_role' => DB::table('user_profiles')->where('id', $cached->id)->update(['role_id' => $role === 'admin' ? 2 : 1]),
+            'email_hold' => $this->placeProgramActorOnHold($cached),
+            'session_cutoff' => $this->advanceProgramActorCutoff($cached),
+            'pending_invitation' => DB::table('user_invitations')->insert(['id' => self::DESTINATION,
+                'auth_user_id' => $cached->id, 'status' => 'sent', 'created_at' => now(), 'updated_at' => now()]),
+        };
+        $before = $this->programMutationSnapshot();
+        try {
+            $this->runProgramMutation($module, $operation, $cached);
+            $this->fail('A stale actor must not commit a program mutation.');
+        } catch (HttpException $exception) {
+            $this->assertSame(403, $exception->getStatusCode());
+        }
+        $this->assertSame($before, $this->programMutationSnapshot());
+    }
+
+    #[DataProvider('programMutations')]
+    public function test_program_writes_recheck_assignment_after_an_earlier_scope_check(string $module, string $operation): void
+    {
+        $cached = UserProfile::with('role')->findOrFail(self::OFFICER);
+        $this->assertTrue($cached->canAccessApplication());
+        $this->prepareProgramMutation($module, $operation);
+        DB::table('user_profiles')->insert(['id' => self::DESTINATION, 'role_id' => 2,
+            'display_name' => 'Synthetic replacement officer', 'is_active' => true, 'activated_at' => now()]);
+        DB::table('associations')->update(['primary_field_officer_id' => self::DESTINATION]);
+        $before = $this->programMutationSnapshot();
+        try {
+            $this->runProgramMutation($module, $operation, $cached);
+            $this->fail('The previous officer must not retain write scope.');
+        } catch (ValidationException $exception) {
+            $this->assertSame(422, $exception->status);
+        }
+        $this->assertSame($before, $this->programMutationSnapshot());
+    }
+
+    #[DataProvider('programMutations')]
+    public function test_eligible_program_writes_preserve_gis_identity_and_attribution(string $module, string $operation): void
+    {
+        $this->prepareProgramMutation($module, $operation);
+        $gis = DB::table('gis_locations')->get()->toJson();
+        $this->runProgramMutation($module, $operation, UserProfile::with('role')->findOrFail(self::OFFICER));
+        $this->assertSame($gis, DB::table('gis_locations')->get()->toJson());
+        $this->assertSame(self::OFFICER, Association::findOrFail(self::ASSOCIATION)->primary_field_officer_id);
+    }
+
+    private function placeProgramActorOnHold(UserProfile $actor): void
+    {
+        Schema::table('user_profiles', fn (Blueprint $table) => $table->uuid('email_change_hold_id')->nullable());
+        DB::table('user_profiles')->where('id', $actor->id)->update(['email_change_hold_id' => self::DESTINATION]);
+    }
+
+    private function advanceProgramActorCutoff(UserProfile $actor): void
+    {
+        Schema::table('user_profiles', fn (Blueprint $table) => $table->timestampTz('auth_sessions_valid_after')->nullable());
+        DB::table('user_profiles')->where('id', $actor->id)->update(['auth_sessions_valid_after' => now()]);
+    }
+
+    private function prepareProgramMutation(string $module, string $operation): void
+    {
+        if ($operation === 'unarchive') {
+            $this->record($module)->update(['archived_at' => now()]);
+        }
+        Schema::create('gis_locations', function (Blueprint $table) {
+            $table->uuid('id')->primary();
+            $table->uuid('project_id');
+            $table->text('geom');
+            $table->boolean('is_published');
+            $table->uuid('created_by');
+            $table->uuid('published_by');
+        });
+        // Text geometry is a preservation sentinel; native PostGIS checks are separate.
+        DB::table('gis_locations')->insert(['id' => self::DESTINATION, 'project_id' => self::PROJECT,
+            'geom' => '{"type":"Point","coordinates":[123,10]}', 'is_published' => true,
+            'created_by' => self::OFFICER, 'published_by' => self::ADMIN]);
+    }
+
+    private function runProgramMutation(string $module, string $operation, UserProfile $actor): void
+    {
+        $service = $this->service($module);
+        if ($operation === 'create') {
+            $service->create($this->payload($module), $actor);
+        } elseif ($operation === 'update') {
+            $record = $this->record($module);
+            $service->update($record, $this->payload($module) + [
+                'expected_updated_at' => $record->updated_at?->format('Y-m-d\TH:i:s.uP'),
+            ], $actor);
+        } else {
+            $service->$operation($this->record($module), $actor);
+        }
+    }
+
+    private function programMutationSnapshot(): array
+    {
+        return collect(['user_profiles', 'associations', 'projects', 'project_products', 'project_materials',
+            'trainings', 'training_participants', 'program_activity_records', 'audit_logs', 'gis_locations'])
+            ->mapWithKeys(fn ($table) => [$table => DB::table($table)->orderBy('id')->get()->toJson()])->all();
+    }
+
     public static function readOnlyStates(): array
     {
         return ['inactive' => ['inactive', null], 'archived' => ['active', '2026-01-01'],

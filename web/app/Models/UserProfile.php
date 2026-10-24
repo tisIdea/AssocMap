@@ -64,10 +64,13 @@ class UserProfile extends Model
     public function canAccessApplication(?array $verifiedIdentity = null, bool $throwOnDatabaseError = false): bool
     {
         if (! $this->is_active || $this->role?->is_active !== true) return false;
+        // A pending provider change is an access hold, not a revocation or unlink.
+        if ($this->getAttribute('email_change_hold_id') !== null) return false;
         if ($verifiedIdentity !== null) {
             if (! is_string($verifiedIdentity['id'] ?? null)
                 || strtolower($verifiedIdentity['id']) !== strtolower($this->id)) return false;
             $email = is_string($verifiedIdentity['email'] ?? null) ? mb_strtolower(trim($verifiedIdentity['email'])) : null;
+            if ($this->getAttribute('approved_email') !== null && $email !== $this->approved_email) return false;
             $this->invitationAccessAllowed = null;
             $this->verifiedAuthenticationEmail = $email;
         }
@@ -116,7 +119,12 @@ class UserProfile extends Model
 
 public function associationAccount(): HasOne
 {
-    return $this->hasOne(AssociationAccount::class, 'user_id');
+    return $this->hasOne(AssociationAccount::class, 'user_id')->where('is_active', true);
+}
+
+public function associationAccountHistory(): HasMany
+{
+    return $this->hasMany(AssociationAccount::class, 'user_id');
 }
 
 public function createdAssociations(): HasMany

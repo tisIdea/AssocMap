@@ -90,6 +90,26 @@ class ReportAuthorizationTest extends TestCase
         return UserProfile::with('role')->findOrFail(self::USER);
     }
 
+    public function test_current_association_report_scope_ignores_history_and_never_restores_ended_access(): void
+    {
+        DB::table('user_profiles')->where('id', self::USER)->update(['role_id' => 3]);
+        DB::table('user_profiles')->insert(['id' => self::OTHER, 'role_id' => 3, 'display_name' => 'Former synthetic holder', 'is_active' => false]);
+        DB::table('association_accounts')->insert([
+            ['id' => self::OWN, 'user_id' => self::USER, 'association_id' => self::OWN, 'is_active' => true],
+            ['id' => self::OUTSIDE, 'user_id' => self::USER, 'association_id' => self::OUTSIDE, 'is_active' => false],
+            ['id' => self::OTHER, 'user_id' => self::OTHER, 'association_id' => self::OWN, 'is_active' => false],
+        ]);
+        $scope = app(ReportScope::class);
+        $this->assertSame([self::OWN], $scope->associations($this->actor())->pluck('a.id')->all());
+        DB::table('association_accounts')->where('id', self::OWN)->update(['is_active' => false]);
+        try {
+            $scope->associations($this->actor())->get();
+            $this->fail('Historical appointments must not authorize report access.');
+        } catch (HttpExceptionInterface $exception) {
+            $this->assertSame(403, $exception->getStatusCode());
+        }
+    }
+
     public function test_cutover_report_scope_retains_area_less_associations_and_exact_assignment_isolation(): void
     {
         Schema::table('associations', function (Blueprint $table) {
@@ -226,7 +246,7 @@ class ReportAuthorizationTest extends TestCase
     }
 
     #[DataProvider('associationScopeRestrictions')]
-    public function test_association_scope_denies_invalid_links_and_parents_on_a_fresh_final_recheck(string $restriction): void
+    public function test_association_scope_rechecks_current_links_and_parents_without_granting_historical_access(string $restriction): void
     {
         $this->webIdentity(3);
         $scope = app(ReportScope::class);
@@ -255,6 +275,11 @@ class ReportAuthorizationTest extends TestCase
             'missing_municipality' => DB::table('municipalities')->where('id', self::TOWN)->delete(),
         };
 
+        if (in_array($restriction, ['duplicate_user_inactive', 'duplicate_association_inactive'], true)) {
+            $scope->recheck($request, [], $ids);
+            $this->assertSame($ids, $scope->ids($actor, []));
+            return;
+        }
         $this->forbidden(fn () => $scope->associations($actor));
         $this->forbidden(fn () => $scope->recheck($request, [], $ids));
     }

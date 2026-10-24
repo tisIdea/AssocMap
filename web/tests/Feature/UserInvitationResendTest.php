@@ -52,6 +52,7 @@ class UserInvitationResendTest extends TestCase
         });
         Schema::create('association_accounts', function (Blueprint $table) {
             $table->uuid('id')->primary(); $table->uuid('user_id'); $table->uuid('association_id');
+            $table->boolean('is_active')->default(true);
         });
         Schema::create('user_invitations', function (Blueprint $table) {
             $table->uuid('id')->primary(); $table->uuid('auth_user_id'); $table->string('email');
@@ -109,8 +110,11 @@ class UserInvitationResendTest extends TestCase
             DB::table('associations')->insert(['id' => self::ASSOCIATION, 'status' => 'active']);
             DB::table('user_profiles')->where('id', self::USER)->update(['role_id' => 3]);
             DB::table('user_invitations')->where('id', self::INVITATION)->update(['role_id' => 3, 'association_id' => self::ASSOCIATION]);
+            DB::table('association_accounts')->insert(['id' => self::INVITATION, 'user_id' => self::ADMIN,
+                'association_id' => self::ASSOCIATION, 'is_active' => false]);
         }
         $before = (array) DB::table('user_profiles')->where('id', self::USER)->first();
+        $linksBefore = DB::table('association_accounts')->get()->toJson();
         $result = $this->resend();
         $this->assertSame('provider_accepted', $result['code']);
         $this->assertSame(202, $result['http_status']);
@@ -119,7 +123,8 @@ class UserInvitationResendTest extends TestCase
         $this->assertSame($before, (array) DB::table('user_profiles')->where('id', self::USER)->first());
         $this->assertSame(self::USER, UserInvitation::findOrFail(self::INVITATION)->auth_user_id);
         $this->assertSame('sent', UserInvitation::findOrFail(self::INVITATION)->status);
-        $this->assertSame(0, DB::table('association_accounts')->count());
+        $this->assertSame($linksBefore, DB::table('association_accounts')->get()->toJson());
+        $this->assertSame(0, DB::table('association_accounts')->where('is_active', true)->count());
         $this->assertSame(2, DB::table('audit_logs')->where('action_type', 'RESEND INVITATION')->count());
     }
 

@@ -108,6 +108,7 @@ class AccountReactivationTest extends TestCase
         });
         Schema::create('user_invitations', function (Blueprint $table) {
             $table->uuid('id')->primary();
+            $table->uuid('association_id')->nullable();
             $table->uuid('auth_user_id')->nullable();
             $table->unsignedBigInteger('role_id');
             $table->string('email');
@@ -130,6 +131,8 @@ class AccountReactivationTest extends TestCase
             $table->uuid('user_id');
             $table->uuid('association_id');
             $table->boolean('is_active');
+            $table->timestamp('ended_at')->nullable();
+            $table->uuid('ended_by')->nullable();
             $table->timestamps();
         });
         Schema::create('audit_logs', function (Blueprint $table) {
@@ -254,6 +257,13 @@ class AccountReactivationTest extends TestCase
         return '/admin/users/'.self::USER.'/reactivate';
     }
 
+    private function accountRecords(): array
+    {
+        return collect(['user_profiles', 'user_invitations', 'associations', 'association_accounts',
+            'account_reactivations', 'audit_logs', 'auth.users', 'auth.sessions'])
+            ->mapWithKeys(fn ($table) => [$table => DB::table($table)->orderBy('id')->get()->toJson()])->all();
+    }
+
     private function remember(TestResponse $response): TestResponse
     {
         if ($cookie = $response->getCookie(config('session.cookie'))) {
@@ -319,7 +329,7 @@ class AccountReactivationTest extends TestCase
 
     public static function ineligibleAccounts(): array
     {
-        return array_map(fn ($state) => [$state], ['active', 'never_activated', 'no_original_invitation', 'not_revoked', 'disabled_role', 'pending', 'conflict', 'wrong_relationship']);
+        return array_map(fn ($state) => [$state], ['active', 'never_activated', 'no_original_invitation', 'not_revoked', 'disabled_role', 'pending', 'conflict', 'wrong_relationship', 'historical_wrong_relationship']);
     }
 
     #[DataProvider('ineligibleAccounts')]
@@ -333,7 +343,8 @@ class AccountReactivationTest extends TestCase
             'disabled_role' => DB::table('roles')->where('id', 2)->update(['is_active' => false]),
             'pending', 'conflict' => DB::table('user_invitations')->insert(['id' => self::OTHER, 'auth_user_id' => $state === 'pending' ? self::USER : null,
                 'role_id' => 2, 'email' => 'pending@example.test', 'status' => 'sent', 'last_error_code' => $state === 'conflict' ? 'profile_identity_conflict:'.self::USER : null]),
-            'wrong_relationship' => DB::table('association_accounts')->insert(['id' => self::OTHER, 'user_id' => self::USER, 'association_id' => self::ASSOCIATION, 'is_active' => true]),
+            'wrong_relationship', 'historical_wrong_relationship' => DB::table('association_accounts')->insert(['id' => self::OTHER, 'user_id' => self::USER,
+                'association_id' => self::ASSOCIATION, 'is_active' => $state === 'wrong_relationship']),
         };
         $this->get($this->url())->assertRedirect();
         $this->postJson($this->url(), ['review_hash' => str_repeat('a', 64), 'confirm_reactivation' => '1', 'confirm_relationships' => '1'])->assertUnprocessable();
@@ -375,6 +386,67 @@ class AccountReactivationTest extends TestCase
         DB::table('association_accounts')->insert(['id' => self::USER, 'user_id' => self::USER, 'association_id' => self::ASSOCIATION, 'is_active' => true]);
     }
 
+    public static function reactivationRoles(): array
+    {
+        return [['field_officer'], ['association_account']];
+    }
+
+    #[DataProvider('reactivationRoles')]
+    public function test_user_management_offers_existing_review_for_eligible_revoked_accounts_without_writes(string $role): void
+    {
+        if ($role === 'association_account') {
+            $this->associationAccount();
+        }
+        $before = $this->accountRecords();
+        $action = 'href="'.url($this->url()).'"';
+        $this->get('/admin/users')->assertOk()->assertSee($action, false)->assertSee('Reactivate Account');
+        $this->get('/admin/users/'.self::USER)->assertOk()->assertSee($action, false)
+            ->assertSee('Eligibility is checked again during review and submission.');
+        $review = $this->get($this->url())->assertOk()->viewData('review');
+        $this->assertSame(self::USER, $review['target']->id);
+        $this->assertSame($before, $this->accountRecords());
+        $this->assertSame(0, $this->emails);
+        $this->assertSame(0, $this->verifications);
+        $this->assertSame(0, $this->passwordWrites);
+        Http::assertNotSent(fn (ClientRequest $request) => $request->method() !== 'GET');
+    }
+
+    #[DataProvider('reactivationRoles')]
+    public function test_disabled_reactivation_has_no_user_management_action_and_rejects_direct_requests(string $role): void
+    {
+        if ($role === 'association_account') {
+            $this->associationAccount();
+        }
+        config(['services.supabase.account_reactivation_enabled' => false]);
+        $before = $this->accountRecords();
+        $action = 'href="'.url($this->url()).'"';
+        $this->get('/admin/users')->assertOk()->assertDontSee($action, false)->assertDontSee('Reactivate Account');
+        $this->get('/admin/users/'.self::USER)->assertOk()->assertDontSee($action, false)->assertDontSee('Reactivate Account');
+        $this->get($this->url())->assertNotFound();
+        $this->postJson($this->url(), ['review_hash' => str_repeat('a', 64),
+            'confirm_reactivation' => '1', 'confirm_relationships' => '1'])->assertNotFound();
+        $this->assertSame($before, $this->accountRecords());
+        $this->assertSame(0, $this->emails);
+        $this->assertSame(0, $this->verifications);
+        $this->assertSame(0, $this->passwordWrites);
+        Http::assertNotSent(fn (ClientRequest $request) => $request->method() !== 'GET');
+    }
+
+    public function test_relationship_is_rechecked_if_the_link_ends_after_reactivation_review(): void
+    {
+        $this->associationAccount();
+        $review = $this->get($this->url())->assertOk()->viewData('review');
+        DB::table('association_accounts')->update(['is_active' => false]);
+        $before = $this->accountRecords();
+        $this->postJson($this->url(), ['review_hash' => $review['review_hash'],
+            'confirm_reactivation' => '1', 'confirm_relationships' => '1'])->assertUnprocessable()
+            ->assertJsonPath('errors.reactivation.0', AccountReactivationService::ASSOCIATION_APPOINTMENT_REQUIRED);
+        $this->assertSame($before, $this->accountRecords());
+        $this->assertSame(0, $this->emails);
+        $this->assertSame(0, $this->passwordWrites);
+        Http::assertNotSent(fn (ClientRequest $request) => $request->method() !== 'GET');
+    }
+
     public function test_association_account_preserves_the_same_unique_active_link(): void
     {
         $this->associationAccount();
@@ -382,6 +454,19 @@ class AccountReactivationTest extends TestCase
         $this->finish()->assertSessionHas('reactivation_completed', true);
         $this->assertSame($before, DB::table('association_accounts')->get()->toJson());
         $this->assertSame(3, UserProfile::findOrFail(self::USER)->role_id);
+    }
+
+    public function test_reactivation_retains_only_the_existing_active_appointment_and_ignores_ended_history(): void
+    {
+        $this->associationAccount();
+        DB::table('association_accounts')->insert(['id' => self::OLD_SESSION, 'user_id' => self::USER,
+            'association_id' => self::ASSOCIATION, 'is_active' => false, 'ended_at' => now()->subDay(), 'ended_by' => self::ADMIN]);
+        $before = DB::table('association_accounts')->orderBy('id')->get()->toJson();
+        $this->get('/admin/users/'.self::USER)->assertOk()->assertSee('Reactivate Account')->assertSee('Ended association appointments');
+        $this->finish()->assertSessionHas('reactivation_completed', true);
+        $this->assertSame($before, DB::table('association_accounts')->orderBy('id')->get()->toJson());
+        $this->assertSame(self::USER, DB::table('association_accounts')->where('is_active', true)->sole()->id);
+        $this->assertFalse((bool) DB::table('association_accounts')->where('id', self::OLD_SESSION)->value('is_active'));
     }
 
     public function test_reactivated_association_account_needs_fresh_password_authentication_at_the_mobile_association_boundary(): void
@@ -401,7 +486,7 @@ class AccountReactivationTest extends TestCase
 
     public static function invalidLinks(): array
     {
-        return [['missing'], ['inactive'], ['duplicate_user'], ['duplicate_association'], ['inactive_association'], ['archived_association']];
+        return [['missing'], ['inactive'], ['duplicate_user'], ['duplicate_association'], ['inactive_association'], ['archived_association'], ['field_officer_assignment']];
     }
 
     #[DataProvider('invalidLinks')]
@@ -415,9 +500,31 @@ class AccountReactivationTest extends TestCase
             'duplicate_association' => DB::table('association_accounts')->insert(['id' => self::OTHER, 'user_id' => self::OTHER, 'association_id' => self::ASSOCIATION, 'is_active' => true]),
             'inactive_association' => DB::table('associations')->update(['status' => 'inactive']),
             'archived_association' => DB::table('associations')->update(['archived_at' => now()]),
+            'field_officer_assignment' => DB::table('associations')->update(['primary_field_officer_id' => self::USER]),
         };
-        $this->get($this->url())->assertRedirect();
+        $before = $this->accountRecords();
+        $action = 'href="'.url($this->url()).'"';
+        $reason = match ($state) {
+            'missing', 'inactive' => AccountReactivationService::ASSOCIATION_APPOINTMENT_REQUIRED,
+            'inactive_association', 'archived_association' => 'The linked association must be active and unarchived before reactivation.',
+            'field_officer_assignment' => 'Conflicting Field Officer assignments need review before reactivation.',
+            default => 'Account relationships need review before reactivation.',
+        };
+        $this->get('/admin/users')->assertOk()->assertDontSee($action, false)->assertSee($reason);
+        $details = $this->get('/admin/users/'.self::USER)->assertOk()->assertDontSee($action, false)->assertSee($reason);
+        $details->assertSee($details->viewData('account')['link_active'] === true ? 'End Retained Appointment' : 'Cancel Pending Reactivation');
+        $this->get($this->url())->assertRedirect('/admin/users/'.self::USER)->assertSessionHasErrors('reactivation');
+        $denied = $this->postJson($this->url(), ['review_hash' => str_repeat('a', 64),
+            'confirm_reactivation' => '1', 'confirm_relationships' => '1'])
+            ->assertUnprocessable()->assertJsonValidationErrors('reactivation')->assertSessionMissing('password_recovery_context');
+        if (in_array($state, ['missing', 'inactive'], true)) {
+            $denied->assertJsonPath('errors.reactivation.0', AccountReactivationService::ASSOCIATION_APPOINTMENT_REQUIRED);
+        }
+        $this->assertSame($before, $this->accountRecords());
         $this->assertSame(0, $this->emails);
+        $this->assertSame(0, $this->verifications);
+        $this->assertSame(0, $this->passwordWrites);
+        Http::assertNotSent(fn (ClientRequest $request) => $request->method() !== 'GET');
     }
 
     public function test_old_sessions_bearers_and_refreshed_old_sessions_stay_denied_while_fresh_password_signin_succeeds(): void

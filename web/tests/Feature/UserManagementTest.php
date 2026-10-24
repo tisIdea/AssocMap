@@ -67,6 +67,10 @@ class UserManagementTest extends TestCase
         $this->assertSame(':memory:', DB::connection()->getConfig('database'));
         $this->withoutVite();
         $this->schema();
+        Schema::table('association_accounts', function (Blueprint $table) {
+            $table->timestamp('ended_at')->nullable();
+            $table->uuid('ended_by')->nullable();
+        });
         $this->fixture();
         $this->authIdentities = collect([
             self::ADMIN => (object) ['id' => self::ADMIN, 'email' => 'administrator@example.test'],
@@ -132,6 +136,7 @@ class UserManagementTest extends TestCase
         });
         Schema::create('user_invitations', function (Blueprint $table) {
             $table->uuid('id')->primary();
+            $table->uuid('association_id')->nullable();
             $table->string('email');
             $table->uuid('auth_user_id')->nullable();
             $table->string('status');
@@ -711,7 +716,7 @@ class UserManagementTest extends TestCase
     }
 
     #[DataProvider('revocationTargets')]
-    public function test_revocation_preserves_records_cancels_open_invitations_and_records_one_audit(string $target, string $role): void
+    public function test_revocation_preserves_history_cancels_open_invitations_and_records_required_audits(string $target, string $role): void
     {
         $pending = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
         foreach ([[self::INVITATION, 'accepted'], [$pending, 'sent']] as [$id, $status]) {
@@ -734,17 +739,30 @@ class UserManagementTest extends TestCase
         $this->assertSame('cancelled', DB::table('user_invitations')->where('id', $pending)->value('status'));
         $this->assertSame('accepted', DB::table('user_invitations')->where('id', self::INVITATION)->value('status'));
         foreach ($before as $table => $rows) {
+            if ($table === 'association_accounts' && $role === 'association_account') {
+                $historical = DB::table($table)->sole();
+                $this->assertSame(self::LINK, $historical->id);
+                $this->assertSame(self::ASSOCIATION, $historical->association_id);
+                $this->assertSame($target, $historical->user_id);
+                $this->assertFalse((bool) $historical->is_active);
+                $this->assertNotNull($historical->ended_at);
+                $this->assertSame(self::ADMIN, $historical->ended_by);
+                continue;
+            }
             $this->assertSame($rows, DB::table($table)->orderBy('id')->get()->toJson());
         }
-        $audit = DB::table('audit_logs')->sole();
+        $audit = DB::table('audit_logs')->where('action_type', UserAccessRevocationService::ACTION)->sole();
         $this->assertSame(self::ADMIN, $audit->actor_user_id);
         $this->assertSame(UserAccessRevocationService::ACTION, $audit->action_type);
         $this->assertSame($target, $audit->entity_id);
         $this->assertNotEmpty($audit->performed_at);
         $this->assertSame(['is_active' => true, 'invitation_statuses' => [$pending => 'sent']], json_decode($audit->old_values, true));
-        $this->assertSame(['is_active' => false, 'cancelled_invitation_ids' => [$pending]], json_decode($audit->new_values, true));
+        $this->assertSame(['is_active' => false, 'cancelled_invitation_ids' => [$pending]]
+            + ($role === 'association_account' ? ['ended_association_link_ids' => [self::LINK]] : []), json_decode($audit->new_values, true));
+        $after = DB::table('association_accounts')->get()->toJson();
         $this->patchJson($url, ['confirm_revocation' => '1'])->assertOk()->assertJsonPath('changed', false);
-        $this->assertSame(1, DB::table('audit_logs')->count());
+        $this->assertSame($after, DB::table('association_accounts')->get()->toJson());
+        $this->assertSame($role === 'association_account' ? 2 : 1, DB::table('audit_logs')->count());
         $this->get('/admin/users/'.$target)->assertOk()->assertSee('Access revoked on')->assertDontSee('name="confirm_revocation"', false);
         $this->get('/admin/users?status=inactive')->assertOk()->assertSee('Revoked');
         try {
@@ -754,6 +772,56 @@ class UserManagementTest extends TestCase
             $this->assertFalse(UserProfile::findOrFail($target)->is_active);
         }
         Http::assertNotSent(fn ($request) => $request->method() !== 'GET');
+    }
+
+    public static function unlinkAuditStages(): array
+    {
+        return [['END ASSOCIATION ACCOUNT LINK'], [UserAccessRevocationService::ACTION]];
+    }
+
+    #[DataProvider('unlinkAuditStages')]
+    public function test_required_unlink_or_revocation_audit_failure_rolls_back_both_changes(string $action): void
+    {
+        $before = DB::table('association_accounts')->get()->toJson();
+        DB::statement("CREATE TRIGGER reject_unlink_audit BEFORE INSERT ON audit_logs WHEN NEW.action_type = '$action' BEGIN SELECT RAISE(ABORT, 'Synthetic audit rejection'); END");
+        $this->withSession($this->actorSessionData())->patchJson('/admin/users/'.self::ACCOUNT.'/revoke', ['confirm_revocation' => '1'])
+            ->assertStatus(503)->assertDontSee('Synthetic audit rejection');
+        $this->assertTrue(UserProfile::findOrFail(self::ACCOUNT)->is_active);
+        $this->assertSame($before, DB::table('association_accounts')->get()->toJson());
+        $this->assertDatabaseCount('audit_logs', 0);
+        Http::assertNotSent(fn ($request) => $request->method() !== 'GET');
+    }
+
+    public function test_explicit_revocation_can_end_a_legacy_revoked_holders_link_once(): void
+    {
+        config(['services.supabase.account_reactivation_enabled' => false]);
+        DB::table('user_profiles')->where('id', self::ACCOUNT)->update(['is_active' => false]);
+        DB::table('audit_logs')->insert(['id' => self::INVITATION, 'actor_user_id' => self::ADMIN,
+            'action_type' => UserAccessRevocationService::ACTION, 'module' => 'User Management',
+            'entity_type' => 'user_profile', 'entity_id' => self::ACCOUNT, 'performed_at' => now()->subDay()]);
+        $this->withSession($this->actorSessionData())->get('/admin/users/'.self::ACCOUNT)->assertOk()
+            ->assertSee('End Retained Appointment')->assertDontSee('Reactivate Account');
+        $this->withSession($this->actorSessionData())->patchJson('/admin/users/'.self::ACCOUNT.'/revoke', ['confirm_revocation' => '1'])
+            ->assertOk()->assertJsonPath('changed', true);
+        $this->assertFalse((bool) DB::table('association_accounts')->value('is_active'));
+        $endedAt = DB::table('association_accounts')->value('ended_at');
+        $this->assertNotNull($endedAt);
+        $this->patchJson('/admin/users/'.self::ACCOUNT.'/revoke', ['confirm_revocation' => '1'])->assertOk()->assertJsonPath('changed', false);
+        $this->assertSame($endedAt, DB::table('association_accounts')->value('ended_at'));
+        $this->assertDatabaseCount('association_accounts', 1);
+        $this->assertDatabaseCount('audit_logs', 3);
+        $this->get('/admin/users/'.self::ACCOUNT)->assertOk()->assertDontSee('End Retained Appointment');
+    }
+
+    public function test_unlinking_before_the_schema_migration_fails_without_partial_revocation(): void
+    {
+        Schema::table('association_accounts', fn (Blueprint $table) => $table->dropColumn(['ended_at', 'ended_by']));
+        $before = DB::table('association_accounts')->get()->toJson();
+        $this->withSession($this->actorSessionData())->patchJson('/admin/users/'.self::ACCOUNT.'/revoke', ['confirm_revocation' => '1'])
+            ->assertUnprocessable()->assertJsonValidationErrors('confirm_revocation');
+        $this->assertTrue(UserProfile::findOrFail(self::ACCOUNT)->is_active);
+        $this->assertSame($before, DB::table('association_accounts')->get()->toJson());
+        $this->assertDatabaseCount('audit_logs', 0);
     }
 
     #[DataProvider('revocationTargets')]
@@ -887,7 +955,7 @@ class UserManagementTest extends TestCase
         $this->assertLessThanOrEqual(9, count($after));
     }
 
-    public function test_linked_association_is_explicit_and_retained_separately_from_revoked_access(): void
+    public function test_revoked_association_appointment_is_shown_as_history_without_current_access(): void
     {
         $response = $this->withSession($this->actorSessionData())->get('/admin/users')->assertOk();
         $account = $response->viewData('users')->getCollection()->firstWhere('id', self::ACCOUNT);
@@ -896,8 +964,9 @@ class UserManagementTest extends TestCase
         $response->assertSee('Linked association');
         $this->patchJson('/admin/users/'.self::ACCOUNT.'/revoke', ['confirm_revocation' => '1'])->assertOk();
         $this->get('/admin/users/'.self::ACCOUNT)->assertOk()->assertSee('Revoked')
-            ->assertSee('First Synthetic Association')->assertSee('Active relationship')
-            ->assertSee('Account access and the retained association relationship are separate.');
+            ->assertSee('First Synthetic Association')->assertSee('No active association linked')
+            ->assertSee('Ended association appointments')->assertSee('A separately authorized association appointment is required')
+            ->assertDontSee('Active relationship')->assertDontSee('Reactivate Account');
         $this->assertSame(self::LINK, DB::table('association_accounts')->value('id'));
     }
 
@@ -905,9 +974,9 @@ class UserManagementTest extends TestCase
     {
         DB::table('association_accounts')->where('id', self::LINK)->update(['association_id' => 'ffffffff-ffff-4fff-8fff-ffffffffffff']);
         $this->withSession($this->actorSessionData())->get('/admin/users/'.self::ACCOUNT)->assertOk()
-            ->assertSee('Relationship needs review')->assertDontSee('No association linked');
+            ->assertSee('Relationship needs review')->assertDontSee('No active association linked');
         DB::table('association_accounts')->delete();
-        $this->get('/admin/users/'.self::ACCOUNT)->assertOk()->assertSee('No association linked')
+        $this->get('/admin/users/'.self::ACCOUNT)->assertOk()->assertSee('No active association linked')
             ->assertDontSee('Relationship needs review');
     }
 
