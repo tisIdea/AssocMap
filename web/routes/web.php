@@ -235,46 +235,7 @@ Route::middleware([
     |--------------------------------------------------------------------------
     */
 
-    Route::get(
-        '/admin/projects',
-        [AdminProjectController::class, 'index']
-    )->name('admin.projects.index');
-
-    Route::get('/admin/projects/{project}', [ProjectClosureController::class, 'show'])
-        ->whereUuid('project')->name('admin.projects.show');
-    Route::post('/admin/projects/{project}/close', [ProjectClosureController::class, 'store'])
-        ->whereUuid('project')->name('admin.projects.close');
-    Route::post('/admin/projects/{project}/terminate', [ProjectClosureController::class, 'terminate'])
-        ->whereUuid('project')->name('admin.projects.terminate');
-
-    Route::get('/admin/projects/{project}/edit', [AdminProjectController::class, 'edit'])
-        ->whereUuid('project')->name('admin.projects.edit');
-
-    Route::post(
-        '/admin/projects',
-        [AdminProjectController::class, 'store']
-    )->name('admin.projects.store');
-
-    Route::patch(
-        '/admin/projects/{project}',
-        [AdminProjectController::class, 'update']
-    )
-        ->whereUuid('project')
-        ->name('admin.projects.update');
-
-    Route::patch(
-        '/admin/projects/{project}/archive',
-        [AdminProjectController::class, 'archive']
-    )
-        ->whereUuid('project')
-        ->name('admin.projects.archive');
-
-    Route::patch(
-        '/admin/projects/{project}/unarchive',
-        [AdminProjectController::class, 'unarchive']
-    )
-        ->whereUuid('project')
-        ->name('admin.projects.unarchive');
+    require __DIR__.'/admin/projects.php';
 
     /*
     |--------------------------------------------------------------------------
@@ -282,41 +243,7 @@ Route::middleware([
     |--------------------------------------------------------------------------
     */
 
-    Route::get(
-        '/admin/trainings',
-        [AdminTrainingController::class, 'index']
-    )->name('admin.trainings.index');
-
-    Route::get('/admin/trainings/{training}/edit', [AdminTrainingController::class, 'edit'])
-        ->whereUuid('training')->name('admin.trainings.edit');
-    Route::get('/admin/trainings/{training}', [AdminTrainingController::class, 'show'])
-        ->whereUuid('training')->name('admin.trainings.show');
-
-    Route::post(
-        '/admin/trainings',
-        [AdminTrainingController::class, 'store']
-    )->name('admin.trainings.store');
-
-    Route::patch(
-        '/admin/trainings/{training}',
-        [AdminTrainingController::class, 'update']
-    )
-        ->whereUuid('training')
-        ->name('admin.trainings.update');
-
-    Route::patch(
-        '/admin/trainings/{training}/archive',
-        [AdminTrainingController::class, 'archive']
-    )
-        ->whereUuid('training')
-        ->name('admin.trainings.archive');
-
-    Route::patch(
-        '/admin/trainings/{training}/unarchive',
-        [AdminTrainingController::class, 'unarchive']
-    )
-        ->whereUuid('training')
-        ->name('admin.trainings.unarchive');
+    require __DIR__.'/admin/trainings.php';
 
     /*
     |--------------------------------------------------------------------------
@@ -324,41 +251,7 @@ Route::middleware([
     |--------------------------------------------------------------------------
     */
 
-    Route::get(
-        '/admin/program-activities',
-        [AdminProgramActivityController::class, 'index']
-    )->name('admin.program-activities.index');
-
-    Route::get('/admin/program-activities/{programActivity}/edit', [AdminProgramActivityController::class, 'edit'])
-        ->whereUuid('programActivity')->name('admin.program-activities.edit');
-    Route::get('/admin/program-activities/{programActivity}', [AdminProgramActivityController::class, 'show'])
-        ->whereUuid('programActivity')->name('admin.program-activities.show');
-
-    Route::post(
-        '/admin/program-activities',
-        [AdminProgramActivityController::class, 'store']
-    )->name('admin.program-activities.store');
-
-    Route::patch(
-        '/admin/program-activities/{programActivity}',
-        [AdminProgramActivityController::class, 'update']
-    )
-        ->whereUuid('programActivity')
-        ->name('admin.program-activities.update');
-
-    Route::patch(
-        '/admin/program-activities/{programActivity}/archive',
-        [AdminProgramActivityController::class, 'archive']
-    )
-        ->whereUuid('programActivity')
-        ->name('admin.program-activities.archive');
-
-    Route::patch(
-        '/admin/program-activities/{programActivity}/unarchive',
-        [AdminProgramActivityController::class, 'unarchive']
-    )
-        ->whereUuid('programActivity')
-        ->name('admin.program-activities.unarchive');
+    require __DIR__.'/admin/program-activities.php';
 
     /*
     |--------------------------------------------------------------------------
