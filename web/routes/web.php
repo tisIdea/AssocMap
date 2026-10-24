@@ -8,10 +8,6 @@ use App\Http\Controllers\Admin\UserAccessController;
 use App\Http\Controllers\Admin\FieldOfficerAssignmentController;
 
 use App\Http\Controllers\AssociationOfficerController;
-use App\Http\Controllers\ProjectClosureController;
-use App\Http\Controllers\Admin\ProjectController as AdminProjectController;
-use App\Http\Controllers\Admin\TrainingController as AdminTrainingController;
-use App\Http\Controllers\Admin\ProgramActivityController as AdminProgramActivityController;
 use App\Http\Controllers\Admin\MonitoringController as AdminMonitoringController;
 
 use App\Http\Controllers\AssociationAccount\MemberApplicationController
@@ -22,15 +18,6 @@ use App\Http\Controllers\FieldOfficer\MemberApplicationController
 
 use App\Http\Controllers\MemberApplicationPhotoController;
 use App\Http\Middleware\MemberApplicationEvidenceHeaders;
-
-use App\Http\Controllers\FieldOfficer\ProjectController
-    as FieldOfficerProjectController;
-
-use App\Http\Controllers\FieldOfficer\TrainingController
-    as FieldOfficerTrainingController;
-
-use App\Http\Controllers\FieldOfficer\ProgramActivityController
-    as FieldOfficerProgramActivityController;
 
 use App\Http\Controllers\FieldOfficer\MonitoringController
     as FieldOfficerMonitoringController;
@@ -337,46 +324,7 @@ Route::middleware([
     |--------------------------------------------------------------------------
     */
 
-    Route::get(
-        '/field-officer/projects',
-        [FieldOfficerProjectController::class, 'index']
-    )->name('field-officer.projects.index');
-
-    Route::get('/field-officer/projects/{project}', [ProjectClosureController::class, 'show'])
-        ->whereUuid('project')->name('field-officer.projects.show');
-    Route::post('/field-officer/projects/{project}/close', [ProjectClosureController::class, 'store'])
-        ->whereUuid('project')->name('field-officer.projects.close');
-    Route::post('/field-officer/projects/{project}/terminate', [ProjectClosureController::class, 'terminate'])
-        ->whereUuid('project')->name('field-officer.projects.terminate');
-
-    Route::get('/field-officer/projects/{project}/edit', [AdminProjectController::class, 'edit'])
-        ->whereUuid('project')->name('field-officer.projects.edit');
-
-    Route::post(
-        '/field-officer/projects',
-        [FieldOfficerProjectController::class, 'store']
-    )->name('field-officer.projects.store');
-
-    Route::patch(
-        '/field-officer/projects/{project}',
-        [FieldOfficerProjectController::class, 'update']
-    )
-        ->whereUuid('project')
-        ->name('field-officer.projects.update');
-
-    Route::patch(
-        '/field-officer/projects/{project}/archive',
-        [FieldOfficerProjectController::class, 'archive']
-    )
-        ->whereUuid('project')
-        ->name('field-officer.projects.archive');
-
-    Route::patch(
-        '/field-officer/projects/{project}/unarchive',
-        [FieldOfficerProjectController::class, 'unarchive']
-    )
-        ->whereUuid('project')
-        ->name('field-officer.projects.unarchive');
+    require __DIR__.'/field-officer/projects.php';
 
     /*
     |--------------------------------------------------------------------------
@@ -384,41 +332,7 @@ Route::middleware([
     |--------------------------------------------------------------------------
     */
 
-    Route::get(
-        '/field-officer/trainings',
-        [FieldOfficerTrainingController::class, 'index']
-    )->name('field-officer.trainings.index');
-
-    Route::get('/field-officer/trainings/{training}/edit', [AdminTrainingController::class, 'edit'])
-        ->whereUuid('training')->name('field-officer.trainings.edit');
-    Route::get('/field-officer/trainings/{training}', [AdminTrainingController::class, 'show'])
-        ->whereUuid('training')->name('field-officer.trainings.show');
-
-    Route::post(
-        '/field-officer/trainings',
-        [FieldOfficerTrainingController::class, 'store']
-    )->name('field-officer.trainings.store');
-
-    Route::patch(
-        '/field-officer/trainings/{training}',
-        [FieldOfficerTrainingController::class, 'update']
-    )
-        ->whereUuid('training')
-        ->name('field-officer.trainings.update');
-
-    Route::patch(
-        '/field-officer/trainings/{training}/archive',
-        [FieldOfficerTrainingController::class, 'archive']
-    )
-        ->whereUuid('training')
-        ->name('field-officer.trainings.archive');
-
-    Route::patch(
-        '/field-officer/trainings/{training}/unarchive',
-        [FieldOfficerTrainingController::class, 'unarchive']
-    )
-        ->whereUuid('training')
-        ->name('field-officer.trainings.unarchive');
+    require __DIR__.'/field-officer/trainings.php';
 
     /*
     |--------------------------------------------------------------------------
@@ -426,41 +340,7 @@ Route::middleware([
     |--------------------------------------------------------------------------
     */
 
-    Route::get(
-        '/field-officer/program-activities',
-        [FieldOfficerProgramActivityController::class, 'index']
-    )->name('field-officer.program-activities.index');
-
-    Route::get('/field-officer/program-activities/{programActivity}/edit', [AdminProgramActivityController::class, 'edit'])
-        ->whereUuid('programActivity')->name('field-officer.program-activities.edit');
-    Route::get('/field-officer/program-activities/{programActivity}', [AdminProgramActivityController::class, 'show'])
-        ->whereUuid('programActivity')->name('field-officer.program-activities.show');
-
-    Route::post(
-        '/field-officer/program-activities',
-        [FieldOfficerProgramActivityController::class, 'store']
-    )->name('field-officer.program-activities.store');
-
-    Route::patch(
-        '/field-officer/program-activities/{programActivity}',
-        [FieldOfficerProgramActivityController::class, 'update']
-    )
-        ->whereUuid('programActivity')
-        ->name('field-officer.program-activities.update');
-
-    Route::patch(
-        '/field-officer/program-activities/{programActivity}/archive',
-        [FieldOfficerProgramActivityController::class, 'archive']
-    )
-        ->whereUuid('programActivity')
-        ->name('field-officer.program-activities.archive');
-
-    Route::patch(
-        '/field-officer/program-activities/{programActivity}/unarchive',
-        [FieldOfficerProgramActivityController::class, 'unarchive']
-    )
-        ->whereUuid('programActivity')
-        ->name('field-officer.program-activities.unarchive');
+    require __DIR__.'/field-officer/program-activities.php';
 
     /*
     |--------------------------------------------------------------------------
