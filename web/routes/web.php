@@ -200,22 +200,7 @@ Route::middleware([
     |--------------------------------------------------------------------------
     */
 
-    Route::get(
-        '/admin/monitoring',
-        [\App\Http\Controllers\MonitoringWorkspaceController::class, 'index']
-    )->name('admin.monitoring.index');
-
-    Route::post(
-        '/admin/monitoring',
-        [AdminMonitoringController::class, 'store']
-    )->name('admin.monitoring.store');
-
-    Route::patch(
-        '/admin/monitoring/{monitoringRecord}',
-        [AdminMonitoringController::class, 'update']
-    )
-        ->whereUuid('monitoringRecord')
-        ->name('admin.monitoring.update');
+    require __DIR__.'/admin/monitoring.php';
 
     Route::get(
         '/admin/monitoring/{monitoringRecord}/visit-reports',
@@ -326,22 +311,7 @@ Route::middleware([
     |--------------------------------------------------------------------------
     */
 
-    Route::get(
-        '/field-officer/monitoring',
-        [\App\Http\Controllers\MonitoringWorkspaceController::class, 'index']
-    )->name('field-officer.monitoring.index');
-
-    Route::post(
-        '/field-officer/monitoring',
-        [FieldOfficerMonitoringController::class, 'store']
-    )->name('field-officer.monitoring.store');
-
-    Route::patch(
-        '/field-officer/monitoring/{monitoringRecord}',
-        [FieldOfficerMonitoringController::class, 'update']
-    )
-        ->whereUuid('monitoringRecord')
-        ->name('field-officer.monitoring.update');
+    require __DIR__.'/field-officer/monitoring.php';
 
     Route::get(
         '/field-officer/monitoring/{monitoringRecord}/visit-reports',
