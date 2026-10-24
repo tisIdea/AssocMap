@@ -3,18 +3,37 @@
 Run from `C:\dev\AssocMap-Refactor` in PowerShell. PHP and Composer dependencies must already exist.
 This harness supports this Windows worktree and branch only. It never runs Composer scripts or Artisan commands.
 
-Use the approved `routes.compatibility.json` captured during Day 2. Its SHA-256 is pinned in both scripts:
+The default baseline is version-controlled at `scripts/refactor/baselines/routes.compatibility.json`.
+It was recovered from the unchanged checkpoint and matched the approved Day 2 SHA-256 pinned in both scripts:
 `f782e373299cf19d13d138dcab8293171c7f04e4471a02f826df0883a6bbd06d`.
-Keep that snapshot and all generated evidence outside the repository. A missing or different snapshot fails verification;
-the harness does not regenerate or approve baselines.
+The baseline contains route metadata only, without credentials or environment configuration. Its local `.gitattributes`
+disables text conversion and recognizes the original final CRLF to preserve the exact approved bytes.
+All generated evidence remains outside the repository.
+A missing or different baseline fails verification; the harness does not regenerate or approve baselines.
+An explicit `-Baseline` override must match the same pinned hash.
+
+Verify isolation and the complete registry without checking unrelated route formatting:
 
 ```powershell
-$baseline = 'C:\Users\Dea\AppData\Local\Temp\assocmap-refactor-day2-retry-49ac605090394d16bf74f21044ce8621\routes.compatibility.json'
-$format = 'C:\Users\Dea\AppData\Local\Temp\assocmap-refactor-day2-retry-49ac605090394d16bf74f21044ce8621\batch3-resumed\pint-before.json'
-& .\scripts\refactor\verify.ps1 -Baseline $baseline -FormattingBaseline $format `
+& .\scripts\refactor\verify.ps1 -RouteFiles @()
+```
+
+If Windows blocks local scripts, use a one-off process without changing user or machine execution policy:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& .\scripts\refactor\verify.ps1 -RouteFiles @()"
+```
+
+For a module extraction, select the affected tests and route files. If scoped files already have Pint violations,
+review their pre-change `pint.json` in the temporary evidence directory and pass it as `-FormattingBaseline`.
+Without that argument the harness saves its Pint report and stops on any findings, allowing review before retrying.
+
+```powershell
+$format = '<reviewed-pre-change-evidence>\pint.json'
+& .\scripts\refactor\verify.ps1 -FormattingBaseline $format `
     -Tests @('tests/Feature/AreaManagementTest.php') -RouteFiles @('routes/web.php')
 # After extraction, use the pre-change evidence directory printed above:
-& .\scripts\refactor\verify.ps1 -Baseline $baseline -FormattingBaseline '<before-evidence>\pint.json' `
+& .\scripts\refactor\verify.ps1 -FormattingBaseline '<before-evidence>\pint.json' `
     -Tests @('tests/Feature/AreaManagementTest.php') -RouteFiles @('routes/web.php', 'routes/admin/areas.php')
 ```
 

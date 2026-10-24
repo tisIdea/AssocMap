@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory = $true)][string]$Baseline,
+    [string]$Baseline = (Join-Path $PSScriptRoot 'baselines/routes.compatibility.json'),
     [string]$Php = 'C:\php8427\php.exe',
     [string[]]$Tests = @(),
     [string[]]$RouteFiles = @('routes/web.php'),
