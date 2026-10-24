@@ -19,6 +19,7 @@ class MemberDirectoryUiTest extends TestCase
         $this->assertSame('sqlite', DB::connection()->getDriverName());
         $this->assertSame(':memory:', DB::connection()->getConfig('database'));
         config(['app.key' => 'base64:'.base64_encode(str_repeat('s', 32))]);
+        config(['associations.geography_schema_ready' => false, 'associations.direct_geography' => false]);
         $this->withoutVite();
         $this->identity = $this->id(1);
         $auth = Mockery::mock(SupabaseAuthService::class);
@@ -70,7 +71,7 @@ class MemberDirectoryUiTest extends TestCase
     {
         DB::statement('ALTER TABLE associations ADD COLUMN barangay_id TEXT');
         DB::statement('UPDATE associations SET barangay_id=(SELECT barangay_id FROM areas WHERE areas.id=associations.area_id), area_id=NULL');
-        config(['associations.geography_schema_ready' => true]);
+        config(['associations.geography_schema_ready' => true, 'associations.direct_geography' => true]);
         $this->member(101);
         $this->member(102, ['association_id' => $this->id(12), 'first_name' => 'OutsideOwner']);
         $this->application(201);
