@@ -28,6 +28,7 @@ class ProgramManagementUiTest extends TestCase
         $this->assertSame('sqlite', DB::connection()->getDriverName());
         $this->assertSame(':memory:', DB::connection()->getConfig('database'));
         config(['app.key' => 'base64:'.base64_encode(str_repeat('p', 32))]);
+        config(['associations.geography_schema_ready' => false, 'associations.direct_geography' => false]);
         $this->withoutVite();
         $this->identity = $this->id(1);
         $auth = Mockery::mock(SupabaseAuthService::class);
@@ -106,7 +107,7 @@ class ProgramManagementUiTest extends TestCase
     {
         DB::statement('ALTER TABLE associations ADD COLUMN barangay_id TEXT');
         DB::statement('UPDATE associations SET barangay_id=(SELECT barangay_id FROM areas WHERE areas.id=associations.area_id), area_id=NULL');
-        config(['associations.geography_schema_ready' => true]);
+        config(['associations.geography_schema_ready' => true, 'associations.direct_geography' => true]);
         $this->project(101);
         $this->project(102, ['association_id' => $this->id(12), 'title' => 'Outside Project']);
         $this->training(201);
@@ -247,7 +248,7 @@ class ProgramManagementUiTest extends TestCase
             $queries = count(DB::getQueryLog());
             DB::disableQueryLog();
             fwrite(STDOUT, "\n/{$prefix}/trainings editor (".($archived ? 'archived' : 'eligible')." Project): {$queries} queries\n");
-            $this->assertSame($archived ? 17 : 16, $queries, 'Editor query counts must remain at the pre-fix baseline.');
+            $this->assertSame($archived ? 16 : 15, $queries, 'Editor query counts must match the verified legacy-geography baseline.');
             $this->assertSame($this->id($id), $editor->viewData('row')['related_project_id']);
             $this->assertSame('Recorded <Project> '.$id, $editor->viewData('row')['related_project']);
             $state = $this->trainingFormState($editor);
@@ -498,8 +499,9 @@ class ProgramManagementUiTest extends TestCase
         $response = $this->get('/'.$prefix.'/projects')->assertOk();
         $after = count(DB::getQueryLog());
         DB::disableQueryLog();
-        $this->assertSame(11, $before);
+        $this->assertSame(10, $before);
         $this->assertSame($before, $after);
+        $response->assertSee('Test Barangay')->assertSee('Test Municipality');
         $this->assertCount(25, $response->viewData('projects'));
         $this->assertSame(30, $response->viewData('projects')->total());
         app(SupabaseAuthService::class)->shouldHaveReceived('getUser')->times(2);
