@@ -163,7 +163,7 @@ Route::middleware([
     Route::post('/admin/user-invitations', [UserInvitationController::class, 'store'])
         ->middleware('throttle:user-invitations')->name('admin.user-invitations.store');
 
-    Route::get('/dashboard', [\App\Http\Controllers\DashboardController::class, 'index'])->name('admin.dashboard');
+    require __DIR__.'/admin/dashboard.php';
 
     /*
     |--------------------------------------------------------------------------
