@@ -1,5 +1,6 @@
 <script type="module">
 import { refreshQuarterAvailability as updateQuarterAvailability } from {{ Illuminate\Support\Js::from(Vite::asset('resources/js/pages/monitoring-quarter-availability.js')) }};
+import { createMonitoringRow } from {{ Illuminate\Support\Js::from(Vite::asset('resources/js/pages/monitoring-row-template.js')) }};
 function initializeMonitoringEditor() {
     const form = document.getElementById('monitoring-form');
     if (!form || form.dataset.monitoringInitialized === 'true') return;
@@ -56,7 +57,6 @@ function initializeMonitoringEditor() {
     let editingRecord = null;
     let selectedProjectValue = '';
     let periodValues = {year: '', quarter_id: ''};
-    const ownInputs = row => Array.from(row.querySelectorAll('[data-key]')).filter(input => input.closest('[data-kind]') === row);
     const rootRows = kind => Array.from(containers[kind].children);
     const incomeRows = row => Array.from(row.incomeGroup.querySelector('[data-income-container]').children);
     const monthlyRows = row => Array.from(row.querySelector('[data-monthly-container]').children);
@@ -131,13 +131,9 @@ function initializeMonitoringEditor() {
         notice.textContent = 'Enter an activity count and actual production quantity for each month. Enter 0 explicitly for confirmed zero; blank means unrecorded. The server calculates and saves the quarterly sum.';
     }
     function addMonthly(production, values = {}, index = 0) {
-        const row = document.getElementById('monitoring-monthly-template').content.firstElementChild.cloneNode(true);
-        ownInputs(row).forEach(input => {
-            input.name = `${production.dataset.prefix}[monthly_details][${index}][${input.dataset.key}]`;
-            input.id = 'monitoring-' + input.name.replace(/[^a-zA-Z0-9_-]/g, '-');
-            row.querySelector(`[data-label="${input.dataset.key}"]`)?.setAttribute('for', input.id);
-            input.value = values[input.dataset.key] ?? '';
-            if (input.dataset.key === 'id') input.disabled = !values.id;
+        const row = createMonitoringRow({
+            template: document.getElementById('monitoring-monthly-template'),
+            prefix: `${production.dataset.prefix}[monthly_details][${index}]`, values,
         });
         const month = Number(values.month);
         row.querySelector('[data-month-name]').textContent = [monthNames[month], form.elements.year.value].filter(Boolean).join(' ');
@@ -370,19 +366,11 @@ function initializeMonitoringEditor() {
         if (index === null) index = kind === 'income' ? Number(parent.dataset.nextIncome || 0) : counters[kind];
         if (kind === 'income') parent.dataset.nextIncome = String(Math.max(Number(parent.dataset.nextIncome || 0), Number(index) + 1));
         else counters[kind] = Math.max(counters[kind], Number(index) + 1);
-        const row = document.getElementById(`monitoring-${kind}-template`).content.firstElementChild.cloneNode(true);
         const prefix = kind === 'income' ? `${parent.dataset.prefix}[income][${index}]` : `${kind}[${index}]`;
+        const row = createMonitoringRow({ template: document.getElementById(`monitoring-${kind}-template`), prefix, values });
         row.dataset.prefix = prefix;
         row.dataset.originalLabel = values.product_name ?? values.item_name ?? '';
         row.querySelector('[data-row-heading]').textContent = `${kind === 'materials' ? 'Material' : kind === 'production' ? 'Production' : 'Income'} ${Number(index) + 1}`;
-        ownInputs(row).forEach(input => {
-            const key = input.dataset.key;
-            input.name = `${prefix}[${key}]`;
-            input.id = `monitoring-${input.name.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
-            row.querySelector(`[data-label="${key}"]`)?.setAttribute('for', input.id);
-            input.value = values[key] ?? '';
-            if (key === 'id') input.disabled = !values.id;
-        });
         if (kind !== 'income') {
             const payload = kind === 'production' ? 'new_product' : 'new_material';
             const mode = row.querySelector('[data-resource-mode]');
