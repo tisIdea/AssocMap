@@ -92,6 +92,21 @@ class WorkspaceHeaderTest extends TestCase
         $this->assertSame($prefix === 'admin' ? 'SA' : '', $xpath->evaluate('string('.$header.'//span[@class="avatar"])'));
     }
 
+    public function test_admin_email_placeholder_preserves_constraints_without_inline_handlers(): void
+    {
+        $xpath = $this->document($this->renderLayout('admin', 'admin.dashboard'));
+        $dialog = '//dialog[@id="email-modal" and @aria-labelledby="email-modal-title"]';
+        $form = $dialog.'/form[@data-form]';
+        $this->assertSame(1, $xpath->query($form)->length);
+        $this->assertSame(0, $xpath->query($form.'/@onsubmit')->length);
+        $this->assertSame('Change email', $xpath->evaluate('string('.$dialog.'//h2)'));
+        $this->assertSame('Email changes are not connected yet.', $xpath->evaluate('string('.$form.'/p)'));
+        $this->assertSame(1, $xpath->query($form.'//input[@name="new_email" and @id="email-change-new_email" and @type="email" and @required]')->length);
+        $this->assertSame(1, $xpath->query($form.'//label[@for="email-change-new_email"]')->length);
+        $this->assertSame(1, $xpath->query($form.'//button[@type="button" and @data-close-dialog and normalize-space(.)="Cancel"]')->length);
+        $this->assertSame(1, $xpath->query($form.'//button[@type="button" and @disabled and normalize-space(.)="Change Email"]')->length);
+    }
+
     public function test_sidebars_keep_their_existing_role_specific_destinations(): void
     {
         $destinations = [
