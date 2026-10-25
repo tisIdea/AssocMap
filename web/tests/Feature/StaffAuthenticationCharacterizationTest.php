@@ -6,10 +6,12 @@ use App\Http\Middleware\EnsureRole;
 use App\Http\Middleware\EnsureSupabaseAuthenticated;
 use App\Services\SupabaseAuthService;
 use Illuminate\Foundation\Bootstrap\HandleExceptions;
+use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Route;
+use Mockery;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use Tests\TestCase;
@@ -208,6 +210,53 @@ class StaffAuthenticationCharacterizationTest extends TestCase
         $this->assertNotSame($previousId, $response->getCookie(config('session.cookie'))->getValue());
         $this->assertNotSame($previousCsrf, session()->token());
         Http::assertNothingSent();
+    }
+
+    public function test_login_and_logout_require_native_csrf_tokens_before_changing_authentication_state(): void
+    {
+        $middleware = Mockery::mock(ValidateCsrfToken::class, [$this->app, $this->app['encrypter']])
+            ->makePartial()->shouldAllowMockingProtectedMethods();
+        $middleware->shouldReceive('runningUnitTests')->andReturn(false);
+        $this->app->instance(ValidateCsrfToken::class, $middleware);
+        Http::fake([self::PROVIDER.'token*' => Http::response($this->tokens())]);
+        $this->browserSession(['marker' => 'retained session data']);
+        $profile = (array) DB::table('user_profiles')->sole();
+        $this->post('/login', $this->credentials())->assertStatus(419)
+            ->assertSessionMissing('supabase_access_token')->assertSessionHas('marker', 'retained session data');
+        $this->assertSame($profile, (array) DB::table('user_profiles')->sole());
+        Http::assertNothingSent();
+        $login = $this->post('/login', $this->credentials() + ['_token' => session()->token()])
+            ->assertRedirect(route('admin.dashboard'))->assertSessionHas('supabase_access_token', 'synthetic-access');
+        $this->withCookie(config('session.cookie'), $login->getCookie(config('session.cookie'))->getValue());
+        $csrf = session()->token();
+        $this->post('/logout')->assertStatus(419)->assertSessionHas('supabase_access_token', 'synthetic-access')
+            ->assertSessionHas('user_profile_id', self::ID)->assertSessionHas('marker', 'retained session data');
+        $this->assertSame($csrf, session()->token());
+        $this->assertSame($profile, (array) DB::table('user_profiles')->sole());
+        Http::assertSentCount(1);
+        $this->post('/logout', ['_token' => $csrf])->assertRedirect(route('login'))
+            ->assertSessionMissing('supabase_access_token')->assertSessionMissing('user_profile_id')->assertSessionMissing('marker');
+        $this->assertNotSame($csrf, session()->token());
+        Http::assertSentCount(1);
+    }
+
+    public function test_staff_login_rate_limit_blocks_provider_contact_and_preserves_an_existing_session(): void
+    {
+        Http::fake([self::PROVIDER.'token*' => Http::response($this->tokens())]);
+        $this->browserSession(['marker' => 'retained session data']);
+        for ($attempt = 0; $attempt < 5; $attempt++) {
+            $login = $this->post('/login', $this->credentials())->assertRedirect(route('admin.dashboard'))
+                ->assertSessionHas('supabase_access_token', 'synthetic-access');
+            $this->withCookie(config('session.cookie'), $login->getCookie(config('session.cookie'))->getValue());
+        }
+        $profile = (array) DB::table('user_profiles')->sole();
+        $csrf = session()->token();
+        $this->post('/login', $this->credentials())->assertStatus(429)->assertHeader('Retry-After')
+            ->assertSessionHas('supabase_access_token', 'synthetic-access')->assertSessionHas('user_profile_id', self::ID)
+            ->assertSessionHas('user_role', 'system_admin')->assertSessionHas('marker', 'retained session data');
+        $this->assertSame($csrf, session()->token());
+        $this->assertSame($profile, (array) DB::table('user_profiles')->sole());
+        Http::assertSentCount(5);
     }
 
     public function test_middleware_rechecks_database_role_instead_of_client_or_session_role_claims(): void
