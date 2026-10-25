@@ -3,7 +3,7 @@
 namespace Tests\Unit;
 
 use App\Models\UserProfile;
-use App\Services\SupabaseSessionBoundary;
+use App\Services\Auth\SupabaseSessionBoundary;
 use Illuminate\Database\Query\Grammars\PostgresGrammar;
 use Illuminate\Support\Facades\DB;
 use PDOException;

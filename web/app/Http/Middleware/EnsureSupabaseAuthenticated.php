@@ -3,7 +3,7 @@
 namespace App\Http\Middleware;
 
 use App\Models\UserProfile;
-use App\Services\SupabaseAuthService;
+use App\Services\Auth\SupabaseAuthService;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -47,7 +47,7 @@ class EnsureSupabaseAuthenticated
             fn () => UserProfile::findWithRole($supabaseUser['id'], useWritePdo: true));
 
         if (! $profile || ! $profile->canAccessApplication($supabaseUser)
-            || ! app(\App\Services\SupabaseSessionBoundary::class)->allows($profile, $supabaseUser, $accessToken)) {
+            || ! app(\App\Services\Auth\SupabaseSessionBoundary::class)->allows($profile, $supabaseUser, $accessToken)) {
             $request->session()->invalidate();
             $request->session()->regenerateToken();
 

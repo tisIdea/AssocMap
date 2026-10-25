@@ -5,7 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\UserManagementIndexRequest;
 use App\Models\UserProfile;
-use App\Services\UserManagementQueryService;
+use App\Services\Auth\UserManagementQueryService;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Log;

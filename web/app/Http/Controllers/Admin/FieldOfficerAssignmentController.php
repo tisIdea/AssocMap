@@ -6,7 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\UpdateFieldOfficerAssignmentsRequest;
 use App\Models\Association;
 use App\Models\UserProfile;
-use App\Services\FieldOfficerAssignmentService;
+use App\Services\Associations\FieldOfficerAssignmentService;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;

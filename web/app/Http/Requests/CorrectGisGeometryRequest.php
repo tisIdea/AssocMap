@@ -2,7 +2,7 @@
 
 namespace App\Http\Requests;
 
-use App\Services\GisGeometry;
+use App\Services\GIS\GisGeometry;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Validator;
 

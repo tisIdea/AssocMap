@@ -2,8 +2,8 @@
 
 namespace Tests\Feature;
 
-use App\Services\MemberApplicationPhotoService;
-use App\Services\SupabaseAuthService;
+use App\Services\Auth\SupabaseAuthService;
+use App\Services\Members\MemberApplicationPhotoService;
 use Illuminate\Foundation\Bootstrap\HandleExceptions;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;

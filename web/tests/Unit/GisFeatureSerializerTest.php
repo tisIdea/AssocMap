@@ -3,7 +3,7 @@
 namespace Tests\Unit;
 
 use App\Models\GisLocation;
-use App\Services\GisFeatureSerializer;
+use App\Services\GIS\GisFeatureSerializer;
 use Tests\TestCase;
 
 class GisFeatureSerializerTest extends TestCase

@@ -6,14 +6,14 @@ use App\Exceptions\MemberApplicationPhotoUnavailableException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreMemberApplicationRequest;
 use App\Http\Requests\MemberRegisterRequest;
-use App\Services\MemberDirectoryQueryService;
+use App\Services\Members\MemberApplicationService;
 use App\Models\AssociationAccount;
 use App\Models\AssociationPosition;
 use App\Models\MemberApplication;
 use App\Models\MemberClassification;
 use App\Models\SexCategory;
-use App\Services\MemberApplicationService;
-use App\Services\MemberExecutivePositionService;
+use App\Services\Members\MemberDirectoryQueryService;
+use App\Services\Members\MemberExecutivePositionService;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
@@ -27,7 +27,7 @@ class MemberApplicationController extends Controller
         $currentUser = $request->attributes->get('current_user');
 
         $associationAccount = AssociationAccount::query()
-            ->with(app(\App\Services\AssociationGeographyService::class)->relations('association'))
+            ->with(app(\App\Services\Associations\AssociationGeographyService::class)->relations('association'))
             ->where('user_id', $currentUser->id)
             ->where('is_active', true)
             ->first();

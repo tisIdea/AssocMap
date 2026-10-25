@@ -4,8 +4,8 @@ namespace App\Http\Requests;
 
 use App\Models\ProjectProduct;
 use App\Models\Quarter;
-use App\Services\IncomeMonitoringService;
-use App\Services\ProductionMonitoringService;
+use App\Services\Monitoring\IncomeMonitoringService;
+use App\Services\Monitoring\ProductionMonitoringService;
 use Illuminate\Support\Str;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -307,7 +307,7 @@ class StoreMonitoringRequest extends FormRequest
             ],
 
             'materials_revision' => [$record !== null && ($this->route('section') === 'materials'
-                || ($this->route('section') === null && app(\App\Services\MaterialsMonitoringService::class)->includesEdits($this->all())))
+                || ($this->route('section') === null && app(\App\Services\Monitoring\MaterialsMonitoringService::class)->includesEdits($this->all())))
                 ? 'required' : 'nullable', 'string', 'regex:/\A[a-f0-9]{64}\z/D'],
             'deleted_material_ids' => [$record === null ? 'prohibited' : 'sometimes', 'array'],
             'deleted_material_ids.*' => ['required', 'uuid', 'distinct'],

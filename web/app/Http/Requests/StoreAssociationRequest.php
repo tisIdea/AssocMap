@@ -4,7 +4,7 @@ namespace App\Http\Requests;
 
 use App\Models\Association;
 use App\Models\AssociationRegistration;
-use App\Services\AssociationGeographyService;
+use App\Services\Associations\AssociationGeographyService;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;

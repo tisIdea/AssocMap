@@ -4,7 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\MemberRegisterRequest;
-use App\Services\MemberDirectoryQueryService;
+use App\Services\Members\MemberDirectoryQueryService;
 use Illuminate\View\View;
 
 class MemberController extends Controller

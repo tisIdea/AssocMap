@@ -2,7 +2,7 @@
 
 namespace Tests\Feature;
 
-use App\Services\SupabaseAuthService;
+use App\Services\Auth\SupabaseAuthService;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Bootstrap\HandleExceptions;

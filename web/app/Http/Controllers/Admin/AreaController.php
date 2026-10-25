@@ -4,7 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreAreaRequest;
-use App\Services\AreaService;
+use App\Services\Areas\AreaService;
 use Illuminate\Http\RedirectResponse;
 
 class AreaController extends Controller

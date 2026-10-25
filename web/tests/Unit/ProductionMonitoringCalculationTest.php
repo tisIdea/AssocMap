@@ -2,7 +2,7 @@
 
 namespace Tests\Unit;
 
-use App\Services\ProductionMonitoringService;
+use App\Services\Monitoring\ProductionMonitoringService;
 use Illuminate\Validation\ValidationException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;

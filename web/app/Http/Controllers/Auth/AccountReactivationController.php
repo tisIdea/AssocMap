@@ -4,8 +4,8 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\AccountReactivationRequest;
-use App\Services\AccountReactivationService;
-use App\Services\PasswordRecoveryContext;
+use App\Services\Auth\AccountReactivationService;
+use App\Services\Auth\PasswordRecoveryContext;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Throwable;

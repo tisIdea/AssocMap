@@ -6,7 +6,7 @@ use App\Exceptions\InvitationActivationException;
 use App\Models\AssociationAccount;
 use App\Models\UserInvitation;
 use App\Models\UserProfile;
-use App\Services\InvitationActivationService;
+use App\Services\Auth\InvitationActivationService;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;

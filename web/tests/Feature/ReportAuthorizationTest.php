@@ -3,14 +3,14 @@
 namespace Tests\Feature;
 
 use App\Models\UserProfile;
-use App\Services\SupabaseAuthService;
+use App\Services\Auth\SupabaseAuthService;
 use App\Exceptions\ReportDatasetLimitException;
 use App\Exceptions\ReportingUnavailableException;
-use App\Services\Reporting\ReportDataset;
 use App\Services\Reporting\PythonReportEngine;
+use App\Services\Reporting\ReportCatalog;
+use App\Services\Reporting\ReportDataset;
 use App\Services\Reporting\ReportScope;
 use App\Services\Reporting\ReportService;
-use App\Services\Reporting\ReportCatalog;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Http\Request;

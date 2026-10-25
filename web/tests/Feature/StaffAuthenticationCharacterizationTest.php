@@ -4,7 +4,7 @@ namespace Tests\Feature;
 
 use App\Http\Middleware\EnsureRole;
 use App\Http\Middleware\EnsureSupabaseAuthenticated;
-use App\Services\SupabaseAuthService;
+use App\Services\Auth\SupabaseAuthService;
 use Illuminate\Foundation\Bootstrap\HandleExceptions;
 use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Http\Request;

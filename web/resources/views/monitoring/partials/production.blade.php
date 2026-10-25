@@ -20,7 +20,7 @@
     @if($production->quantity_source === 'daily_harvest')
         @php
             $harvestingDays = $production->monthlyDetails->sum('activity_count');
-            $attainment = app(\App\Services\ProductionMonitoringService::class)->goalAttainment($production, $harvestingDays);
+            $attainment = app(\App\Services\Monitoring\ProductionMonitoringService::class)->goalAttainment($production, $harvestingDays);
             $progressValue = $attainment === null ? null : min(100, max(0, (float) $attainment));
             $cardId = 'daily-harvest-'.$production->id;
             $progressMessage = $harvestingDays === 0 ? 'Goal attainment is unavailable until harvest records are submitted.'

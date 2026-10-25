@@ -2,7 +2,7 @@
 
 namespace Tests\Unit;
 
-use App\Services\MemberExecutivePositionService;
+use App\Services\Members\MemberExecutivePositionService;
 use Illuminate\Database\QueryException;
 use PDOException;
 use Tests\TestCase;

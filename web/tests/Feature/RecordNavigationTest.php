@@ -3,8 +3,8 @@
 namespace Tests\Feature;
 
 use App\Models\Training;
-use App\Services\GisQueryService;
-use App\Services\SupabaseAuthService;
+use App\Services\Auth\SupabaseAuthService;
+use App\Services\GIS\GisQueryService;
 use DOMDocument;
 use DOMXPath;
 use Illuminate\Database\Schema\Blueprint;

@@ -4,7 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\UserInvitation;
 use App\Models\UserProfile;
-use App\Services\UserInvitationResendService;
+use App\Services\Auth\UserInvitationResendService;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request as ProviderRequest;

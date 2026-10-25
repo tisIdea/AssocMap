@@ -5,7 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\ResendUserInvitationRequest;
 use App\Models\UserProfile;
-use App\Services\UserInvitationResendService;
+use App\Services\Auth\UserInvitationResendService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Log;

@@ -4,9 +4,9 @@ namespace Tests\Feature;
 
 use App\Http\Middleware\ApiRequestGuard;
 use App\Models\UserProfile;
-use App\Services\AccountReactivationService;
-use App\Services\InvitationActivationContext;
-use App\Services\UserAccessRevocationService;
+use App\Services\Auth\AccountReactivationService;
+use App\Services\Auth\InvitationActivationContext;
+use App\Services\Auth\UserAccessRevocationService;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Http\Client\ConnectionException;

@@ -2,7 +2,7 @@
 
 namespace Tests\Unit;
 
-use App\Services\SupabaseAuthService;
+use App\Services\Auth\SupabaseAuthService;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Bootstrap\HandleExceptions;
 use Illuminate\Http\Client\ConnectionException;

@@ -6,7 +6,7 @@ use App\Http\Middleware\EnsureRole;
 use App\Http\Middleware\EnsureSupabaseAuthenticated;
 use App\Http\Middleware\LocalRequestTiming;
 use App\Providers\AppServiceProvider;
-use App\Services\SupabaseAuthService;
+use App\Services\Auth\SupabaseAuthService;
 use Illuminate\Foundation\Bootstrap\HandleExceptions;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Route;

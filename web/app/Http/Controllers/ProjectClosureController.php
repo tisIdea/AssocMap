@@ -8,10 +8,10 @@ use App\Models\MonitoringRecord;
 use App\Models\ProgramActivityRecord;
 use App\Models\Project;
 use App\Models\Training;
-use App\Services\AssociationLifecycleService;
-use App\Services\ProjectClosureService;
-use App\Services\ProjectLifecycleService;
-use App\Services\GisQueryService;
+use App\Services\Associations\AssociationLifecycleService;
+use App\Services\GIS\GisQueryService;
+use App\Services\Projects\ProjectClosureService;
+use App\Services\Projects\ProjectLifecycleService;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
@@ -28,7 +28,7 @@ class ProjectClosureController extends Controller
 {
     public function show(Request $request, Project $project, ProjectLifecycleService $lifecycle, AssociationLifecycleService $associations, GisQueryService $gis): View
     {
-        $project->load(app(\App\Services\AssociationGeographyService::class)->relations('association'));
+        $project->load(app(\App\Services\Associations\AssociationGeographyService::class)->relations('association'));
         abort_unless($project->association, 404);
         $actor = $request->attributes->get('current_user');
         $lifecycle->authorize($actor, $project->association);

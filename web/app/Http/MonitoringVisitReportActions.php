@@ -5,7 +5,7 @@ namespace App\Http;
 use App\Http\Requests\StoreMonitoringVisitReportRequest;
 use App\Models\MonitoringRecord;
 use App\Models\MonitoringVisitReport;
-use App\Services\MonitoringService;
+use App\Services\Monitoring\MonitoringService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;

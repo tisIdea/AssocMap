@@ -2,7 +2,7 @@
 
 namespace Tests\Feature;
 
-use App\Services\SupabaseAuthService;
+use App\Services\Auth\SupabaseAuthService;
 use DOMDocument;
 use DOMXPath;
 use Illuminate\Foundation\Bootstrap\HandleExceptions;

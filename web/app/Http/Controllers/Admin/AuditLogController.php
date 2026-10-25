@@ -6,7 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\AuditLogIndexRequest;
 use App\Models\AuditLog;
 use App\Models\UserProfile;
-use App\Services\AuditLogService;
+use App\Services\Audit\AuditLogService;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
 use Illuminate\View\View;

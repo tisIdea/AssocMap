@@ -2,7 +2,7 @@
 
 namespace Tests\Unit;
 
-use App\Services\SupabaseInvitationProvider;
+use App\Services\Auth\SupabaseInvitationProvider;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;

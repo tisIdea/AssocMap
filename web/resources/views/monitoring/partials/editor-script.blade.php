@@ -6,7 +6,7 @@ function initializeMonitoringEditor() {
     if (!form || form.dataset.monitoringInitialized === 'true') return;
     form.dataset.monitoringInitialized = 'true';
     const records = {{ Illuminate\Support\Js::from($rows->values()) }};
-    const quarters = {{ Illuminate\Support\Js::from($quarters->map(fn ($quarter) => ['id' => $quarter->id, 'quarter_number' => $quarter->quarter_number, 'months' => app(\App\Services\ProductionMonitoringService::class)->monthsForQuarter($quarter->quarter_number)])->values()) }};
+    const quarters = {{ Illuminate\Support\Js::from($quarters->map(fn ($quarter) => ['id' => $quarter->id, 'quarter_number' => $quarter->quarter_number, 'months' => app(\App\Services\Monitoring\ProductionMonitoringService::class)->monthsForQuarter($quarter->quarter_number)])->values()) }};
     const monthNames = {{ Illuminate\Support\Js::from($months) }};
     const projects = {{ Illuminate\Support\Js::from($projectRows) }};
     const occupiedPeriods = {{ Illuminate\Support\Js::from($occupiedPeriods ?? collect()) }};

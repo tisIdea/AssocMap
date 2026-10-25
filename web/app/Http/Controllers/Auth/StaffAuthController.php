@@ -5,7 +5,7 @@ namespace App\Http\Controllers\Auth;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StaffLoginRequest;
 use App\Models\UserProfile;
-use App\Services\SupabaseAuthService;
+use App\Services\Auth\SupabaseAuthService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 
@@ -45,7 +45,7 @@ class StaffAuthController extends Controller
 
         if ($profile->auth_sessions_valid_after !== null) {
             $verified = $supabaseAuth->getUser($authData['access_token']);
-            if (! $verified || ! app(\App\Services\SupabaseSessionBoundary::class)->allows($profile, $verified, $authData['access_token'])) {
+            if (! $verified || ! app(\App\Services\Auth\SupabaseSessionBoundary::class)->allows($profile, $verified, $authData['access_token'])) {
                 return $this->rejectLogin($request, 'Fresh password sign-in is required. Wait a moment and sign in again.');
             }
         }

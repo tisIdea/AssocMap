@@ -2,7 +2,7 @@
 
 namespace App\Http\Requests;
 
-use App\Services\InvitationActivationContext;
+use App\Services\Auth\InvitationActivationContext;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Http\Exceptions\HttpResponseException;

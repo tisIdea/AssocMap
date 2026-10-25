@@ -4,7 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\GisParentRequest;
 use App\Http\Requests\GisQueryRequest;
-use App\Services\GisQueryService;
+use App\Services\GIS\GisQueryService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\View\View;
 

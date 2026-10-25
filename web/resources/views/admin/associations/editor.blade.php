@@ -1,5 +1,5 @@
 @php
-    $geography = app(\App\Services\AssociationGeographyService::class);
+    $geography = app(\App\Services\Associations\AssociationGeographyService::class);
     $directGeography = $geography->enabled();
     $associationAreas = collect($catalog['options']['area_records']);
     $associationEditorErrors = $errors->any() && old('association_form') === 'editor';

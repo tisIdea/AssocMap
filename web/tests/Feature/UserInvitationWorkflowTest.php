@@ -4,7 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\UserInvitation;
 use App\Models\UserProfile;
-use App\Services\InvitationActivationService;
+use App\Services\Auth\InvitationActivationService;
 use Illuminate\Database\QueryException;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Http\Client\ConnectionException;
