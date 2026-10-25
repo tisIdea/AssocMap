@@ -7,15 +7,6 @@ use App\Http\Controllers\Admin\UserManagementController;
 use App\Http\Controllers\Admin\UserAccessController;
 use App\Http\Controllers\Admin\FieldOfficerAssignmentController;
 
-use App\Http\Controllers\AssociationAccount\MemberApplicationController
-    as AssociationAccountMemberApplicationController;
-
-use App\Http\Controllers\FieldOfficer\MemberApplicationController
-    as FieldOfficerMemberApplicationController;
-
-use App\Http\Controllers\MemberApplicationPhotoController;
-use App\Http\Middleware\MemberApplicationEvidenceHeaders;
-
 use Illuminate\Support\Facades\Route;
 
 require __DIR__.'/shared/reports.php';
@@ -223,44 +214,7 @@ Route::middleware([
 
     require __DIR__.'/field-officer/associations.php';
 
-    Route::get(
-        '/field-officer/member-applications',
-        [
-            FieldOfficerMemberApplicationController::class,
-            'index',
-        ]
-    )->middleware(MemberApplicationEvidenceHeaders::class)->name(
-        'field-officer.member-applications.index'
-    );
-
-    Route::get('/field-officer/member-applications/{memberApplication}/photo', MemberApplicationPhotoController::class)
-        ->whereUuid('memberApplication')
-        ->middleware(MemberApplicationEvidenceHeaders::class)
-        ->name('field-officer.member-applications.photo');
-
-    Route::patch(
-        '/field-officer/member-applications/{memberApplication}/approve',
-        [
-            FieldOfficerMemberApplicationController::class,
-            'approve',
-        ]
-    )
-        ->whereUuid('memberApplication')
-        ->name(
-            'field-officer.member-applications.approve'
-        );
-
-    Route::patch(
-        '/field-officer/member-applications/{memberApplication}/reject',
-        [
-            FieldOfficerMemberApplicationController::class,
-            'reject',
-        ]
-    )
-        ->whereUuid('memberApplication')
-        ->name(
-            'field-officer.member-applications.reject'
-        );
+    require __DIR__.'/field-officer/member-applications.php';
 
     /*
     |--------------------------------------------------------------------------
@@ -315,30 +269,7 @@ Route::middleware([
     require __DIR__.'/association/trainings.php';
     require __DIR__.'/association/program-activities.php';
 
-    Route::get(
-        '/association/member-applications',
-        [
-            AssociationAccountMemberApplicationController::class,
-            'index',
-        ]
-    )->middleware(MemberApplicationEvidenceHeaders::class)->name(
-        'association.member-applications.index'
-    );
-
-    Route::get('/association/member-applications/{memberApplication}/photo', MemberApplicationPhotoController::class)
-        ->whereUuid('memberApplication')
-        ->middleware(MemberApplicationEvidenceHeaders::class)
-        ->name('association.member-applications.photo');
-
-    Route::post(
-        '/association/member-applications',
-        [
-            AssociationAccountMemberApplicationController::class,
-            'store',
-        ]
-    )->middleware(MemberApplicationEvidenceHeaders::class)->name(
-        'association.member-applications.store'
-    );
+    require __DIR__.'/association/member-applications.php';
 });
 
 require __DIR__.'/shared/gis.php';
