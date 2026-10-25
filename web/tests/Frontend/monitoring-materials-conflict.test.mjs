@@ -93,7 +93,7 @@ test('Materials conflict backdrop cannot dismiss the recovery dialog', () => {
 
 test('reinitializing a marked Monitoring editor attaches no more handlers', () => {
     const form = { dataset: { monitoringInitialized: 'true' }, addEventListener() { assert.fail('Duplicate handler'); } };
-    const executable = source.replace(/<\/?script[^>]*>/g, '').replace(/\{\{[^\n]*?\}\}/g, 'null');
+    const executable = source.replace(/^import .*;\n/gm, '').replace(/<\/?script[^>]*>/g, '').replace(/\{\{[^\n]*?\}\}/g, 'null');
     runInNewContext(executable, { document: { getElementById: () => form } });
 });
 
