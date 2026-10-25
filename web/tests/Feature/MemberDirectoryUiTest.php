@@ -2,10 +2,13 @@
 
 namespace Tests\Feature;
 
+use App\Services\MemberApplicationPhotoService;
 use App\Services\SupabaseAuthService;
 use Illuminate\Foundation\Bootstrap\HandleExceptions;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Storage;
 use Mockery;
 use Tests\TestCase;
 
@@ -257,6 +260,208 @@ class MemberDirectoryUiTest extends TestCase
         }
         DB::disableQueryLog();
         app(SupabaseAuthService::class)->shouldHaveReceived('getUser')->times(8);
+    }
+
+    public function test_application_photo_http_responses_preserve_private_headers_and_bytes_for_each_allowed_role_and_state(): void
+    {
+        config(['services.supabase_storage.photo_transport' => 'local']);
+        Storage::fake('member_application_photos');
+        foreach (['jpg' => 'image/jpeg', 'png' => 'image/png'] as $extension => $mime) {
+            foreach (['pending', 'approved', 'rejected'] as $offset => $status) {
+                $id = ($extension === 'jpg' ? 201 : 211) + $offset;
+                $this->application($id, ['status' => $status]);
+                $contents = $this->storeApplicationPhoto($id, $extension);
+                foreach ([4 => 'association', 2 => 'field-officer'] as $actor => $area) {
+                    $this->identity = $this->id($actor);
+                    $response = $this->get(route($area.'.member-applications.photo', $this->id($id)))
+                        ->assertOk()->assertHeader('Content-Type', $mime)
+                        ->assertHeader('Content-Disposition', 'inline; filename="applicant-photo.'.$extension.'"')
+                        ->assertHeader('X-Content-Type-Options', 'nosniff')
+                        ->assertHeader('Referrer-Policy', 'no-referrer');
+                    $this->assertStringContainsString('private', $response->headers->get('Cache-Control'));
+                    $this->assertStringContainsString('no-store', $response->headers->get('Cache-Control'));
+                    $this->assertStringContainsString('max-age=0', $response->headers->get('Cache-Control'));
+                    $this->assertSame($contents, $response->streamedContent());
+                }
+            }
+        }
+    }
+
+    public function test_application_photo_http_access_rechecks_submitter_link_assignment_and_role_before_opening_storage(): void
+    {
+        $this->applicationAuditFixture();
+        config(['services.supabase_storage.photo_transport' => 'local']);
+        Storage::fake('member_application_photos');
+        $this->application(201);
+        $this->application(202, ['association_id' => $this->id(12)]);
+        $this->application(203, ['submitted_by_user_id' => $this->id(5)]);
+        $contents = $this->storeApplicationPhoto(201, 'png');
+        foreach ([4 => 'association', 2 => 'field-officer'] as $actor => $area) {
+            $this->identity = $this->id($actor);
+            $this->assertSame($contents, $this->get(route($area.'.member-applications.photo', $this->id(201)))
+                ->assertOk()->streamedContent());
+        }
+        $photos = Mockery::mock(MemberApplicationPhotoService::class);
+        $photos->shouldNotReceive('open');
+        $this->app->instance(MemberApplicationPhotoService::class, $photos);
+        $before = $this->applicationSnapshot();
+        $this->identity = $this->id(4);
+        foreach ([202, 203, 999] as $application) {
+            $this->get(route('association.member-applications.photo', $this->id($application)))->assertNotFound();
+        }
+        $link = DB::table('association_accounts')->where('user_id', $this->id(4));
+        $link->update(['is_active' => false]);
+        $this->get(route('association.member-applications.photo', $this->id(201)))->assertNotFound();
+        $link->update(['is_active' => true, 'association_id' => $this->id(12)]);
+        $this->get(route('association.member-applications.photo', $this->id(201)))->assertNotFound();
+        $this->identity = $this->id(2);
+        $this->get(route('field-officer.member-applications.photo', $this->id(202)))->assertNotFound();
+        DB::table('associations')->where('id', $this->id(11))->update(['primary_field_officer_id' => $this->id(3)]);
+        $this->get(route('field-officer.member-applications.photo', $this->id(201)))->assertNotFound();
+        foreach ([1 => ['association', 'field-officer'], 2 => ['association'], 4 => ['field-officer']] as $actor => $areas) {
+            $this->identity = $this->id($actor);
+            foreach ($areas as $area) {
+                $this->get(route($area.'.member-applications.photo', $this->id(201)))->assertForbidden();
+            }
+        }
+        $this->flushSession();
+        foreach (['association', 'field-officer'] as $area) {
+            $this->get(route($area.'.member-applications.photo', $this->id(201)))->assertRedirect(route('login'));
+        }
+        $this->assertSame($before, $this->applicationSnapshot());
+        $this->assertSame($contents, Storage::disk('member_application_photos')->get(
+            DB::table('member_applications')->where('id', $this->id(201))->value('applicant_photo_path')));
+    }
+
+    public function test_http_review_decisions_preserve_admission_and_audit_and_reject_replayed_or_invalid_decisions(): void
+    {
+        $this->applicationAuditFixture();
+        DB::table('association_positions')->insert([
+            'id' => 2, 'name' => 'President', 'code' => 'PRESIDENT',
+            'is_active' => true, 'is_officer' => true, 'sort_order' => 2,
+        ]);
+        $this->application(201, ['position_id' => 2]);
+        $this->application(202);
+        $this->application(203);
+        $this->identity = $this->id(2);
+        $this->get(route('field-officer.member-applications.index'))->assertOk()->assertSee('approve-'.$this->id(201));
+        $this->from(route('field-officer.member-applications.index'))
+            ->patch(route('field-officer.member-applications.approve', $this->id(201)))
+            ->assertRedirect(route('field-officer.member-applications.index'))->assertSessionHasNoErrors();
+        $this->assertDatabaseHas('member_applications', [
+            'id' => $this->id(201), 'status' => 'approved', 'reviewed_by' => $this->id(2), 'rejection_reason' => null,
+        ]);
+        $member = DB::table('members')->where('source_application_id', $this->id(201))->sole();
+        $this->assertSame($this->id(11), $member->association_id);
+        $this->assertSame('active', $member->member_status);
+        $this->assertSame(2, $member->position_id);
+        $this->assertSame([1], DB::table('member_classification_assignments')->where('member_id', $member->id)->pluck('classification_id')->all());
+        $this->assertDatabaseHas('audit_logs', [
+            'action_type' => 'APPOINT ASSOCIATION OFFICER', 'entity_id' => $member->id, 'actor_user_id' => $this->id(2),
+        ]);
+        $this->patchJson(route('field-officer.member-applications.reject', $this->id(203)), ['rejection_reason' => 'Synthetic reason'])
+            ->assertRedirect()->assertSessionHasNoErrors();
+        $this->assertDatabaseHas('member_applications', [
+            'id' => $this->id(203), 'status' => 'rejected', 'reviewed_by' => $this->id(2), 'rejection_reason' => 'Synthetic reason',
+        ]);
+        $before = $this->applicationSnapshot();
+        foreach ([201, 203] as $application) {
+            foreach (['approve', 'reject'] as $decision) {
+                $this->patchJson(route('field-officer.member-applications.'.$decision, $this->id($application)),
+                    ['rejection_reason' => 'Another decision'])->assertStatus(409)->assertJsonValidationErrors('application');
+                $this->assertSame($before, $this->applicationSnapshot());
+            }
+        }
+        $this->patchJson(route('field-officer.member-applications.reject', $this->id(202)), ['rejection_reason' => ' '])
+            ->assertUnprocessable()->assertJsonValidationErrors('rejection_reason');
+        $this->assertSame($before, $this->applicationSnapshot());
+    }
+
+    public function test_http_review_denials_preserve_applications_members_classifications_and_audit_history(): void
+    {
+        $this->applicationAuditFixture();
+        foreach ([201 => 11, 202 => 12, 203 => 13, 204 => 14] as $application => $association) {
+            $this->application($application, ['association_id' => $this->id($association)]);
+        }
+        $this->identity = $this->id(2);
+        $this->patchJson(route('field-officer.member-applications.reject', $this->id(201)), ['rejection_reason' => 'Positive control'])
+            ->assertRedirect()->assertSessionHasNoErrors();
+        $this->assertDatabaseHas('member_applications', ['id' => $this->id(201), 'status' => 'rejected']);
+        $before = $this->applicationSnapshot();
+        foreach (['approve', 'reject'] as $decision) {
+            foreach ([202 => 'reviewer', 203 => 'association_id', 204 => 'association_id'] as $application => $error) {
+                $this->patchJson(route('field-officer.member-applications.'.$decision, $this->id($application)),
+                    ['rejection_reason' => 'Synthetic reason'])->assertUnprocessable()->assertJsonValidationErrors($error);
+            }
+            foreach ([1, 4] as $actor) {
+                $this->identity = $this->id($actor);
+                $this->patchJson(route('field-officer.member-applications.'.$decision, $this->id(202)),
+                    ['rejection_reason' => 'Synthetic reason'])->assertForbidden();
+            }
+            $this->identity = $this->id(2);
+        }
+        $this->assertSame($before, $this->applicationSnapshot());
+    }
+
+    public function test_http_submission_derives_ownership_and_rejects_registered_fishr_duplicates_and_inactive_links(): void
+    {
+        $this->applicationAuditFixture();
+        $this->identity = $this->id(4);
+        $data = [
+            'first_name' => 'Synthetic', 'last_name' => 'Applicant', 'birth_date' => '2000-01-01',
+            'sex_id' => 1, 'position_id' => 1, 'classification_ids' => [1],
+            'endorsement_letter' => 'Private synthetic letter', 'fishr_registration_number' => 'SYNTHETIC-FISHR-15',
+            'association_id' => $this->id(12), 'submitted_by_user_id' => $this->id(5),
+        ];
+        $url = route('association.member-applications.store');
+        $this->from(route('association.member-applications.index'))->post($url, $data)->assertRedirect()->assertSessionHasNoErrors();
+        $application = DB::table('member_applications')->sole();
+        $this->assertSame($this->id(11), $application->association_id);
+        $this->assertSame($this->id(4), $application->submitted_by_user_id);
+        $this->assertSame('pending', $application->status);
+        $this->assertDatabaseCount('members', 0);
+        $this->assertDatabaseCount('audit_logs', 0);
+        foreach (['pending', 'approved'] as $status) {
+            DB::table('member_applications')->where('id', $application->id)->update(['status' => $status]);
+            $before = $this->applicationSnapshot();
+            $this->postJson($url, $data)->assertUnprocessable()->assertJsonValidationErrors('fishr_registration_number');
+            $this->assertSame($before, $this->applicationSnapshot());
+        }
+        DB::table('association_accounts')->where('user_id', $this->id(4))->update(['is_active' => false]);
+        $before = $this->applicationSnapshot();
+        $this->postJson($url, $data)->assertUnprocessable()->assertJsonValidationErrors('account');
+        foreach ([1, 2] as $actor) {
+            $this->identity = $this->id($actor);
+            $this->postJson($url, $data)->assertForbidden();
+        }
+        $this->assertSame($before, $this->applicationSnapshot());
+    }
+
+    private function storeApplicationPhoto(int $application, string $extension): string
+    {
+        $path = 'photos/'.$this->id($application).'/'.$this->id(901).'.'.$extension;
+        $photo = UploadedFile::fake()->image('portrait.'.$extension, 8, 8);
+        $contents = file_get_contents($photo->getPathname());
+        Storage::disk('member_application_photos')->put($path, $contents, 'private');
+        DB::table('member_applications')->where('id', $this->id($application))->update(['applicant_photo_path' => $path]);
+
+        return $contents;
+    }
+
+    private function applicationAuditFixture(): void
+    {
+        DB::statement('CREATE TABLE audit_logs (id TEXT PRIMARY KEY, actor_user_id TEXT, action_type TEXT, module TEXT,
+            entity_type TEXT, entity_id TEXT, old_values TEXT, new_values TEXT, performed_at TEXT)');
+    }
+
+    private function applicationSnapshot(): array
+    {
+        $snapshot = [];
+        foreach (['member_applications', 'members', 'member_application_classifications', 'member_classification_assignments', 'audit_logs'] as $table) {
+            $snapshot[$table] = DB::table($table)->orderByRaw('1, 2')->get()->map(fn ($row) => (array) $row)->all();
+        }
+
+        return $snapshot;
     }
 
     private function assertRegisterColumns(string $html): void
