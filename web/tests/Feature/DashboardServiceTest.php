@@ -459,10 +459,12 @@ class DashboardServiceTest extends TestCase
         ];
         $xpath = $this->dashboardDocument($this->dashboardPage($role, $prefix, $dashboard));
         if ($role === 'association_account') {
-            $this->assertSame(0, $xpath->query('//section[@aria-labelledby="dashboard-projects-title" or @aria-labelledby="dashboard-activities-title"]//strong/a')->length);
+            $this->assertSame([1], array_column($dashboard['recent_projects'], 'id'));
+            $this->assertSame(1, $xpath->query('//section[@aria-labelledby="dashboard-projects-title"]//strong/a')->length);
+            $this->assertSame(0, $xpath->query('//section[@aria-labelledby="dashboard-projects-title"]//strong/a[@href="'.route('association.projects.show', 3).'"]')->length);
+            $this->assertSame(0, $xpath->query('//section[@aria-labelledby="dashboard-activities-title"]//strong/a')->length);
         }
         foreach ($dashboard['recent_projects'] as $project) {
-            if ($role === 'association_account') continue;
             $links = $xpath->query('//section[@aria-labelledby="dashboard-projects-title"]//strong/a[@href="'.route($prefix.'.projects.show', $project['id']).'"]');
             $this->assertSame(1, $links->length);
             if ($links->length) $this->assertSame($project['title'], $links->item(0)->textContent);
@@ -521,7 +523,7 @@ class DashboardServiceTest extends TestCase
         $shortcuts = match ($role) {
             'system_admin' => ['associations.index', 'users.index', 'association-officers.index', 'projects.index', 'trainings.index', 'monitoring.index', 'reports.index', 'gis.index'],
             'field_officer' => ['association-officers.index', 'members.index', 'member-applications.index', 'projects.index', 'trainings.index', 'monitoring.index', 'reports.index', 'gis.index'],
-            default => ['member-applications.index', 'monitoring.index', 'reports.index', 'gis.index'],
+            default => ['member-applications.index', 'projects.index', 'monitoring.index', 'reports.index', 'gis.index'],
         };
         $expected = array_map(fn ($name) => route($prefix.'.'.$name), $shortcuts);
         if ($role === 'field_officer') $expected[] = '#assigned-associations';
@@ -532,6 +534,9 @@ class DashboardServiceTest extends TestCase
             $this->assertSame(2, $link->getElementsByTagName('svg')->length);
         }
         $this->assertSame($expected, $actual);
+        if ($role === 'association_account') {
+            $this->assertSame('My Projects', $xpath->evaluate('string(//main//nav[@aria-label="Dashboard quick actions"]/a[2]/span[2])'));
+        }
         $this->assertSame(1, $xpath->query('//main//h1')->length);
         $this->assertSame(match ($role) {
             'field_officer' => 'Field Officer Dashboard', 'association_account' => 'Association Dashboard', default => 'Dashboard',

@@ -28,6 +28,7 @@ class ProgramManagementUiTest extends TestCase
         $this->assertSame('sqlite', DB::connection()->getDriverName());
         $this->assertSame(':memory:', DB::connection()->getConfig('database'));
         config(['app.key' => 'base64:'.base64_encode(str_repeat('p', 32))]);
+        config(['associations.geography_schema_ready' => false, 'associations.direct_geography' => false]);
         $this->withoutVite();
         $this->identity = $this->id(1);
         $auth = Mockery::mock(SupabaseAuthService::class);
@@ -106,7 +107,7 @@ class ProgramManagementUiTest extends TestCase
     {
         DB::statement('ALTER TABLE associations ADD COLUMN barangay_id TEXT');
         DB::statement('UPDATE associations SET barangay_id=(SELECT barangay_id FROM areas WHERE areas.id=associations.area_id), area_id=NULL');
-        config(['associations.geography_schema_ready' => true]);
+        config(['associations.geography_schema_ready' => true, 'associations.direct_geography' => true]);
         $this->project(101);
         $this->project(102, ['association_id' => $this->id(12), 'title' => 'Outside Project']);
         $this->training(201);
@@ -247,7 +248,7 @@ class ProgramManagementUiTest extends TestCase
             $queries = count(DB::getQueryLog());
             DB::disableQueryLog();
             fwrite(STDOUT, "\n/{$prefix}/trainings editor (".($archived ? 'archived' : 'eligible')." Project): {$queries} queries\n");
-            $this->assertSame($archived ? 17 : 16, $queries, 'Editor query counts must remain at the pre-fix baseline.');
+            $this->assertSame($archived ? 16 : 15, $queries, 'Editor query counts must match the verified legacy-geography baseline.');
             $this->assertSame($this->id($id), $editor->viewData('row')['related_project_id']);
             $this->assertSame('Recorded <Project> '.$id, $editor->viewData('row')['related_project']);
             $state = $this->trainingFormState($editor);
@@ -498,8 +499,9 @@ class ProgramManagementUiTest extends TestCase
         $response = $this->get('/'.$prefix.'/projects')->assertOk();
         $after = count(DB::getQueryLog());
         DB::disableQueryLog();
-        $this->assertSame(11, $before);
+        $this->assertSame(10, $before);
         $this->assertSame($before, $after);
+        $response->assertSee('Test Barangay')->assertSee('Test Municipality');
         $this->assertCount(25, $response->viewData('projects'));
         $this->assertSame(30, $response->viewData('projects')->total());
         app(SupabaseAuthService::class)->shouldHaveReceived('getUser')->times(2);
@@ -714,6 +716,109 @@ class ProgramManagementUiTest extends TestCase
             $this->getJson('/'.$prefix.'/program-activities?'.$query)->assertUnprocessable();
         }
         $this->get('/'.$prefix.'/program-activities?q=Missing')->assertOk()->assertSee('No matching program activities');
+    }
+
+    #[DataProvider('managerRoles')]
+    public function test_activity_index_keeps_exact_view_data_and_html_even_when_json_is_requested(string $prefix, int $actor): void
+    {
+        $this->identity = $this->id($actor);
+        $this->project(101);
+        $this->activity(201, ['related_project_id' => $this->id(101)]);
+        $expected = [
+            'id' => $this->id(201), 'project_finalized' => false, 'association_archived' => false,
+            'parents_operational' => true, 'can_manage' => true, 'can_view_project' => true,
+            'saad_activity_id' => 3, 'activity' => 'Organizational Development', 'activity_code' => 'SP_ORG',
+            'association_id' => $this->id(11), 'association' => 'Association 11',
+            'municipality' => 'Test Municipality', 'barangay' => 'Test Barangay',
+            'related_project_id' => $this->id(101), 'related_project' => 'Test Project',
+            'title' => 'Activity 201', 'description' => null, 'program_year' => 2026,
+            'activity_date' => '2026-01-01', 'venue' => null, 'status' => 'Planned', 'status_value' => 'planned',
+            'conducted_by' => null, 'remarks' => null, 'archived' => false,
+            'update_url' => route($prefix.'.program-activities.update', $this->id(201)),
+            'archive_url' => route($prefix.'.program-activities.archive', $this->id(201)),
+            'unarchive_url' => route($prefix.'.program-activities.unarchive', $this->id(201)),
+        ];
+        $counts = [];
+        foreach (['get', 'getJson'] as $method) {
+            DB::enableQueryLog();
+            DB::flushQueryLog();
+            try {
+                $page = $this->{$method}('/'.$prefix.'/program-activities')->assertOk()->assertViewIs('program-activities.register');
+                $counts[] = count(DB::getQueryLog());
+            } finally {
+                DB::disableQueryLog();
+            }
+            $this->assertStringStartsWith('text/html', $page->headers->get('Content-Type'));
+            $this->assertSame($prefix, $page->viewData('prefix'));
+            $this->assertSame(['q' => '', 'association' => '', 'year' => '', 'status' => '', 'sort' => 'year'], $page->viewData('filters'));
+            $this->assertSame(['current' => 1, 'archived' => 0, 'planned' => 1, 'ongoing' => 0, 'completed' => 0, 'cancelled' => 0], $page->viewData('summary'));
+            $this->assertSame([$expected], $page->viewData('rows')->all());
+            $this->assertSame(false, $page->viewData('showEditor'));
+            $this->assertArrayNotHasKey('associations', $page->original->getData());
+            $this->assertSame(1, $page->viewData('records')->total());
+            $this->assertSame(25, $page->viewData('records')->perPage());
+        }
+        $this->assertSame($counts[0], $counts[1]);
+        fwrite(STDOUT, "\n/{$prefix}/program-activities HTML / JSON Accept: ".implode(' / ', $counts)." queries\n");
+    }
+
+    #[DataProvider('managerRoles')]
+    public function test_activity_lookup_keeps_exact_json_and_skips_register_queries(string $prefix, int $actor): void
+    {
+        $this->identity = $this->id($actor);
+        $this->project(101);
+        $this->activity(201);
+        $associations = [['value' => $this->id(11), 'label' => 'Association 11']];
+        if ($prefix === 'admin') {
+            $associations[] = ['value' => $this->id(12), 'label' => 'Association 12'];
+        }
+        $choices = [
+            'associations' => $associations,
+            'activities' => [['value' => '3', 'label' => 'Organizational Development']],
+            'projects' => [['value' => $this->id(101), 'label' => 'Test Project', 'association_id' => $this->id(11)]],
+        ];
+        $counts = [];
+        foreach ($choices as $kind => $options) {
+            $query = ['lookup' => $kind] + ($kind === 'projects' ? ['association_id' => $this->id(11)] : []);
+            DB::enableQueryLog();
+            DB::flushQueryLog();
+            try {
+                $this->get('/'.$prefix.'/program-activities?'.http_build_query($query))->assertOk()
+                    ->assertHeader('Content-Type', 'application/json')
+                    ->assertExactJson(['options' => $options, 'page' => 1, 'has_more' => false]);
+                $queries = DB::getQueryLog();
+                $counts[$kind] = count($queries);
+                foreach ($queries as $executed) {
+                    $this->assertStringNotContainsString('program_activity_records', $executed['query']);
+                }
+            } finally {
+                DB::disableQueryLog();
+            }
+        }
+        fwrite(STDOUT, "\n/{$prefix}/program-activities lookups: ".json_encode($counts)." queries\n");
+    }
+
+    public function test_activity_register_and_lookups_reject_wrong_roles_and_respect_revoked_assignments(): void
+    {
+        $this->activity(201);
+        $this->identity = $this->id(2);
+        DB::table('associations')->where('id', $this->id(11))->update(['primary_field_officer_id' => $this->id(3)]);
+        $before = DB::table('program_activity_records')->get()->toJson();
+        $page = $this->get('/field-officer/program-activities')->assertOk();
+        $this->assertSame(0, $page->viewData('records')->total());
+        $this->assertSame([], $page->viewData('rows')->all());
+        $this->getJson('/field-officer/program-activities?lookup=associations')->assertOk()
+            ->assertExactJson(['options' => [], 'page' => 1, 'has_more' => false]);
+        foreach ([[1, 'field-officer'], [2, 'admin'], [4, 'admin'], [4, 'field-officer']] as [$actor, $prefix]) {
+            $this->identity = $this->id($actor);
+            foreach (['', '?lookup=associations'] as $query) {
+                $this->getJson('/'.$prefix.'/program-activities'.$query)->assertForbidden();
+            }
+        }
+        $this->flushSession();
+        $this->get('/field-officer/program-activities')->assertRedirect(route('login'));
+        $this->getJson('/field-officer/program-activities?lookup=associations')->assertRedirect(route('login'));
+        $this->assertSame($before, DB::table('program_activity_records')->get()->toJson());
     }
 
     #[DataProvider('managerRoles')]

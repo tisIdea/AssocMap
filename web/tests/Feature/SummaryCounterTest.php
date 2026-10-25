@@ -56,8 +56,12 @@ class SummaryCounterTest extends TestCase
             'generated_at' => '2026-10-17T00:00:00Z', 'timezone' => 'Asia/Manila', 'scope_count' => 1,
             'association' => ['name' => 'Synthetic association', 'municipality' => 'Synthetic municipality', 'status' => 'active', 'joined_on' => '2026-01-01'],
             'metrics' => [
-                ['label' => 'Official members', 'value' => 12345, 'icon' => 'users', 'note' => 'Authorized records'],
-                ['label' => 'Missing statistic', 'value' => null, 'icon' => 'chart', 'note' => 'Unavailable source'],
+                ['key' => 'associations_total', 'label' => 'Registered associations', 'value' => 23456, 'icon' => 'building', 'note' => 'Retained associations'],
+                ['key' => 'associations_active', 'label' => 'Assigned active associations', 'value' => 34567, 'icon' => 'building', 'note' => 'Current assignments'],
+                ['key' => 'members_total', 'label' => 'Official members', 'value' => 12345, 'icon' => 'users', 'note' => 'Authorized records'],
+                ['key' => 'projects_total', 'label' => 'Registered projects', 'value' => null, 'icon' => 'briefcase', 'note' => 'Unavailable source'],
+                ['key' => 'applications_pending', 'label' => 'Pending member applications', 'value' => 0, 'icon' => 'receipt', 'note' => 'Awaiting review'],
+                ['key' => 'members_active', 'label' => 'Active official members', 'value' => 987654, 'icon' => 'users', 'note' => 'Unselected authorized metric'],
             ],
             'applications' => ['pending' => 0, 'approved' => 10, 'rejected' => 1],
             'officer_attention' => 0, 'charts' => [], 'associations' => [], 'recent_projects' => [], 'activities' => [],
@@ -65,9 +69,33 @@ class SummaryCounterTest extends TestCase
             'monitoring' => ['records' => 100, 'periods' => 4, 'visits' => null, 'recent' => []],
         ];
         $html = view('dashboard.content', compact('role', 'prefix', 'dashboard') + ['state' => 'ready'])->render();
-        $this->assertStringContainsString('>12,345</span>', $html);
-        $this->assertSame(2, substr_count($html, '>Unavailable</span>'));
-        $this->assertSame($role === 'system_admin' ? 8 : 11, substr_count($html, 'data-summary-counter'));
+        $this->assertSame($role !== 'association_account', str_contains($html, '>12,345</span>'));
+        $this->assertSame($role === 'system_admin' ? 2 : 1, substr_count($html, '>Unavailable</span>'));
+        $this->assertSame(match ($role) {
+            'system_admin' => 9, 'field_officer' => 12, default => 10,
+        }, substr_count($html, 'data-summary-counter'));
+        $this->assertSame(1, preg_match('/<section class="dashboard-metrics"[^>]*>(.*?)<\/section>/s', $html, $summary));
+        preg_match_all('/<a class="dashboard-summary-link" href="([^"]+)"[^>]*>(.*?)<\/a>/s', $summary[1], $cards, PREG_SET_ORDER);
+        $expected = match ($role) {
+            'system_admin' => [
+                ['associations.index', 'Total Associations', '23,456'],
+                ['members.index', 'Total Members', '12,345'],
+                ['projects.index', 'Total Projects', 'Unavailable'],
+            ],
+            'field_officer' => [
+                ['association-officers.index', 'Assigned Associations', '34,567'],
+                ['members.index', 'Total Members', '12,345'],
+                ['member-applications.index', 'Pending Applications', '0'],
+            ],
+            default => [['member-applications.index', 'Pending Applications', '0']],
+        };
+        $this->assertSame(array_map(fn ($card) => route($prefix.'.'.$card[0], $card[0] === 'member-applications.index' ? ['status' => 'pending'] : []), $expected), array_column($cards, 1));
+        foreach ($expected as $index => [, $label, $value]) {
+            $this->assertStringContainsString($label, $cards[$index][2]);
+            $this->assertStringContainsString('>'.$value.'</span>', $cards[$index][2]);
+        }
+        $this->assertStringNotContainsString('987,654', $html);
+        $this->assertStringNotContainsString('Unselected authorized metric', $html);
         $this->assertStringContainsString(route($prefix.'.monitoring.index'), $html);
         $this->assertSame($role === 'system_admin', str_contains($html, 'Review accounts & assignments'));
 

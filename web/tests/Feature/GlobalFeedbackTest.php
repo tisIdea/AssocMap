@@ -50,7 +50,7 @@ class GlobalFeedbackTest extends TestCase
         })->middleware('web');
         Route::get('/_test/feedback-association', fn () => view('admin.associations.index', [
             'module' => ['key' => 'associations', 'title' => 'Associations', 'description' => '', 'filters' => [], 'columns' => [], 'rows' => []],
-            'catalog' => ['options' => ['area_records' => [], 'field_officer_records' => [], 'registration_agencies' => []]],
+            'catalog' => ['options' => ['area_records' => [], 'municipality_records' => [], 'barangay_records' => [], 'field_officer_records' => [], 'registration_agencies' => []]],
         ]))->middleware('web');
     }
 
@@ -146,11 +146,12 @@ class GlobalFeedbackTest extends TestCase
 
     public function test_association_marker_restores_only_its_own_input_and_errors(): void
     {
+        config(['associations.geography_schema_ready' => true, 'associations.direct_geography' => true]);
         $errors = (new ViewErrorBag)->put('default', new MessageBag(['name' => 'Synthetic name error.']));
         foreach (['area_form', 'association_form'] as $marker) {
             $page = $this->withSession(['errors' => $errors, '_old_input' => [$marker => 'editor',
                 'name' => 'Synthetic submitted name', 'registration' => ['remarks' => 'Synthetic registration draft']]])
-                ->get('/_test/feedback-association')->assertOk();
+                ->get('/_test/feedback-association')->assertOk()->assertSee('data-direct-geography="true"', false);
             if ($marker === 'association_form') {
                 $page->assertSee('data-has-errors="true"', false)->assertSee('data-association-validation', false)
                     ->assertSee('Synthetic submitted name')->assertSee('Synthetic registration draft')

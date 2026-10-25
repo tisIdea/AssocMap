@@ -32,6 +32,8 @@ class MemberOfficerLifecycleTest extends TestCase
     private const ASSOCIATION = '44444444-4444-4444-8444-444444444444';
     private const OTHER_ASSOCIATION = '55555555-5555-4555-8555-555555555555';
 
+    private string $identity = self::ADMIN;
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -44,7 +46,7 @@ class MemberOfficerLifecycleTest extends TestCase
         $this->fixtures();
         $this->app->instance(MemberApplicationPhotoService::class, Mockery::mock(MemberApplicationPhotoService::class));
         $auth = Mockery::mock(SupabaseAuthService::class);
-        $auth->shouldReceive('getUser')->andReturn(['id' => self::ADMIN]);
+        $auth->shouldReceive('getUser')->andReturnUsing(fn () => ['id' => $this->identity]);
         $this->app->instance(SupabaseAuthService::class, $auth);
     }
 
@@ -76,6 +78,8 @@ class MemberOfficerLifecycleTest extends TestCase
         });
         Schema::create('associations', function (Blueprint $table) {
             $table->uuid('id')->primary(); $table->string('name'); $table->string('status');
+            $table->uuid('area_id')->nullable();
+            $table->uuid('barangay_id')->nullable();
             $table->uuid('primary_field_officer_id'); $table->timestamp('archived_at')->nullable(); $table->timestamps();
         });
         Schema::create('association_positions', function (Blueprint $table) {
@@ -164,7 +168,7 @@ class MemberOfficerLifecycleTest extends TestCase
         ], $overrides))->save();
         $application->classifications()->attach(1);
 
-        return $application;
+        return $application->refresh();
     }
 
     private function member(int $position = 2, array $overrides = []): Member
@@ -178,14 +182,37 @@ class MemberOfficerLifecycleTest extends TestCase
         ], $overrides))->save();
         $member->classifications()->attach(1);
 
-        return $member;
+        return $member->refresh();
     }
 
-    private function memberData(Member $member, int $position): array
+    private function memberData(Member $member, string $action = 'reactivate'): array
     {
-        return ['association_id' => $member->association_id, 'first_name' => $member->first_name,
-            'last_name' => $member->last_name, 'birth_date' => '2000-01-01', 'sex_id' => 1,
-            'position_id' => $position, 'date_registered' => '2025-01-01', 'member_status' => 'active'];
+        return [
+            'member_record_id' => $member->id,
+            'member_action' => $action,
+            'expected_updated_at' => $member->updated_at->format('Y-m-d\TH:i:s.uP'),
+            ...($action === 'profile' ? ['first_name' => 'Updated'] : ['confirm_change' => '1']),
+        ];
+    }
+
+    private function membershipState(): array
+    {
+        $state = [];
+        foreach ([
+            'members' => ['id'],
+            'member_applications' => ['id'],
+            'member_classification_assignments' => ['member_id', 'classification_id'],
+            'member_application_classifications' => ['member_application_id', 'classification_id'],
+            'audit_logs' => ['id'],
+        ] as $table => $columns) {
+            $query = DB::table($table);
+            foreach ($columns as $column) {
+                $query->orderBy($column);
+            }
+            $state[$table] = $query->get()->map(fn ($row) => (array) $row)->all();
+        }
+
+        return $state;
     }
 
     private function assertRejected(callable $operation, string $field, int $status = 422): void
@@ -427,7 +454,9 @@ class MemberOfficerLifecycleTest extends TestCase
             'association_id' => $case === 'wrong_association' ? self::OTHER_ASSOCIATION : self::ASSOCIATION,
         ]);
         $member = $this->member(2, ['source_application_id' => $application->id]);
-        $this->assertRejected(fn () => app(MemberService::class)->unarchive($member, $this->actor(self::ADMIN)), 'member');
+        $before = $member->getRawOriginal();
+        $this->assertRejected(fn () => app(MemberService::class)->unarchive($member, $this->memberData($member), $this->actor()), 'member');
+        $this->assertSame($before, $member->fresh()->getRawOriginal());
         $this->assertNotNull($member->fresh()->archived_at);
         $this->assertSame(self::ADMIN, $member->fresh()->archived_by);
         $this->assertSame(0, DB::table('audit_logs')->count());
@@ -445,31 +474,73 @@ class MemberOfficerLifecycleTest extends TestCase
         $approved = $this->member(3, ['source_application_id' => $application->id]);
         $service = app(MemberService::class);
         foreach ([$direct, $approved] as $member) {
-            $restored = $service->unarchive($member, $this->actor(self::ADMIN));
+            $before = $member->getRawOriginal();
+            $restored = $service->unarchive($member, $this->memberData($member), $this->actor());
             $this->assertNull($restored->archived_at);
+            $this->assertNull($restored->archived_by);
             $this->assertSame('active', $restored->member_status);
             $this->assertSame($member->position_id, $restored->position_id);
             $this->assertSame([1], $restored->classifications()->pluck('member_classifications.id')->all());
+            $after = $restored->fresh()->getRawOriginal();
+            $this->assertSame(array_replace($before, [
+                'archived_at' => null, 'archived_by' => null, 'updated_at' => $after['updated_at'],
+            ]), $after);
+            foreach (['REACTIVATE MEMBER', 'RESTORE ASSOCIATION OFFICER'] as $action) {
+                $event = DB::table('audit_logs')->where('entity_id', $member->id)->where('action_type', $action)->sole();
+                $this->assertSame(self::OFFICER, $event->actor_user_id);
+                $this->assertNotNull(json_decode($event->old_values, true)['archived_at']);
+                $this->assertNull(json_decode($event->new_values, true)['archived_at']);
+            }
         }
         $this->assertSame($application->id, $approved->fresh()->source_application_id);
         $this->assertSame('approved', $application->fresh()->status);
+        $this->assertNull($direct->fresh()->source_application_id);
+        $this->assertSame(2, Member::count());
+        $this->assertDatabaseCount('audit_logs', 4);
+        $this->assertSame(2, DB::table('audit_logs')->where('action_type', 'REACTIVATE MEMBER')->count());
         $this->assertSame(2, DB::table('audit_logs')->where('action_type', 'RESTORE ASSOCIATION OFFICER')->count());
     }
 
-    public function test_restoration_preserves_inactive_status_without_granting_office(): void
+    public function test_reactivation_requires_current_assigned_actor_version_and_confirmation_before_restoring_active_membership(): void
     {
         $member = $this->member(2, ['member_status' => 'inactive']);
-        $restored = app(MemberService::class)->unarchive($member, $this->actor(self::ADMIN));
-        $this->assertSame('inactive', $restored->member_status);
+        $service = app(MemberService::class);
+        $data = $this->memberData($member);
+        $before = $member->getRawOriginal();
+        foreach ([self::ADMIN, self::OTHER_OFFICER] as $actor) {
+            try {
+                $service->unarchive($member, $data, $this->actor($actor));
+                $this->fail('Only the assigned Field Officer may reactivate members.');
+            } catch (HttpException $exception) {
+                $this->assertSame(403, $exception->getStatusCode());
+            }
+            $this->assertSame($before, $member->fresh()->getRawOriginal());
+        }
+        foreach (['member_record_id' => self::OTHER_ASSOCIATION, 'expected_updated_at' => '2020-01-01T00:00:00.000000+00:00'] as $field => $value) {
+            $this->assertRejected(fn () => $service->unarchive($member, array_replace($data, [$field => $value]), $this->actor()), 'member', 409);
+            $this->assertSame($before, $member->fresh()->getRawOriginal());
+        }
+        $this->assertRejected(fn () => $service->unarchive($member, array_replace($data, ['confirm_change' => '0']), $this->actor()), 'confirm_change');
+        $this->assertSame($before, $member->fresh()->getRawOriginal());
+        $this->assertDatabaseCount('audit_logs', 0);
+        $restored = $service->unarchive($member, $data, $this->actor());
+        $this->assertSame('active', $restored->member_status);
         $this->assertNull($restored->archived_at);
-        $this->assertSame(0, DB::table('audit_logs')->count());
+        $this->assertNull($restored->archived_by);
+        $this->assertSame(2, $restored->position_id);
+        $this->assertSame([1], $restored->classifications()->pluck('member_classifications.id')->all());
+        $this->assertDatabaseCount('audit_logs', 2);
+        $this->assertDatabaseHas('audit_logs', ['action_type' => 'REACTIVATE MEMBER', 'entity_id' => $member->id, 'actor_user_id' => self::OFFICER]);
+        $this->assertDatabaseHas('audit_logs', ['action_type' => 'RESTORE ASSOCIATION OFFICER', 'entity_id' => $member->id, 'actor_user_id' => self::OFFICER]);
+        $this->assertRejected(fn () => $service->unarchive($restored, $this->memberData($restored), $this->actor()), 'member');
+        $this->assertDatabaseCount('audit_logs', 2);
     }
 
     public function test_active_restoration_rejects_an_inactive_position_without_demotion(): void
     {
         $member = $this->member();
         DB::table('association_positions')->where('id', 2)->update(['is_active' => false]);
-        $this->assertRejected(fn () => app(MemberService::class)->unarchive($member, $this->actor(self::ADMIN)), 'position_id');
+        $this->assertRejected(fn () => app(MemberService::class)->unarchive($member, $this->memberData($member), $this->actor()), 'position_id');
         $this->assertSame(2, $member->fresh()->position_id);
         $this->assertNotNull($member->fresh()->archived_at);
         $this->assertSame(0, DB::table('audit_logs')->count());
@@ -479,12 +550,44 @@ class MemberOfficerLifecycleTest extends TestCase
     {
         $application = $this->application();
         $member = $this->member(2, ['source_application_id' => $application->id]);
-        $url = route('admin.members.index', ['status' => 'archived']);
+        $unrelated = $this->member(1, ['first_name' => 'Unrelated']);
+        $before = $this->membershipState();
+        $data = $this->memberData($member);
+        $url = route('field-officer.members.index', ['status' => 'archived']);
+        $action = route('field-officer.members.reactivate', $member);
+        $this->patch($action, $data)->assertRedirect(route('login'));
+        $this->assertSame($before, $this->membershipState());
+        foreach ([self::ADMIN, self::OTHER_OFFICER] as $actor) {
+            $this->identity = $actor;
+            $this->withSession(['supabase_access_token' => 'synthetic-test-token'])
+                ->patch($action, $data)->assertForbidden();
+            $this->assertSame($before, $this->membershipState());
+        }
+        $this->identity = self::OFFICER;
+        $this->from($url)->patch($action, array_replace($data, ['confirm_change' => '0']))
+            ->assertRedirect($url)->assertSessionHasErrors(['confirm_change']);
+        $this->assertSame($before, $this->membershipState());
         $this->withSession(['supabase_access_token' => 'synthetic-test-token'])
-            ->from($url)->patch(route('admin.members.unarchive', $member))
-            ->assertRedirect($url)->assertSessionHasErrors(['member'], null, 'memberLifecycle');
+            ->from($url)->patch($action, $data)
+            ->assertRedirect($url)->assertSessionHasErrors(['member'])
+            ->assertSessionHasInput('member_record_id', $member->id)
+            ->assertSessionHasInput('member_action', 'reactivate')
+            ->assertSessionHasInput('expected_updated_at', $data['expected_updated_at'])
+            ->assertSessionHasInput('confirm_change', '1');
         $response = $this->get($url)->assertOk()->assertSee('approved source application');
-        $this->assertMatchesRegularExpression('/data-area-form[\s\S]*?data-has-errors="false"/', $response->getContent());
+        $html = $response->getContent();
+        $this->assertSame(1, preg_match('/<dialog id="member-reactivate-'.$member->id.'".*?<\/dialog>/s', $html, $dialog));
+        $this->assertStringContainsString('class="notice notice-error" role="alert"', $dialog[0]);
+        $this->assertStringContainsString('data-feedback-error-bag="default"', $dialog[0]);
+        $this->assertStringContainsString('action="'.$action.'"', $dialog[0]);
+        $this->assertStringContainsString('name="_token"', $dialog[0]);
+        $this->assertStringContainsString('name="member_action" value="reactivate"', $dialog[0]);
+        $this->assertStringContainsString('name="expected_updated_at" value="'.$data['expected_updated_at'].'"', $dialog[0]);
+        $this->assertSame(1, substr_count($html, 'data-feedback-error-bag="default"'));
+        $this->assertSame(1, preg_match('/<dialog id="member-reactivate-'.$unrelated->id.'".*?<\/dialog>/s', $html, $otherDialog));
+        $this->assertStringNotContainsString('data-feedback-error-bag', $otherDialog[0]);
+        $this->assertStringNotContainsString('approved source application', $otherDialog[0]);
+        $this->assertSame($before, $this->membershipState());
         $this->assertNotNull($member->fresh()->archived_at);
         Http::assertNothingSent();
     }
@@ -493,9 +596,11 @@ class MemberOfficerLifecycleTest extends TestCase
     public function test_restoration_cannot_displace_an_active_executive(int $position): void
     {
         $archived = $this->member($position);
-        $this->member($position, ['archived_at' => null, 'archived_by' => null]);
-        $this->assertRejected(fn () => app(MemberService::class)->unarchive($archived, $this->actor(self::ADMIN)), 'position_id', 409);
+        $holder = $this->member($position, ['archived_at' => null, 'archived_by' => null]);
+        $before = $holder->getRawOriginal();
+        $this->assertRejected(fn () => app(MemberService::class)->unarchive($archived, $this->memberData($archived), $this->actor()), 'position_id', 409);
         $this->assertNotNull($archived->fresh()->archived_at);
+        $this->assertSame($before, $holder->fresh()->getRawOriginal());
         $this->assertSame(0, DB::table('audit_logs')->count());
     }
 
@@ -524,53 +629,117 @@ class MemberOfficerLifecycleTest extends TestCase
         $this->assertSame([1], $archived->classifications()->pluck('member_classifications.id')->all());
     }
 
-    public function test_general_update_requires_admission_and_preserves_executive_restrictions(): void
+    public function test_profile_updates_require_the_assigned_field_officer_and_reject_protected_membership_fields(): void
     {
-        $application = $this->application(1);
-        $invalid = $this->member(1, ['archived_at' => null, 'source_application_id' => $application->id]);
+        $holder = $this->member(2, ['archived_at' => null, 'archived_by' => null]);
+        $candidate = $this->member(1, ['archived_at' => null, 'archived_by' => null]);
         $service = app(MemberService::class);
-        $this->assertRejected(fn () => $service->update($invalid, $this->memberData($invalid, 2), $this->actor(self::ADMIN)), 'member');
-        $holder = $this->member(2, ['archived_at' => null]);
-        $candidate = $this->member(1, ['archived_at' => null]);
-        $this->assertRejected(fn () => $service->update($candidate, $this->memberData($candidate, 2), $this->actor(self::ADMIN)), 'position_id', 409);
+        $data = $this->memberData($candidate, 'profile');
+        $before = $this->membershipState();
+        foreach ([self::ADMIN, self::OTHER_OFFICER] as $actor) {
+            try {
+                $service->update($candidate, $data, $this->actor($actor));
+                $this->fail('Only the assigned Field Officer may edit member profiles.');
+            } catch (HttpException $exception) {
+                $this->assertSame(403, $exception->getStatusCode());
+            }
+            $this->assertSame($before, $this->membershipState());
+        }
+        foreach ([
+            'association_id' => self::OTHER_ASSOCIATION,
+            'position_id' => 2,
+            'position_other_text' => 'Unauthorized office',
+            'member_status' => 'inactive',
+            'date_registered' => '2020-01-01',
+            'classification_ids' => [],
+            'source_application_id' => null,
+        ] as $field => $value) {
+            $this->assertRejected(fn () => $service->update($candidate, array_replace($data, [$field => $value]), $this->actor()), 'member');
+            $this->assertSame($before, $this->membershipState());
+        }
         $this->assertSame(1, $candidate->fresh()->position_id);
         $this->assertSame(2, $holder->fresh()->position_id);
         $this->assertSame(0, DB::table('audit_logs')->count());
     }
 
-    public function test_direct_registration_and_general_position_changes_have_focused_audits(): void
+    public function test_approved_application_admission_and_profile_updates_have_focused_audits_and_preserve_history(): void
     {
-        $service = app(MemberService::class);
-        $data = ['association_id' => self::ASSOCIATION, 'first_name' => 'Synthetic', 'last_name' => 'Direct',
-            'birth_date' => '2000-01-01', 'sex_id' => 1, 'position_id' => 4,
-            'date_registered' => '2025-01-01', 'member_status' => 'active'];
-        $member = $service->create($data, $this->actor(self::ADMIN));
-        $this->assertNull($member->source_application_id);
-        $service->update($member, $this->memberData($member, 1), $this->actor(self::ADMIN));
-        $this->assertSame(1, $member->fresh()->position_id);
-        $this->assertSame(['APPOINT ASSOCIATION OFFICER', 'UPDATE ASSOCIATION OFFICER'],
+        $application = $this->application(4);
+        $member = app(MemberApplicationService::class)->approve($application, $this->actor());
+        $member->refresh();
+        $application->refresh();
+        $this->assertSame($application->id, $member->source_application_id);
+        $this->assertSame('approved', $application->status);
+        $this->assertSame(self::OFFICER, $application->reviewed_by);
+        $this->assertNotNull($application->reviewed_at);
+        $this->assertSame('active', $member->member_status);
+        $this->assertSame(4, $member->position_id);
+        $this->assertSame(self::ASSOCIATION, $member->association_id);
+        $this->assertSame(now()->toDateString(), $member->date_registered->toDateString());
+        $this->assertSame([1], $member->classifications()->pluck('member_classifications.id')->all());
+        $this->assertDatabaseCount('members', 1);
+        $this->assertDatabaseCount('audit_logs', 1);
+        $memberBefore = $member->getRawOriginal();
+        $applicationBefore = $application->getRawOriginal();
+        $appointmentBefore = (array) DB::table('audit_logs')->sole();
+        $this->travel(1)->seconds();
+        app(MemberService::class)->update($member, $this->memberData($member, 'profile'), $this->actor());
+        $after = $member->fresh()->getRawOriginal();
+        $this->assertSame(array_replace($memberBefore, ['first_name' => 'Updated', 'updated_at' => $after['updated_at']]), $after);
+        $this->assertSame($applicationBefore, $application->fresh()->getRawOriginal());
+        $this->assertSame([1], $application->classifications()->pluck('member_classifications.id')->all());
+        $this->assertSame([1], $member->classifications()->pluck('member_classifications.id')->all());
+        $this->assertSame($appointmentBefore, (array) DB::table('audit_logs')->where('action_type', 'APPOINT ASSOCIATION OFFICER')->sole());
+        $this->assertSame(['APPOINT ASSOCIATION OFFICER', 'UPDATE MEMBER PROFILE'],
             DB::table('audit_logs')->orderBy('performed_at')->pluck('action_type')->all());
+        $event = DB::table('audit_logs')->where('action_type', 'UPDATE MEMBER PROFILE')->sole();
+        $this->assertSame(self::OFFICER, $event->actor_user_id);
+        $this->assertSame($member->id, $event->entity_id);
+        $this->assertSame(['first_name'], json_decode($event->new_values, true)['changed_fields']);
+        $this->assertSame(self::OFFICER, $appointmentBefore['actor_user_id']);
+        $this->assertSame($member->id, $appointmentBefore['entity_id']);
+        Http::assertNothingSent();
     }
 
     #[DataProvider('auditFailures')]
     public function test_audit_failure_rolls_back_related_database_writes(string $operation): void
     {
         $audit = Mockery::mock(AuditLogService::class);
-        $audit->shouldReceive('record')->once()->andThrow(new RuntimeException('Synthetic audit failure.'));
+        if (in_array($operation, ['archive', 'unarchive'])) {
+            $actual = new AuditLogService;
+            $calls = 0;
+            $audit->shouldReceive('record')->twice()->andReturnUsing(function (...$args) use ($actual, &$calls) {
+                if (++$calls === 2) {
+                    $this->assertDatabaseCount('audit_logs', 1);
+
+                    throw new RuntimeException('Synthetic audit failure.');
+                }
+
+                return $actual->record(...$args);
+            });
+        } else {
+            $audit->shouldReceive('record')->once()->andThrow(new RuntimeException('Synthetic audit failure.'));
+        }
         $this->app->instance(AuditLogService::class, $audit);
         $application = $this->application();
         $member = $operation === 'approve' ? null : $this->member(2, [
             'archived_at' => in_array($operation, ['archive', 'update']) ? null : '2025-02-01 00:00:00',
+            'archived_by' => in_array($operation, ['archive', 'update']) ? null : self::ADMIN,
         ]);
+        $before = $this->membershipState();
         try {
-            if ($operation === 'approve') app(MemberApplicationService::class)->approve($application, $this->actor());
-            elseif ($operation === 'archive') app(MemberService::class)->archive($member, $this->actor(self::ADMIN));
-            elseif ($operation === 'update') app(MemberService::class)->update($member, $this->memberData($member, 1), $this->actor(self::ADMIN));
-            else app(MemberService::class)->unarchive($member, $this->actor(self::ADMIN));
+            match ($operation) {
+                'approve' => app(MemberApplicationService::class)->approve($application, $this->actor()),
+                'archive' => app(MemberService::class)->archive($member, $this->memberData($member, 'archive'), $this->actor()),
+                'update' => app(MemberService::class)->update($member, $this->memberData($member, 'profile'), $this->actor()),
+                'unarchive' => app(MemberService::class)->unarchive($member, $this->memberData($member), $this->actor()),
+            };
             $this->fail('Audit failure must roll back the operation.');
         } catch (RuntimeException $exception) {
+            $this->assertSame(RuntimeException::class, $exception::class);
             $this->assertSame('Synthetic audit failure.', $exception->getMessage());
         }
+        $this->assertSame($before, $this->membershipState());
         if ($operation === 'approve') {
             $this->assertSame('pending', $application->fresh()->status);
             $this->assertNull($application->fresh()->reviewed_by);

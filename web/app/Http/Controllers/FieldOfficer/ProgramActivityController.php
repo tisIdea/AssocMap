@@ -2,8 +2,8 @@
 
 namespace App\Http\Controllers\FieldOfficer;
 
-use App\Http\Controllers\Admin\ProgramActivityController as ActivityPages;
 use App\Http\Controllers\Controller;
+use App\Http\ProgramActivityPageData;
 use App\Http\Requests\ProgramDirectoryRequest;
 use App\Http\Requests\StoreProgramActivityRequest;
 use App\Models\ProgramActivityRecord;
@@ -19,7 +19,11 @@ class ProgramActivityController extends Controller
 {
     public function index(ProgramDirectoryRequest $request, ProgramDirectoryQueryService $directory, ProgramEditorQueryService $editor): View|JsonResponse
     {
-        return app(ActivityPages::class)->index($request, $directory, $editor);
+        if ($request->filled('lookup')) {
+            return response()->json($editor->lookup($request));
+        }
+
+        return view('program-activities.register', app(ProgramActivityPageData::class)->indexData($request, $directory, $editor, 'field-officer'));
     }
 
     public function store(

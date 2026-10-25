@@ -1,4 +1,6 @@
 <script type="module">
+import { refreshQuarterAvailability as updateQuarterAvailability } from {{ Illuminate\Support\Js::from(Vite::asset('resources/js/pages/monitoring-quarter-availability.js')) }};
+import { createMonitoringRow } from {{ Illuminate\Support\Js::from(Vite::asset('resources/js/pages/monitoring-row-template.js')) }};
 function initializeMonitoringEditor() {
     const form = document.getElementById('monitoring-form');
     if (!form || form.dataset.monitoringInitialized === 'true') return;
@@ -55,7 +57,6 @@ function initializeMonitoringEditor() {
     let editingRecord = null;
     let selectedProjectValue = '';
     let periodValues = {year: '', quarter_id: ''};
-    const ownInputs = row => Array.from(row.querySelectorAll('[data-key]')).filter(input => input.closest('[data-kind]') === row);
     const rootRows = kind => Array.from(containers[kind].children);
     const incomeRows = row => Array.from(row.incomeGroup.querySelector('[data-income-container]').children);
     const monthlyRows = row => Array.from(row.querySelector('[data-monthly-container]').children);
@@ -130,13 +131,9 @@ function initializeMonitoringEditor() {
         notice.textContent = 'Enter an activity count and actual production quantity for each month. Enter 0 explicitly for confirmed zero; blank means unrecorded. The server calculates and saves the quarterly sum.';
     }
     function addMonthly(production, values = {}, index = 0) {
-        const row = document.getElementById('monitoring-monthly-template').content.firstElementChild.cloneNode(true);
-        ownInputs(row).forEach(input => {
-            input.name = `${production.dataset.prefix}[monthly_details][${index}][${input.dataset.key}]`;
-            input.id = 'monitoring-' + input.name.replace(/[^a-zA-Z0-9_-]/g, '-');
-            row.querySelector(`[data-label="${input.dataset.key}"]`)?.setAttribute('for', input.id);
-            input.value = values[input.dataset.key] ?? '';
-            if (input.dataset.key === 'id') input.disabled = !values.id;
+        const row = createMonitoringRow({
+            template: document.getElementById('monitoring-monthly-template'),
+            prefix: `${production.dataset.prefix}[monthly_details][${index}]`, values,
         });
         const month = Number(values.month);
         row.querySelector('[data-month-name]').textContent = [monthNames[month], form.elements.year.value].filter(Boolean).join(' ');
@@ -208,36 +205,8 @@ function initializeMonitoringEditor() {
         refreshIncomeProducts();
     }
     function refreshQuarterAvailability() {
-        const status = document.getElementById('monitoring-quarter-availability');
-        if (editingRecord) { status.hidden = true; return true; }
-        const select = form.elements.quarter_id;
-        const year = Number(form.elements.year.value);
-        const project = selectedProject();
-        const ready = Boolean(project) && /^\d{4}$/.test(form.elements.year.value) && year >= 2000 && year <= 2100;
-        const used = new Set(occupiedPeriods.filter(period => ready && String(period.project_id) === String(project.id)
-            && Number(period.year) === year).map(period => String(period.quarter_id)));
-        const options = Array.from(select.options).filter(option => option.value);
-        options.forEach(option => {
-            option.dataset.availableLabel ??= option.textContent;
-            option.disabled = !ready || used.has(option.value);
-            option.textContent = option.dataset.availableLabel + (ready && used.has(option.value) ? ' — already recorded' : '');
-        });
-        if (select.value && !options.some(option => option.value === select.value && !option.disabled)) {
-            select.value = '';
-            periodValues.quarter_id = '';
-        }
-        const available = options.filter(option => !option.disabled);
-        const canCreate = ready && available.length > 0;
-        select.disabled = !canCreate;
-        select.options[0].textContent = !ready ? 'Select project and year first…' : !available.length ? 'No quarters available' : 'Select a quarter…';
-        select.setCustomValidity(canCreate ? '' : 'Select a project and year with an available monitoring quarter.');
-        form.querySelector('button[type="submit"]').disabled = !canCreate;
-        status.hidden = false;
-        status.textContent = !ready ? 'Select a project and monitoring year to see available quarters.'
-            : !available.length ? 'No quarters remain available for this project and year. View or edit its existing records from the Monitoring dashboard.'
-            : used.size ? 'Already recorded quarters cannot be selected. Choose an available quarter, or view existing records from the Monitoring dashboard.'
-            : 'All quarters are available for this project and year.';
-        return canCreate;
+        return updateQuarterAvailability({ form, occupiedPeriods, editingRecord, periodValues, selectedProject,
+            status: document.getElementById('monitoring-quarter-availability') });
     }
     function updateContext() {
         refreshQuarterAvailability();
@@ -397,19 +366,11 @@ function initializeMonitoringEditor() {
         if (index === null) index = kind === 'income' ? Number(parent.dataset.nextIncome || 0) : counters[kind];
         if (kind === 'income') parent.dataset.nextIncome = String(Math.max(Number(parent.dataset.nextIncome || 0), Number(index) + 1));
         else counters[kind] = Math.max(counters[kind], Number(index) + 1);
-        const row = document.getElementById(`monitoring-${kind}-template`).content.firstElementChild.cloneNode(true);
         const prefix = kind === 'income' ? `${parent.dataset.prefix}[income][${index}]` : `${kind}[${index}]`;
+        const row = createMonitoringRow({ template: document.getElementById(`monitoring-${kind}-template`), prefix, values });
         row.dataset.prefix = prefix;
         row.dataset.originalLabel = values.product_name ?? values.item_name ?? '';
         row.querySelector('[data-row-heading]').textContent = `${kind === 'materials' ? 'Material' : kind === 'production' ? 'Production' : 'Income'} ${Number(index) + 1}`;
-        ownInputs(row).forEach(input => {
-            const key = input.dataset.key;
-            input.name = `${prefix}[${key}]`;
-            input.id = `monitoring-${input.name.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
-            row.querySelector(`[data-label="${key}"]`)?.setAttribute('for', input.id);
-            input.value = values[key] ?? '';
-            if (key === 'id') input.disabled = !values.id;
-        });
         if (kind !== 'income') {
             const payload = kind === 'production' ? 'new_product' : 'new_material';
             const mode = row.querySelector('[data-resource-mode]');
@@ -982,11 +943,16 @@ function initializeMonitoringEditor() {
                 input = production?.incomeGroup.querySelector('[data-income-frequency]');
             }
             if (!input) return;
-            const error = document.createElement('p');
-            error.className = 'field-error'; error.dataset.fieldError = ''; error.id = `${input.id}-error-${key.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
+            const container = input.closest('.field');
+            const existing = Array.from(container.querySelectorAll('.field-error'))
+                .find(error => !error.hasAttribute('data-field-error') || error.dataset.fieldError === key);
+            const error = existing ?? document.createElement('p');
+            error.className = 'field-error'; error.dataset.fieldError = key; error.hidden = false;
+            if (!error.id) error.id = `${input.id}-error-${key.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
             error.textContent = messages.join(' ');
-            input.setAttribute('aria-invalid', 'true'); input.setAttribute('aria-describedby', [input.getAttribute('aria-describedby'), error.id].filter(Boolean).join(' '));
-            input.closest('.field').append(error);
+            const descriptions = (input.getAttribute('aria-describedby') ?? '').split(/\s+/).filter(Boolean);
+            input.setAttribute('aria-invalid', 'true'); input.setAttribute('aria-describedby', [...new Set([...descriptions, error.id])].join(' '));
+            if (!existing) container.append(error);
         });
         const firstError = Array.from(form.querySelectorAll('[aria-invalid="true"]')).find(input => !input.disabled && !input.closest('.field[hidden]'));
         if (!activeSection && !firstError && Object.keys(errors).some(key => key.startsWith('production') || key.startsWith('materials'))) activateTab(form, Object.keys(errors).some(key => key.startsWith('production')) ? 'production' : 'materials');

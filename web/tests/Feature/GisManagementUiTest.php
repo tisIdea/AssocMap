@@ -62,7 +62,7 @@ class GisManagementUiTest extends TestCase
         $page = $this->get('/'.$prefix.'/gis')->assertOk()->assertSee('data-gis-workspace', false)
             ->assertSee('Geographic filters')->assertSee('Clear selected location')->assertSee('Interactive map')
             ->assertSee('data-workspace-module="gis"', false)->assertDontSee('association_point');
-        $this->assertCount(3, DB::getQueryLog());
+        $this->assertCount(2, DB::getQueryLog());
         DB::disableQueryLog();
         $dom = new \DOMDocument();
         @$dom->loadHTML($page->getContent());

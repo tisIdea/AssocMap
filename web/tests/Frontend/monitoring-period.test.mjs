@@ -2,11 +2,9 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { runInNewContext } from 'node:vm';
+import { refreshQuarterAvailability } from '../../resources/js/pages/monitoring-quarter-availability.js';
 
 const source = readFileSync(new URL('../../resources/views/monitoring/partials/editor-script.blade.php', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
-const helper = source.match(/^    function refreshQuarterAvailability\(\) \{[\s\S]*?^    \}/m)?.[0];
-assert.ok(helper, 'The monitoring editor must contain its quarter availability helper.');
-assert.ok(!helper.includes('{{'), 'The tested helper must contain executable JavaScript only.');
 const submitGuard = source.match(/form\.addEventListener\('submit', event => \{\n([\s\S]*?)        refreshUnique\('production'\)/)?.[1];
 assert.ok(submitGuard, 'Monitoring submission must check quarter availability.');
 
@@ -27,10 +25,10 @@ function editor(periods = [], editingRecord = null) {
         form, occupiedPeriods: periods, editingRecord, periodValues: { quarter_id: '' },
         selectedProject: () => ['project-a', 'project-b'].includes(project.value) ? { id: project.value } : null,
     };
-    // Execute only the actual helper and submission guard, without Blade, network, or application bootstrap.
-    runInNewContext(helper + '\nfunction checkSubmission(event) {\n' + submitGuard + '\n}\n', context);
+    context.refreshQuarterAvailability = () => refreshQuarterAvailability({ ...context, status });
+    runInNewContext('function checkSubmission(event) {\n' + submitGuard + '\n}\n', context);
     return {
-        quarter, project, year, button, status,
+        quarter, project, year, button, status, periodValues: context.periodValues,
         refresh: () => context.refreshQuarterAvailability(),
         submit() {
             const event = { prevented: false, preventDefault() { this.prevented = true; } };
@@ -116,4 +114,51 @@ test('occupied periods do not block editing an existing record', () => {
     assert.equal(fixture.quarter.disabled, true);
     assert.equal(fixture.button.disabled, false);
     assert.equal(fixture.status.hidden, true);
+});
+
+test('repeated refreshes retain original labels and remove the occupied suffix when the year changes', () => {
+    const fixture = editor([{ project_id: 'project-a', year: 2026, quarter_id: 11 }]);
+    fixture.refresh();
+    const unavailableLabel = fixture.quarter.options[1].textContent;
+    fixture.refresh();
+    assert.equal(fixture.quarter.options[1].textContent, unavailableLabel);
+    fixture.year.value = '2027';
+    fixture.refresh();
+    assert.equal(fixture.quarter.options[1].textContent, 'Q1');
+    assert.equal(fixture.quarter.options[1].disabled, false);
+});
+
+test('only an unavailable quarter is cleared from the draft while other draft state is retained', () => {
+    const fixture = editor([{ project_id: 'project-a', year: 2026, quarter_id: 11 }]);
+    Object.assign(fixture.periodValues, { quarter_id: '11', year: '2026', remarks: 'Unsaved draft' });
+    fixture.quarter.value = '11';
+    fixture.refresh();
+    assert.deepEqual(fixture.periodValues, { quarter_id: '', year: '2026', remarks: 'Unsaved draft' });
+    fixture.quarter.value = '22';
+    fixture.periodValues.quarter_id = '22';
+    fixture.refresh();
+    assert.equal(fixture.quarter.value, '22');
+    assert.equal(fixture.periodValues.quarter_id, '22');
+    assert.equal(fixture.project.value, 'project-a');
+    assert.equal(fixture.year.value, '2026');
+});
+
+test('an empty quarter catalogue blocks creation without inventing a quarter', () => {
+    const fixture = editor();
+    fixture.quarter.options.splice(1);
+    assert.equal(fixture.refresh(), false);
+    assert.deepEqual(fixture.available(), []);
+    assert.equal(fixture.button.disabled, true);
+    assert.equal(fixture.quarter.options[0].textContent, 'No quarters available');
+    assert.match(fixture.status.textContent, /No quarters remain available/);
+});
+
+test('boundary years and string period identities use the same availability rules', () => {
+    const fixture = editor([{ project_id: 'project-a', year: '2000', quarter_id: '11' }]);
+    fixture.year.value = '2000';
+    assert.equal(fixture.refresh(), true);
+    assert.deepEqual(fixture.available(), ['22', '33', '44']);
+    fixture.year.value = '2100';
+    assert.equal(fixture.refresh(), true);
+    assert.deepEqual(fixture.available(), ['11', '22', '33', '44']);
 });

@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Http\MonitoringProjectMapper;
+use App\Http\MonitoringVisitReportActions;
 use App\Http\Requests\StoreMonitoringRequest;
 use App\Http\Requests\StoreMonitoringVisitReportRequest;
 use App\Models\MonitoringRecord;
@@ -20,6 +22,18 @@ use Illuminate\Support\Carbon;
 
 class MonitoringController extends Controller
 {
+    private readonly MonitoringVisitReportActions $visitReports;
+
+    private readonly MonitoringProjectMapper $projectMapper;
+
+    public function __construct(
+        MonitoringVisitReportActions $visitReports,
+        MonitoringProjectMapper $projectMapper
+    ) {
+        $this->visitReports = $visitReports;
+        $this->projectMapper = $projectMapper;
+    }
+
     public function index(Request $request): View
     {
         $records = MonitoringRecord::query()
@@ -130,9 +144,7 @@ class MonitoringController extends Controller
         MonitoringRecord $monitoringRecord,
         MonitoringService $service
     ): JsonResponse {
-        return response()->json([
-            'data' => $service->getVisitReports($monitoringRecord, $request->attributes->get('current_user')),
-        ]);
+        return $this->visitReports->index($request, $monitoringRecord, $service);
     }
 
     public function storeVisitReport(
@@ -140,20 +152,12 @@ class MonitoringController extends Controller
         MonitoringRecord $monitoringRecord,
         MonitoringService $service
     ): JsonResponse|RedirectResponse {
-        $service->createVisitReport(
+        return $this->visitReports->store(
+            $request,
             $monitoringRecord,
-            $request->validated(),
-            $request->attributes->get('current_user')
+            $service,
+            'admin.monitoring.index'
         );
-
-        if ($request->expectsJson()) {
-            return response()->json([
-                'data' => $service->getVisitReports($monitoringRecord, $request->attributes->get('current_user')),
-            ], 201);
-        }
-
-        return redirect()->route('admin.monitoring.index')
-            ->with('success', 'Monitoring visit report created successfully.');
     }
 
     public function updateVisitReport(
@@ -162,21 +166,13 @@ class MonitoringController extends Controller
         MonitoringVisitReport $visitReport,
         MonitoringService $service
     ): JsonResponse|RedirectResponse {
-        $service->updateVisitReport(
+        return $this->visitReports->update(
+            $request,
             $monitoringRecord,
-            $visitReport->id,
-            $request->validated(),
-            $request->attributes->get('current_user')
+            $visitReport,
+            $service,
+            'admin.monitoring.index'
         );
-
-        if ($request->expectsJson()) {
-            return response()->json([
-                'data' => $service->getVisitReports($monitoringRecord, $request->attributes->get('current_user')),
-            ]);
-        }
-
-        return redirect()->route('admin.monitoring.index')
-            ->with('success', 'Monitoring visit report updated successfully.');
     }
 
     protected function mapMonitoringRecord(
@@ -346,72 +342,6 @@ class MonitoringController extends Controller
     protected function mapProject(
         Project $project
     ): array {
-        return [
-            'id' =>
-                $project->id,
-
-            'title' =>
-                $project->title,
-
-            'association_id' =>
-                $project->association_id,
-
-            'association_name' =>
-                $project->association?->name,
-
-            'assigned_officer' => $project->association?->primaryFieldOfficer?->is_active
-                && $project->association?->primaryFieldOfficer?->role?->is_active
-                && $project->association?->primaryFieldOfficer?->role?->code === 'field_officer'
-                ? ['id' => $project->association->primaryFieldOfficer->id, 'name' => $project->association->primaryFieldOfficer->display_name]
-                : null,
-
-            'program_year' =>
-                $project->program_year,
-
-            'status' =>
-                $project->status,
-
-            'products' =>
-                $project->products
-                    ->map(
-                        fn ($product) => [
-                            'id' =>
-                                $product->id,
-
-                            'product_name' =>
-                                $product->product_name,
-
-                            'product_type' =>
-                                $product->product_type,
-
-                            'default_unit' =>
-                                $product->default_unit,
-
-                            'is_active' =>
-                                (bool) $product->is_active,
-                        ]
-                    )
-                    ->values(),
-
-            'materials' =>
-                $project->materials
-                    ->map(
-                        fn ($material) => [
-                            'id' =>
-                                $material->id,
-
-                            'item_name' =>
-                                $material->item_name,
-
-                            'unit' =>
-                                $material->unit,
-
-                            'delivery_status' =>
-                                $material
-                                    ->delivery_status,
-                        ]
-                    )
-                    ->values(),
-        ];
+        return $this->projectMapper->map($project);
     }
 }

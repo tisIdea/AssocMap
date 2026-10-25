@@ -92,17 +92,32 @@ class WorkspaceHeaderTest extends TestCase
         $this->assertSame($prefix === 'admin' ? 'SA' : '', $xpath->evaluate('string('.$header.'//span[@class="avatar"])'));
     }
 
+    public function test_admin_email_placeholder_preserves_constraints_without_inline_handlers(): void
+    {
+        $xpath = $this->document($this->renderLayout('admin', 'admin.dashboard'));
+        $dialog = '//dialog[@id="email-modal" and @aria-labelledby="email-modal-title"]';
+        $form = $dialog.'/form[@data-form]';
+        $this->assertSame(1, $xpath->query($form)->length);
+        $this->assertSame(0, $xpath->query($form.'/@onsubmit')->length);
+        $this->assertSame('Change email', $xpath->evaluate('string('.$dialog.'//h2)'));
+        $this->assertSame('Email changes are not connected yet.', $xpath->evaluate('string('.$form.'/p)'));
+        $this->assertSame(1, $xpath->query($form.'//input[@name="new_email" and @id="email-change-new_email" and @type="email" and @required]')->length);
+        $this->assertSame(1, $xpath->query($form.'//label[@for="email-change-new_email"]')->length);
+        $this->assertSame(1, $xpath->query($form.'//button[@type="button" and @data-close-dialog and normalize-space(.)="Cancel"]')->length);
+        $this->assertSame(1, $xpath->query($form.'//button[@type="button" and @disabled and normalize-space(.)="Change Email"]')->length);
+    }
+
     public function test_sidebars_keep_their_existing_role_specific_destinations(): void
     {
         $destinations = [
             'admin' => ['dashboard', 'users.index', 'areas.index', 'associations.index', 'members.index', 'projects.index', 'trainings.index', 'monitoring.index', 'program-activities.index', 'gis.index', 'reports.index', 'audit-logs.index'],
-            'field-officer' => ['dashboard', 'members.index', 'association-officers.index', 'member-applications.index', 'projects.index', 'trainings.index', 'monitoring.index', 'program-activities.index', 'gis.index', 'reports.index'],
-            'association' => ['dashboard', 'reports.index', 'gis.index', 'member-applications.index', 'monitoring.index'],
+            'field-officer' => ['dashboard', 'members.index', 'associations.index', 'association-officers.index', 'member-applications.index', 'projects.index', 'trainings.index', 'monitoring.index', 'program-activities.index', 'gis.index', 'reports.index'],
+            'association' => ['dashboard', 'projects.index', 'trainings.index', 'monitoring.index', 'program-activities.index', 'reports.index', 'gis.index', 'member-applications.index'],
         ];
         $labels = [
             'admin' => ['Dashboard', 'User Management', 'Area Management', 'Association Management', 'Member Management', 'Projects', 'Trainings', 'Monitoring', 'Program Activities', 'GIS Mapping', 'Reports & Analytics', 'Audit Log'],
-            'field-officer' => ['Dashboard', 'Member Management', 'Association Officers', 'Member Applications', 'Projects', 'Trainings', 'Monitoring', 'Program Activities', 'GIS Mapping', 'Reports & Analytics'],
-            'association' => ['Dashboard', 'Reports & Analytics', 'GIS Mapping', 'Member Applications', 'Monitoring'],
+            'field-officer' => ['Dashboard', 'Member Management', 'Assigned Associations', 'Association Officers', 'Member Applications', 'Projects', 'Trainings', 'Monitoring', 'Program Activities', 'GIS Mapping', 'Reports & Analytics'],
+            'association' => ['Dashboard', 'Projects', 'Trainings', 'Monitoring', 'Program Activities', 'Reports & Analytics', 'GIS Mapping', 'Member Applications'],
         ];
         foreach ($destinations as $prefix => $routes) {
             $xpath = $this->document($this->renderLayout($prefix, $prefix.'.dashboard'));
@@ -117,7 +132,7 @@ class WorkspaceHeaderTest extends TestCase
             $this->assertSame('AssocMap Information System', $xpath->evaluate('string(//aside/div[@class="sidebar-footer"]//strong)'));
             $this->assertSame(1, $xpath->query('//aside[@data-workspace-sidebar]')->length);
             $this->assertSame(1, $xpath->query('//aside//button[@data-collapse-sidebar and @type="button" and @aria-expanded="true" and @aria-label="Collapse sidebar" and @aria-controls="'.$prefix.'-sidebar"]')->length);
-            $this->assertSame($prefix === 'association' ? 0 : 1, $xpath->query('//aside//button[@data-disclosure and @type="button" and @aria-label="Program Operations"]')->length);
+            $this->assertSame(1, $xpath->query('//aside//button[@data-disclosure and @type="button" and @aria-label="Program Operations"]')->length);
             foreach ($xpath->query('//aside/nav//a') as $link) {
                 $this->assertSame(trim($link->textContent), $link->getAttribute('aria-label'));
                 $this->assertSame($link->getAttribute('aria-label'), $link->getAttribute('title'));

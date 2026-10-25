@@ -1,57 +1,8 @@
 <?php
 
-use App\Http\Controllers\Auth\StaffAuthController;
-use App\Http\Controllers\Auth\InvitationActivationController;
-use App\Http\Controllers\Admin\UserInvitationController;
-use App\Http\Controllers\Admin\UserManagementController;
-use App\Http\Controllers\Admin\UserAccessController;
-use App\Http\Controllers\Admin\FieldOfficerAssignmentController;
-
-use App\Http\Controllers\Admin\MunicipalityController;
-use App\Http\Controllers\Admin\BarangayController;
-use App\Http\Controllers\Admin\AreaController;
-use App\Http\Controllers\Admin\AssociationController;
-use App\Http\Controllers\Admin\MemberController;
-use App\Http\Controllers\AssociationOfficerController;
-use App\Http\Controllers\ProjectClosureController;
-use App\Http\Controllers\Admin\ProjectController as AdminProjectController;
-use App\Http\Controllers\Admin\TrainingController as AdminTrainingController;
-use App\Http\Controllers\Admin\ProgramActivityController as AdminProgramActivityController;
-use App\Http\Controllers\Admin\MonitoringController as AdminMonitoringController;
-
-use App\Http\Controllers\AssociationAccount\MemberApplicationController
-    as AssociationAccountMemberApplicationController;
-
-use App\Http\Controllers\FieldOfficer\MemberApplicationController
-    as FieldOfficerMemberApplicationController;
-
-use App\Http\Controllers\MemberApplicationPhotoController;
-use App\Http\Middleware\MemberApplicationEvidenceHeaders;
-
-use App\Http\Controllers\FieldOfficer\ProjectController
-    as FieldOfficerProjectController;
-
-use App\Http\Controllers\FieldOfficer\TrainingController
-    as FieldOfficerTrainingController;
-
-use App\Http\Controllers\FieldOfficer\ProgramActivityController
-    as FieldOfficerProgramActivityController;
-
-use App\Http\Controllers\FieldOfficer\MonitoringController
-    as FieldOfficerMonitoringController;
-
 use Illuminate\Support\Facades\Route;
 
-foreach (['system_admin' => 'admin', 'field_officer' => 'field-officer', 'association_account' => 'association'] as $reportRole => $reportArea) {
-    Route::middleware([\App\Http\Middleware\ReportingRequestGuard::class, 'supabase.auth', 'role:'.$reportRole, 'throttle:30,1,reporting-read:'])
-        ->prefix($reportArea.'/reports')->name($reportArea.'.reports.')->group(function () {
-            Route::get('/', [\App\Http\Controllers\ReportController::class, 'index'])->name('index');
-            Route::get('/data', [\App\Http\Controllers\ReportController::class, 'data'])->name('data');
-            Route::get('/options', [\App\Http\Controllers\ReportController::class, 'options'])->name('options');
-            Route::post('/export/{format}', [\App\Http\Controllers\ReportController::class, 'export'])
-                ->whereIn('format', ['pdf', 'xlsx'])->middleware('throttle:6,1,reporting-export:')->name('export');
-        });
-}
+require __DIR__.'/shared/reports.php';
 
 /*
 |--------------------------------------------------------------------------
@@ -59,77 +10,17 @@ foreach (['system_admin' => 'admin', 'field_officer' => 'field-officer', 'associ
 |--------------------------------------------------------------------------
 */
 
-Route::view('/', 'public.landing')
-    ->name('home');
+require __DIR__.'/public/landing.php';
 
-Route::view('/login', 'auth.login')
-    ->name('login');
+require __DIR__.'/auth/authentication.php';
 
-Route::post(
-    '/login',
-    [StaffAuthController::class, 'store']
-)->middleware('throttle:staff-login')->name('login.store');
+require __DIR__.'/auth/account-email-change.php';
 
-Route::post(
-    '/logout',
-    [StaffAuthController::class, 'destroy']
-)->name('logout');
+require __DIR__.'/auth/account-reactivation.php';
 
-Route::middleware('throttle:password-recovery')->group(function () {
-    $controller = \App\Http\Controllers\Auth\PasswordRecoveryController::class;
-    Route::get('/forgot-password', [$controller, 'showRequest'])->name('password.forgot');
-    Route::get('/forgot-password/email', [$controller, 'editRequest'])->block(120, 3)->name('password.request.edit');
-    Route::post('/forgot-password', [$controller, 'requestLink'])->block(120, 3)->name('password.request');
-    Route::post('/forgot-password/resend', [$controller, 'requestLink'])->block(120, 3)->name('password.resend');
-    Route::get('/password-recovery', [$controller, 'callback'])->block(120, 3)->name('password.recovery');
-    Route::post('/password-recovery/verify', [$controller, 'verify'])->block(120, 3)->name('password.verify');
-    Route::get('/password-recovery/password', [$controller, 'showPassword'])->block(120, 3)->name('password.reset');
-    Route::post('/password-recovery/password', [$controller, 'updatePassword'])->block(120, 3)->name('password.update');
-});
+require __DIR__.'/public/gis.php';
 
-Route::prefix('account-email-change')->name('account-email-change.')->middleware('throttle:20,1,account-email-change:')->group(function () {
-    $controller = \App\Http\Controllers\Auth\AccountEmailChangeController::class;
-    Route::get('/result', [$controller, 'result'])->block(120, 3)->name('result');
-    Route::get('/{reference}/{mailbox}', [$controller, 'callback'])->where('reference', '[A-Za-z0-9]{64}')->where('mailbox', 'old|confirm')->block(120, 3)->name('callback');
-    Route::post('/{reference}/old', [$controller, 'verifyOld'])->where('reference', '[A-Za-z0-9]{64}')->block(120, 3)->name('verify-old');
-    Route::get('/{reference}/progress', [$controller, 'progress'])->where('reference', '[A-Za-z0-9]{64}')->block(120, 3)->name('progress');
-    Route::post('/{reference}/begin', [$controller, 'begin'])->where('reference', '[A-Za-z0-9]{64}')->block(120, 3)->name('begin');
-    Route::post('/{reference}/confirm', [$controller, 'confirm'])->where('reference', '[A-Za-z0-9]{64}')->block(120, 3)->name('confirm');
-    Route::post('/{reference}/password', [$controller, 'complete'])->where('reference', '[A-Za-z0-9]{64}')->block(120, 3)->name('complete');
-});
-
-Route::prefix('account-reactivation')->name('account-reactivation.')->middleware('throttle:20,1,account-reactivation:')->group(function () {
-    $controller = \App\Http\Controllers\Auth\AccountReactivationController::class;
-    Route::get('/password', [$controller, 'password'])->block(120, 3)->name('password');
-    Route::post('/password', [$controller, 'complete'])->block(120, 3)->name('complete');
-    Route::get('/result', [$controller, 'result'])->block(120, 3)->name('result');
-    Route::get('/{reference}', [$controller, 'callback'])->where('reference', '[A-Za-z0-9]{64}')->block(120, 3)->name('callback');
-    Route::post('/{reference}/verify', [$controller, 'verify'])->where('reference', '[A-Za-z0-9]{64}')->block(120, 3)->name('verify');
-});
-
-Route::middleware([\App\Http\Middleware\GisRequestGuard::class, 'throttle:gis-read'])->group(function () {
-    Route::get('/map', [\App\Http\Controllers\PublicGisController::class, 'index'])->name('public.gis');
-    Route::get('/map/data', [\App\Http\Controllers\PublicGisController::class, 'data'])->name('public.gis.data');
-    Route::get('/map/associations', [\App\Http\Controllers\PublicGisController::class, 'associations'])->name('public.gis.associations');
-});
-
-Route::prefix('invitation')->name('invitation.')->middleware('throttle:invitation-activation')
-    ->group(function () {
-        $restart = \App\Http\Controllers\Auth\InvitationRestartController::class;
-        Route::get('/restart', [$restart, 'show'])->name('restart');
-        Route::post('/restart', [$restart, 'requestLink'])->middleware('throttle:password-recovery')->block(120, 3)->name('restart.store');
-        Route::get('/restart/{reference}', [$restart, 'callback'])->where('reference', '[A-Za-z0-9]{64}')
-            ->block(120, 3)->name('restart.callback');
-        Route::post('/restart/{reference}/verify', [$restart, 'verify'])->where('reference', '[A-Za-z0-9]{64}')
-            ->block(120, 3)->name('restart.verify');
-        Route::get('/', [InvitationActivationController::class, 'showVerification'])->block(120, 3)->name('verify');
-        Route::post('/verify', [InvitationActivationController::class, 'verify'])->block(120, 3)->name('verify.store');
-        Route::get('/password', [InvitationActivationController::class, 'showPassword'])->block(120, 3)->name('password');
-        Route::post('/password', [InvitationActivationController::class, 'setPassword'])->block(120, 3)->name('password.store');
-        Route::get('/recover', [InvitationActivationController::class, 'showRecovery'])->block(120, 3)->name('recovery');
-        Route::post('/recover', [InvitationActivationController::class, 'recover'])->block(120, 3)->name('recovery.store');
-        Route::get('/result', [InvitationActivationController::class, 'result'])->block(120, 3)->name('result');
-    });
+require __DIR__.'/auth/invitations.php';
 
 /*
 |--------------------------------------------------------------------------
@@ -137,55 +28,16 @@ Route::prefix('invitation')->name('invitation.')->middleware('throttle:invitatio
 |--------------------------------------------------------------------------
 */
 
-Route::middleware([
-    \App\Http\Middleware\AuditRequestGuard::class,
-    'supabase.auth',
-    'role:system_admin',
-    'throttle:60,1',
-])->prefix('admin/audit-logs')->name('admin.audit-logs.')->group(function () {
-    Route::get('/', [\App\Http\Controllers\Admin\AuditLogController::class, 'index'])->name('index');
-    Route::get('/{auditLog}', [\App\Http\Controllers\Admin\AuditLogController::class, 'show'])->whereUuid('auditLog')->name('show');
-});
+require __DIR__.'/admin/audit-logs.php';
 
 Route::middleware([
     'supabase.auth',
     'role:system_admin',
 ])->group(function () {
 
-    Route::get('/admin/users', [UserManagementController::class, 'index'])->name('admin.users.index');
-    Route::prefix('/admin/users/{userProfile}/email-change')->whereUuid('userProfile')->name('admin.users.email-change.')
-        ->middleware('throttle:6,1,account-email-change-admin:')->group(function () {
-            $controller = \App\Http\Controllers\Admin\AccountEmailChangeController::class;
-            Route::get('/', [$controller, 'edit'])->name('edit');
-            Route::post('/review', [$controller, 'review'])->name('review');
-            Route::post('/', [$controller, 'store'])->name('store');
-            Route::post('/cancel', [$controller, 'cancel'])->name('cancel');
-        });
-    Route::get('/admin/users/{userProfile}/reactivate', [\App\Http\Controllers\Admin\AccountReactivationController::class, 'edit'])
-        ->whereUuid('userProfile')->name('admin.users.reactivation.edit');
-    Route::post('/admin/users/{userProfile}/reactivate', [\App\Http\Controllers\Admin\AccountReactivationController::class, 'store'])
-        ->whereUuid('userProfile')->middleware('throttle:6,1,account-reactivation-admin:')->name('admin.users.reactivation.store');
-    Route::get('/admin/users/{userProfile}/associations', [FieldOfficerAssignmentController::class, 'edit'])
-        ->whereUuid('userProfile')->name('admin.users.assignments.edit');
-    Route::patch('/admin/users/{userProfile}/associations', [FieldOfficerAssignmentController::class, 'update'])
-        ->whereUuid('userProfile')->name('admin.users.assignments.update');
+    require __DIR__.'/admin/users.php';
 
-    Route::get('/admin/users/{userProfile}', [UserManagementController::class, 'show'])
-        ->whereUuid('userProfile')->name('admin.users.show');
-
-    Route::patch('/admin/users/{userProfile}/revoke', [UserAccessController::class, 'revoke'])
-        ->whereUuid('userProfile')->name('admin.users.revoke');
-
-    Route::post('/admin/users/{userProfile}/resend-invitation', [\App\Http\Controllers\Admin\UserInvitationResendController::class, 'store'])
-        ->whereUuid('userProfile')->middleware('throttle:user-invitations')->name('admin.users.invitation.resend');
-
-    Route::get('/admin/user-invitations/create', [UserInvitationController::class, 'create'])
-        ->name('admin.user-invitations.create');
-
-    Route::post('/admin/user-invitations', [UserInvitationController::class, 'store'])
-        ->middleware('throttle:user-invitations')->name('admin.user-invitations.store');
-
-    Route::get('/dashboard', [\App\Http\Controllers\DashboardController::class, 'index'])->name('admin.dashboard');
+    require __DIR__.'/admin/dashboard.php';
 
     /*
     |--------------------------------------------------------------------------
@@ -193,58 +45,7 @@ Route::middleware([
     |--------------------------------------------------------------------------
     */
 
-    Route::get(
-        '/admin/areas',
-        [MunicipalityController::class, 'index']
-    )->name('admin.areas.index');
-
-    Route::get('/admin/municipalities/{municipality}', [MunicipalityController::class, 'show'])
-        ->whereUuid('municipality')->name('admin.municipalities.show');
-    Route::get('/admin/barangays/{barangay}', [BarangayController::class, 'show'])
-        ->whereUuid('barangay')->name('admin.barangays.show');
-
-    Route::post(
-        '/admin/municipalities',
-        [MunicipalityController::class, 'store']
-    )->name('admin.municipalities.store');
-
-    Route::patch(
-        '/admin/municipalities/{municipality}',
-        [MunicipalityController::class, 'update']
-    )
-        ->whereUuid('municipality')
-        ->name('admin.municipalities.update');
-
-    Route::patch(
-        '/admin/municipalities/{municipality}/deactivate',
-        [MunicipalityController::class, 'deactivate']
-    )
-        ->whereUuid('municipality')
-        ->name('admin.municipalities.deactivate');
-
-    Route::post(
-        '/admin/barangays',
-        [BarangayController::class, 'store']
-    )->name('admin.barangays.store');
-
-    Route::patch(
-        '/admin/barangays/{barangay}',
-        [BarangayController::class, 'update']
-    )
-        ->whereUuid('barangay')
-        ->name('admin.barangays.update');
-
-    Route::patch(
-        '/admin/barangays/{barangay}/deactivate',
-        [BarangayController::class, 'deactivate']
-    )
-        ->whereUuid('barangay')
-        ->name('admin.barangays.deactivate');
-
-    Route::post(
-        '/admin/areas',
-        [AreaController::class, 'store']
-    )->name('admin.areas.store');
+    require __DIR__.'/admin/areas.php';
 
     /*
     |--------------------------------------------------------------------------
@@ -252,46 +53,7 @@ Route::middleware([
     |--------------------------------------------------------------------------
     */
 
-    Route::get(
-        '/admin/associations',
-        [AssociationController::class, 'index']
-    )->name('admin.associations.index');
-
-    Route::get('/admin/associations/{association}', [AssociationController::class, 'show'])
-        ->whereUuid('association')->name('admin.associations.show');
-
-    Route::get('/admin/association-officers', [AssociationOfficerController::class, 'index'])
-        ->name('admin.association-officers.index');
-    Route::get('/admin/associations/{association}/officers', [AssociationOfficerController::class, 'show'])
-        ->whereUuid('association')->name('admin.association-officers.show');
-    Route::patch('/admin/associations/{association}/officers', [AssociationOfficerController::class, 'update'])
-        ->whereUuid('association')->name('admin.association-officers.update');
-
-    Route::post(
-        '/admin/associations',
-        [AssociationController::class, 'store']
-    )->name('admin.associations.store');
-
-    Route::patch(
-        '/admin/associations/{association}',
-        [AssociationController::class, 'update']
-    )
-        ->whereUuid('association')
-        ->name('admin.associations.update');
-
-    Route::patch(
-        '/admin/associations/{association}/archive',
-        [AssociationController::class, 'archive']
-    )
-        ->whereUuid('association')
-        ->name('admin.associations.archive');
-
-    Route::patch(
-        '/admin/associations/{association}/unarchive',
-        [AssociationController::class, 'unarchive']
-    )
-        ->whereUuid('association')
-        ->name('admin.associations.unarchive');
+    require __DIR__.'/admin/associations.php';
 
     /*
     |--------------------------------------------------------------------------
@@ -299,10 +61,7 @@ Route::middleware([
     |--------------------------------------------------------------------------
     */
 
-    Route::get(
-        '/admin/members',
-        [MemberController::class, 'index']
-    )->name('admin.members.index');
+    require __DIR__.'/admin/members.php';
 
     /*
     |--------------------------------------------------------------------------
@@ -310,46 +69,7 @@ Route::middleware([
     |--------------------------------------------------------------------------
     */
 
-    Route::get(
-        '/admin/projects',
-        [AdminProjectController::class, 'index']
-    )->name('admin.projects.index');
-
-    Route::get('/admin/projects/{project}', [ProjectClosureController::class, 'show'])
-        ->whereUuid('project')->name('admin.projects.show');
-    Route::post('/admin/projects/{project}/close', [ProjectClosureController::class, 'store'])
-        ->whereUuid('project')->name('admin.projects.close');
-    Route::post('/admin/projects/{project}/terminate', [ProjectClosureController::class, 'terminate'])
-        ->whereUuid('project')->name('admin.projects.terminate');
-
-    Route::get('/admin/projects/{project}/edit', [AdminProjectController::class, 'edit'])
-        ->whereUuid('project')->name('admin.projects.edit');
-
-    Route::post(
-        '/admin/projects',
-        [AdminProjectController::class, 'store']
-    )->name('admin.projects.store');
-
-    Route::patch(
-        '/admin/projects/{project}',
-        [AdminProjectController::class, 'update']
-    )
-        ->whereUuid('project')
-        ->name('admin.projects.update');
-
-    Route::patch(
-        '/admin/projects/{project}/archive',
-        [AdminProjectController::class, 'archive']
-    )
-        ->whereUuid('project')
-        ->name('admin.projects.archive');
-
-    Route::patch(
-        '/admin/projects/{project}/unarchive',
-        [AdminProjectController::class, 'unarchive']
-    )
-        ->whereUuid('project')
-        ->name('admin.projects.unarchive');
+    require __DIR__.'/admin/projects.php';
 
     /*
     |--------------------------------------------------------------------------
@@ -357,41 +77,7 @@ Route::middleware([
     |--------------------------------------------------------------------------
     */
 
-    Route::get(
-        '/admin/trainings',
-        [AdminTrainingController::class, 'index']
-    )->name('admin.trainings.index');
-
-    Route::get('/admin/trainings/{training}/edit', [AdminTrainingController::class, 'edit'])
-        ->whereUuid('training')->name('admin.trainings.edit');
-    Route::get('/admin/trainings/{training}', [AdminTrainingController::class, 'show'])
-        ->whereUuid('training')->name('admin.trainings.show');
-
-    Route::post(
-        '/admin/trainings',
-        [AdminTrainingController::class, 'store']
-    )->name('admin.trainings.store');
-
-    Route::patch(
-        '/admin/trainings/{training}',
-        [AdminTrainingController::class, 'update']
-    )
-        ->whereUuid('training')
-        ->name('admin.trainings.update');
-
-    Route::patch(
-        '/admin/trainings/{training}/archive',
-        [AdminTrainingController::class, 'archive']
-    )
-        ->whereUuid('training')
-        ->name('admin.trainings.archive');
-
-    Route::patch(
-        '/admin/trainings/{training}/unarchive',
-        [AdminTrainingController::class, 'unarchive']
-    )
-        ->whereUuid('training')
-        ->name('admin.trainings.unarchive');
+    require __DIR__.'/admin/trainings.php';
 
     /*
     |--------------------------------------------------------------------------
@@ -399,41 +85,7 @@ Route::middleware([
     |--------------------------------------------------------------------------
     */
 
-    Route::get(
-        '/admin/program-activities',
-        [AdminProgramActivityController::class, 'index']
-    )->name('admin.program-activities.index');
-
-    Route::get('/admin/program-activities/{programActivity}/edit', [AdminProgramActivityController::class, 'edit'])
-        ->whereUuid('programActivity')->name('admin.program-activities.edit');
-    Route::get('/admin/program-activities/{programActivity}', [AdminProgramActivityController::class, 'show'])
-        ->whereUuid('programActivity')->name('admin.program-activities.show');
-
-    Route::post(
-        '/admin/program-activities',
-        [AdminProgramActivityController::class, 'store']
-    )->name('admin.program-activities.store');
-
-    Route::patch(
-        '/admin/program-activities/{programActivity}',
-        [AdminProgramActivityController::class, 'update']
-    )
-        ->whereUuid('programActivity')
-        ->name('admin.program-activities.update');
-
-    Route::patch(
-        '/admin/program-activities/{programActivity}/archive',
-        [AdminProgramActivityController::class, 'archive']
-    )
-        ->whereUuid('programActivity')
-        ->name('admin.program-activities.archive');
-
-    Route::patch(
-        '/admin/program-activities/{programActivity}/unarchive',
-        [AdminProgramActivityController::class, 'unarchive']
-    )
-        ->whereUuid('programActivity')
-        ->name('admin.program-activities.unarchive');
+    require __DIR__.'/admin/program-activities.php';
 
     /*
     |--------------------------------------------------------------------------
@@ -441,38 +93,9 @@ Route::middleware([
     |--------------------------------------------------------------------------
     */
 
-    Route::get(
-        '/admin/monitoring',
-        [\App\Http\Controllers\MonitoringWorkspaceController::class, 'index']
-    )->name('admin.monitoring.index');
+    require __DIR__.'/admin/monitoring.php';
 
-    Route::post(
-        '/admin/monitoring',
-        [AdminMonitoringController::class, 'store']
-    )->name('admin.monitoring.store');
-
-    Route::patch(
-        '/admin/monitoring/{monitoringRecord}',
-        [AdminMonitoringController::class, 'update']
-    )
-        ->whereUuid('monitoringRecord')
-        ->name('admin.monitoring.update');
-
-    Route::get(
-        '/admin/monitoring/{monitoringRecord}/visit-reports',
-        [AdminMonitoringController::class, 'indexVisitReports']
-    )->whereUuid('monitoringRecord')->name('admin.monitoring.visit-reports.index');
-
-    Route::post(
-        '/admin/monitoring/{monitoringRecord}/visit-reports',
-        [AdminMonitoringController::class, 'storeVisitReport']
-    )->whereUuid('monitoringRecord')->name('admin.monitoring.visit-reports.store');
-
-    Route::patch(
-        '/admin/monitoring/{monitoringRecord}/visit-reports/{visitReport}',
-        [AdminMonitoringController::class, 'updateVisitReport']
-    )->whereUuid('monitoringRecord')->whereUuid('visitReport')->scopeBindings()
-        ->name('admin.monitoring.visit-reports.update');
+    require __DIR__.'/admin/visit-reports.php';
 });
 
 /*
@@ -486,7 +109,7 @@ Route::middleware([
     'role:field_officer',
 ])->group(function () {
 
-    Route::get('/field-officer/dashboard', [\App\Http\Controllers\DashboardController::class, 'index'])->name('field-officer.dashboard');
+    require __DIR__.'/field-officer/dashboard.php';
 
     /*
     |--------------------------------------------------------------------------
@@ -494,64 +117,11 @@ Route::middleware([
     |--------------------------------------------------------------------------
     */
 
-    Route::get('/field-officer/members', [\App\Http\Controllers\FieldOfficer\MemberController::class, 'index'])
-        ->name('field-officer.members.index');
-    Route::patch('/field-officer/members/{member}', [\App\Http\Controllers\FieldOfficer\MemberController::class, 'update'])
-        ->whereUuid('member')->name('field-officer.members.update');
-    Route::patch('/field-officer/members/{member}/archive', [\App\Http\Controllers\FieldOfficer\MemberController::class, 'archive'])
-        ->whereUuid('member')->name('field-officer.members.archive');
-    Route::patch('/field-officer/members/{member}/reactivate', [\App\Http\Controllers\FieldOfficer\MemberController::class, 'reactivate'])
-        ->whereUuid('member')->name('field-officer.members.reactivate');
+    require __DIR__.'/field-officer/members.php';
 
-    Route::get('/field-officer/association-officers', [AssociationOfficerController::class, 'index'])
-        ->name('field-officer.association-officers.index');
-    Route::get('/field-officer/associations', [\App\Http\Controllers\FieldOfficer\AssociationController::class, 'index'])
-        ->name('field-officer.associations.index');
-    Route::get('/field-officer/associations/{association}', [\App\Http\Controllers\FieldOfficer\AssociationController::class, 'show'])
-        ->whereUuid('association')->name('field-officer.associations.show');
-    Route::get('/field-officer/associations/{association}/officers', [AssociationOfficerController::class, 'show'])
-        ->whereUuid('association')->name('field-officer.association-officers.show');
-    Route::patch('/field-officer/associations/{association}/officers', [AssociationOfficerController::class, 'update'])
-        ->whereUuid('association')->name('field-officer.association-officers.update');
+    require __DIR__.'/field-officer/associations.php';
 
-    Route::get(
-        '/field-officer/member-applications',
-        [
-            FieldOfficerMemberApplicationController::class,
-            'index',
-        ]
-    )->middleware(MemberApplicationEvidenceHeaders::class)->name(
-        'field-officer.member-applications.index'
-    );
-
-    Route::get('/field-officer/member-applications/{memberApplication}/photo', MemberApplicationPhotoController::class)
-        ->whereUuid('memberApplication')
-        ->middleware(MemberApplicationEvidenceHeaders::class)
-        ->name('field-officer.member-applications.photo');
-
-    Route::patch(
-        '/field-officer/member-applications/{memberApplication}/approve',
-        [
-            FieldOfficerMemberApplicationController::class,
-            'approve',
-        ]
-    )
-        ->whereUuid('memberApplication')
-        ->name(
-            'field-officer.member-applications.approve'
-        );
-
-    Route::patch(
-        '/field-officer/member-applications/{memberApplication}/reject',
-        [
-            FieldOfficerMemberApplicationController::class,
-            'reject',
-        ]
-    )
-        ->whereUuid('memberApplication')
-        ->name(
-            'field-officer.member-applications.reject'
-        );
+    require __DIR__.'/field-officer/member-applications.php';
 
     /*
     |--------------------------------------------------------------------------
@@ -559,46 +129,7 @@ Route::middleware([
     |--------------------------------------------------------------------------
     */
 
-    Route::get(
-        '/field-officer/projects',
-        [FieldOfficerProjectController::class, 'index']
-    )->name('field-officer.projects.index');
-
-    Route::get('/field-officer/projects/{project}', [ProjectClosureController::class, 'show'])
-        ->whereUuid('project')->name('field-officer.projects.show');
-    Route::post('/field-officer/projects/{project}/close', [ProjectClosureController::class, 'store'])
-        ->whereUuid('project')->name('field-officer.projects.close');
-    Route::post('/field-officer/projects/{project}/terminate', [ProjectClosureController::class, 'terminate'])
-        ->whereUuid('project')->name('field-officer.projects.terminate');
-
-    Route::get('/field-officer/projects/{project}/edit', [AdminProjectController::class, 'edit'])
-        ->whereUuid('project')->name('field-officer.projects.edit');
-
-    Route::post(
-        '/field-officer/projects',
-        [FieldOfficerProjectController::class, 'store']
-    )->name('field-officer.projects.store');
-
-    Route::patch(
-        '/field-officer/projects/{project}',
-        [FieldOfficerProjectController::class, 'update']
-    )
-        ->whereUuid('project')
-        ->name('field-officer.projects.update');
-
-    Route::patch(
-        '/field-officer/projects/{project}/archive',
-        [FieldOfficerProjectController::class, 'archive']
-    )
-        ->whereUuid('project')
-        ->name('field-officer.projects.archive');
-
-    Route::patch(
-        '/field-officer/projects/{project}/unarchive',
-        [FieldOfficerProjectController::class, 'unarchive']
-    )
-        ->whereUuid('project')
-        ->name('field-officer.projects.unarchive');
+    require __DIR__.'/field-officer/projects.php';
 
     /*
     |--------------------------------------------------------------------------
@@ -606,41 +137,7 @@ Route::middleware([
     |--------------------------------------------------------------------------
     */
 
-    Route::get(
-        '/field-officer/trainings',
-        [FieldOfficerTrainingController::class, 'index']
-    )->name('field-officer.trainings.index');
-
-    Route::get('/field-officer/trainings/{training}/edit', [AdminTrainingController::class, 'edit'])
-        ->whereUuid('training')->name('field-officer.trainings.edit');
-    Route::get('/field-officer/trainings/{training}', [AdminTrainingController::class, 'show'])
-        ->whereUuid('training')->name('field-officer.trainings.show');
-
-    Route::post(
-        '/field-officer/trainings',
-        [FieldOfficerTrainingController::class, 'store']
-    )->name('field-officer.trainings.store');
-
-    Route::patch(
-        '/field-officer/trainings/{training}',
-        [FieldOfficerTrainingController::class, 'update']
-    )
-        ->whereUuid('training')
-        ->name('field-officer.trainings.update');
-
-    Route::patch(
-        '/field-officer/trainings/{training}/archive',
-        [FieldOfficerTrainingController::class, 'archive']
-    )
-        ->whereUuid('training')
-        ->name('field-officer.trainings.archive');
-
-    Route::patch(
-        '/field-officer/trainings/{training}/unarchive',
-        [FieldOfficerTrainingController::class, 'unarchive']
-    )
-        ->whereUuid('training')
-        ->name('field-officer.trainings.unarchive');
+    require __DIR__.'/field-officer/trainings.php';
 
     /*
     |--------------------------------------------------------------------------
@@ -648,41 +145,7 @@ Route::middleware([
     |--------------------------------------------------------------------------
     */
 
-    Route::get(
-        '/field-officer/program-activities',
-        [FieldOfficerProgramActivityController::class, 'index']
-    )->name('field-officer.program-activities.index');
-
-    Route::get('/field-officer/program-activities/{programActivity}/edit', [AdminProgramActivityController::class, 'edit'])
-        ->whereUuid('programActivity')->name('field-officer.program-activities.edit');
-    Route::get('/field-officer/program-activities/{programActivity}', [AdminProgramActivityController::class, 'show'])
-        ->whereUuid('programActivity')->name('field-officer.program-activities.show');
-
-    Route::post(
-        '/field-officer/program-activities',
-        [FieldOfficerProgramActivityController::class, 'store']
-    )->name('field-officer.program-activities.store');
-
-    Route::patch(
-        '/field-officer/program-activities/{programActivity}',
-        [FieldOfficerProgramActivityController::class, 'update']
-    )
-        ->whereUuid('programActivity')
-        ->name('field-officer.program-activities.update');
-
-    Route::patch(
-        '/field-officer/program-activities/{programActivity}/archive',
-        [FieldOfficerProgramActivityController::class, 'archive']
-    )
-        ->whereUuid('programActivity')
-        ->name('field-officer.program-activities.archive');
-
-    Route::patch(
-        '/field-officer/program-activities/{programActivity}/unarchive',
-        [FieldOfficerProgramActivityController::class, 'unarchive']
-    )
-        ->whereUuid('programActivity')
-        ->name('field-officer.program-activities.unarchive');
+    require __DIR__.'/field-officer/program-activities.php';
 
     /*
     |--------------------------------------------------------------------------
@@ -690,38 +153,9 @@ Route::middleware([
     |--------------------------------------------------------------------------
     */
 
-    Route::get(
-        '/field-officer/monitoring',
-        [\App\Http\Controllers\MonitoringWorkspaceController::class, 'index']
-    )->name('field-officer.monitoring.index');
+    require __DIR__.'/field-officer/monitoring.php';
 
-    Route::post(
-        '/field-officer/monitoring',
-        [FieldOfficerMonitoringController::class, 'store']
-    )->name('field-officer.monitoring.store');
-
-    Route::patch(
-        '/field-officer/monitoring/{monitoringRecord}',
-        [FieldOfficerMonitoringController::class, 'update']
-    )
-        ->whereUuid('monitoringRecord')
-        ->name('field-officer.monitoring.update');
-
-    Route::get(
-        '/field-officer/monitoring/{monitoringRecord}/visit-reports',
-        [FieldOfficerMonitoringController::class, 'indexVisitReports']
-    )->whereUuid('monitoringRecord')->name('field-officer.monitoring.visit-reports.index');
-
-    Route::post(
-        '/field-officer/monitoring/{monitoringRecord}/visit-reports',
-        [FieldOfficerMonitoringController::class, 'storeVisitReport']
-    )->whereUuid('monitoringRecord')->name('field-officer.monitoring.visit-reports.store');
-
-    Route::patch(
-        '/field-officer/monitoring/{monitoringRecord}/visit-reports/{visitReport}',
-        [FieldOfficerMonitoringController::class, 'updateVisitReport']
-    )->whereUuid('monitoringRecord')->whereUuid('visitReport')->scopeBindings()
-        ->name('field-officer.monitoring.visit-reports.update');
+    require __DIR__.'/field-officer/visit-reports.php';
 });
 
 /*
@@ -735,96 +169,16 @@ Route::middleware([
     'role:association_account',
 ])->group(function () {
 
-    Route::get('/association/dashboard', [\App\Http\Controllers\DashboardController::class, 'index'])->name('association.dashboard');
+    require __DIR__.'/association/dashboard.php';
 
-    Route::get('/association/projects', [\App\Http\Controllers\AssociationAccount\ProjectController::class, 'index'])->name('association.projects.index');
-    Route::get('/association/projects/{project}', [\App\Http\Controllers\AssociationAccount\ProjectController::class, 'show'])
-        ->whereUuid('project')->name('association.projects.show');
+    require __DIR__.'/association/projects.php';
 
-    Route::get('/association/trainings', [\App\Http\Controllers\AssociationAccount\ProgramController::class, 'trainings'])->name('association.trainings.index');
-    Route::get('/association/trainings/{training}', [\App\Http\Controllers\AssociationAccount\ProgramController::class, 'training'])
-        ->whereUuid('training')->name('association.trainings.show');
-    Route::get('/association/program-activities', [\App\Http\Controllers\AssociationAccount\ProgramController::class, 'activities'])->name('association.program-activities.index');
-    Route::get('/association/program-activities/{activity}', [\App\Http\Controllers\AssociationAccount\ProgramController::class, 'activity'])
-        ->whereUuid('activity')->name('association.program-activities.show');
+    require __DIR__.'/association/trainings.php';
+    require __DIR__.'/association/program-activities.php';
 
-    Route::get(
-        '/association/member-applications',
-        [
-            AssociationAccountMemberApplicationController::class,
-            'index',
-        ]
-    )->middleware(MemberApplicationEvidenceHeaders::class)->name(
-        'association.member-applications.index'
-    );
-
-    Route::get('/association/member-applications/{memberApplication}/photo', MemberApplicationPhotoController::class)
-        ->whereUuid('memberApplication')
-        ->middleware(MemberApplicationEvidenceHeaders::class)
-        ->name('association.member-applications.photo');
-
-    Route::post(
-        '/association/member-applications',
-        [
-            AssociationAccountMemberApplicationController::class,
-            'store',
-        ]
-    )->middleware(MemberApplicationEvidenceHeaders::class)->name(
-        'association.member-applications.store'
-    );
+    require __DIR__.'/association/member-applications.php';
 });
 
-foreach (['admin' => 'system_admin', 'field-officer' => 'field_officer', 'association' => 'association_account'] as $area => $role) {
-    Route::middleware([\App\Http\Middleware\GisRequestGuard::class, 'supabase.auth', 'role:'.$role, 'throttle:gis-read'])
-        ->prefix($area.'/gis')->name($area.'.gis.')->group(function () use ($role) {
-            $controller = \App\Http\Controllers\GisWorkspaceController::class;
-            Route::get('/', [$controller, 'index'])->name('index');
-            Route::get('/data', [$controller, 'data'])->name('data');
-            Route::get('/parents', [$controller, 'parents'])->name('parents');
-            if ($role === 'system_admin') {
-                Route::get('/{location}/coordinates', [$controller, 'correction'])->whereUuid('location')->name('coordinates.edit');
-                Route::patch('/{location}/coordinates', [$controller, 'correctGeometry'])->whereUuid('location')
-                    ->middleware('throttle:gis-write')->name('coordinates.update');
-            }
-            if ($role !== 'association_account') {
-                Route::get('/create', [$controller, 'create'])->name('create');
-                Route::get('/{location}/edit', [$controller, 'edit'])->whereUuid('location')->name('edit');
-                Route::post('/', [$controller, 'store'])->middleware('throttle:gis-write')->name('store');
-                Route::patch('/{location}', [$controller, 'update'])->whereUuid('location')->middleware('throttle:gis-write')->name('update');
-                Route::delete('/{location}', [$controller, 'destroy'])->whereUuid('location')->middleware('throttle:gis-write')->name('destroy');
-                Route::patch('/{location}/{action}', [$controller, 'lifecycle'])->whereUuid('location')
-                    ->whereIn('action', ['publish', 'unpublish', 'archive'])->middleware('throttle:gis-write')->name('lifecycle');
-            }
-            Route::get('/{location}', [$controller, 'show'])->whereUuid('location')->name('show');
-        });
-}
+require __DIR__.'/shared/gis.php';
 
-// Shared Monitoring pages retain the existing role-specific URL namespaces.
-foreach (['admin' => 'system_admin', 'field-officer' => 'field_officer', 'association' => 'association_account'] as $area => $role) {
-    Route::middleware(['supabase.auth', 'role:'.$role])->prefix($area.'/monitoring')
-        ->name($area.'.monitoring.')->group(function () use ($role) {
-            $controller = \App\Http\Controllers\MonitoringWorkspaceController::class;
-            if ($role === 'association_account') Route::get('/', [$controller, 'index'])->name('index');
-            if ($role !== 'association_account') {
-                Route::get('/create', [$controller, 'createPage'])->name('create');
-                Route::post('/{monitoringRecord}/daily-production', [$controller, 'initializeHarvest'])->whereUuid('monitoringRecord')->name('harvest.initialize');
-                Route::post('/{monitoringRecord}/production/{productionId}/harvests', [$controller, 'saveHarvest'])->whereUuid(['monitoringRecord', 'productionId'])->name('harvest.store');
-                Route::get('/{monitoringRecord}/production/{productionId}/harvests/{entryId}/edit', [$controller, 'harvestPage'])->whereUuid(['monitoringRecord', 'productionId', 'entryId'])->name('harvest.edit');
-                Route::patch('/{monitoringRecord}/production/{productionId}/harvests/{entryId}', [$controller, 'saveHarvest'])->whereUuid(['monitoringRecord', 'productionId', 'entryId'])->name('harvest.update');
-                Route::patch('/{monitoringRecord}/production/{productionId}/harvests/{entryId}/void', [$controller, 'voidHarvest'])->whereUuid(['monitoringRecord', 'productionId', 'entryId'])->name('harvest.void');
-                Route::patch('/{monitoringRecord}/production/{productionId}/goal', [$controller, 'saveHarvestGoal'])->whereUuid(['monitoringRecord', 'productionId'])->name('harvest.goal');
-                Route::get('/{monitoringRecord}/edit', [$controller, 'editOverview'])->whereUuid('monitoringRecord')->name('overview.edit');
-                Route::patch('/{monitoringRecord}/overview', [$controller, 'saveOverview'])->whereUuid('monitoringRecord')->name('overview.update');
-                Route::get('/{monitoringRecord}/sections/{section}/edit', [$controller, 'editSection'])->whereUuid('monitoringRecord')->whereIn('section', ['production', 'income', 'materials'])->name('section.edit');
-                Route::patch('/{monitoringRecord}/sections/{section}', [$controller, 'saveSection'])->whereUuid('monitoringRecord')->whereIn('section', ['production', 'income', 'materials'])->name('section.update');
-                Route::get('/{monitoringRecord}/visits/create', [$controller, 'visitPage'])->whereUuid('monitoringRecord')->name('visit.create');
-                Route::post('/{monitoringRecord}/visits', [$controller, 'saveVisit'])->whereUuid('monitoringRecord')->name('visit.store');
-                Route::get('/{monitoringRecord}/visits/{reportId}/edit', [$controller, 'visitPage'])->whereUuid('monitoringRecord')->whereUuid('reportId')->name('visit.edit');
-                Route::patch('/{monitoringRecord}/visits/{reportId}', [$controller, 'saveVisit'])->whereUuid('monitoringRecord')->whereUuid('reportId')->name('visit.update');
-            }
-            Route::get('/{monitoringRecord}/workspace/{section?}', [$controller, 'workspace'])->whereUuid('monitoringRecord')->whereIn('section', ['overview', 'production', 'income', 'materials'])->name('workspace');
-            Route::get('/{monitoringRecord}/production/{productionId}/harvests', [$controller, 'harvestPage'])->whereUuid(['monitoringRecord', 'productionId'])->name('harvest.index');
-            Route::get('/{monitoringRecord}/visits', [$controller, 'visits'])->whereUuid('monitoringRecord')->name('visits');
-            Route::get('/{monitoringRecord}/visits/{reportId}', [$controller, 'visitPage'])->whereUuid('monitoringRecord')->whereUuid('reportId')->name('visit.view');
-        });
-}
+require __DIR__.'/shared/monitoring.php';
