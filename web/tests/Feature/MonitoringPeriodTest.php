@@ -203,7 +203,7 @@ class MonitoringPeriodTest extends TestCase
         $this->assertCount(1, $reports);
         $request = Request::create('/admin/monitoring/'.self::RECORD);
         $request->attributes->set('current_user', $this->actor());
-        $view = (new MonitoringWorkspaceController)->workspace($request, MonitoringRecord::findOrFail(self::RECORD));
+        $view = app(MonitoringWorkspaceController::class)->workspace($request, MonitoringRecord::findOrFail(self::RECORD));
         $this->assertFalse($view->getData()['canManage']);
         $this->assertDatabaseCount('monitoring_records', 1);
         $this->assertDatabaseCount('monitoring_visit_reports', 1);
@@ -214,7 +214,7 @@ class MonitoringPeriodTest extends TestCase
     {
         $this->insertPeriod();
         $this->insertPeriod('88888888-8888-4888-8888-888888888888', self::OTHER_PROJECT, 22);
-        $controller = new MonitoringWorkspaceController;
+        $controller = app(MonitoringWorkspaceController::class);
         $request = Request::create('/admin/monitoring/create');
         $request->attributes->set('current_user', $this->actor());
         $admin = $controller->createPage($request)->getData();
