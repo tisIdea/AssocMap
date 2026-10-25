@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Services\SupabaseAuthService;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Bootstrap\HandleExceptions;
 use Illuminate\Http\Client\Factory;
@@ -11,6 +12,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
 use Mockery;
 use PHPUnit\Framework\Attributes\DataProvider;
+use RuntimeException;
 use Tests\Support\IsolatedDatabaseManager;
 use Tests\Support\MonitoringMaterialsFixture;
 use Tests\TestCase;
@@ -114,6 +116,16 @@ class MonitoringVisitBindingTest extends TestCase
     public static function officerWorkflows(): array
     {
         return ['shared' => ['shared'], 'legacy' => ['legacy']];
+    }
+
+    public static function legacyWrites(): array
+    {
+        return [
+            'administrator create' => ['admin', self::ADMIN, 'store'],
+            'administrator update' => ['admin', self::ADMIN, 'update'],
+            'assigned officer create' => ['field-officer', self::OFFICER, 'store'],
+            'assigned officer update' => ['field-officer', self::OFFICER, 'update'],
+        ];
     }
 
     private function payload(): array
@@ -312,6 +324,79 @@ class MonitoringVisitBindingTest extends TestCase
             'monitoring_record_id' => self::RECORD, 'overall_remarks' => 'Updated synthetic visit',
             'created_by' => $actor, 'updated_by' => $actor, 'monitored_by' => $actor, 'is_legacy_import' => false,
         ]);
+    }
+
+    #[DataProvider('legacyWrites')]
+    public function test_legacy_html_writes_keep_role_redirects_flash_and_unrelated_history(string $area, string $actor, string $operation): void
+    {
+        $this->identity = $actor;
+        $before = $this->snapshot();
+        $creating = $operation === 'store';
+        $method = $creating ? 'post' : 'patch';
+        $url = $this->url('legacy', $area, $operation, self::RECORD, $creating ? null : self::id(9));
+
+        $this->{$method}($url, $this->payload())
+            ->assertRedirect(route($area.'.monitoring.index'))
+            ->assertSessionHasNoErrors()
+            ->assertSessionHas('success', 'Monitoring visit report '.($creating ? 'created' : 'updated').' successfully.');
+
+        $this->assertDatabaseHas('monitoring_visit_reports', [
+            'monitoring_record_id' => self::RECORD, 'overall_remarks' => 'Updated synthetic visit',
+            'created_by' => $creating ? $actor : self::OFFICER, 'updated_by' => $actor,
+            'monitored_by' => $creating ? $actor : self::OFFICER, 'is_legacy_import' => false,
+        ]);
+        $this->assertDatabaseCount('monitoring_visit_reports', $creating ? 4 : 3);
+        $after = $this->snapshot();
+        unset($before['monitoring_visit_reports'], $after['monitoring_visit_reports']);
+        $this->assertSame($before, $after);
+    }
+
+    #[DataProvider('legacyWrites')]
+    public function test_legacy_validation_keeps_default_error_bag_draft_and_json_service_errors(string $area, string $actor, string $operation): void
+    {
+        $this->identity = $actor;
+        $before = $this->snapshot();
+        $creating = $operation === 'store';
+        $method = $creating ? 'post' : 'patch';
+        $url = $this->url('legacy', $area, $operation, self::RECORD, $creating ? null : self::id(9));
+        $index = route($area.'.monitoring.index');
+
+        $this->from($index)->{$method}($url, array_replace($this->payload(), ['monitoring_date' => 'invalid']))
+            ->assertRedirect($index)->assertSessionHasErrors('monitoring_date', null, 'default')
+            ->assertSessionHas('_old_input.overall_remarks', 'Updated synthetic visit');
+        $this->json($creating ? 'POST' : 'PATCH', $url, array_replace($this->payload(), ['monitoring_date' => '2026-04-01']))
+            ->assertUnprocessable()->assertJsonValidationErrors('monitoring_date')
+            ->assertJsonPath('errors.monitoring_date.0', 'Select a visit date within the Monitoring year and quarter.');
+
+        $this->assertSame($before, $this->snapshot());
+    }
+
+    #[DataProvider('legacyWrites')]
+    public function test_legacy_write_failure_rolls_back_visits_and_preserves_revisions_and_audit(string $area, string $actor, string $operation): void
+    {
+        $this->identity = $actor;
+        $before = $this->snapshot();
+        $creating = $operation === 'store';
+        $method = $creating ? 'postJson' : 'patchJson';
+        $url = $this->url('legacy', $area, $operation, self::RECORD, $creating ? null : self::id(9));
+        $statement = $creating ? 'insert into "monitoring_visit_reports"' : 'update "monitoring_visit_reports"';
+        DB::listen(function (QueryExecuted $query) use ($statement): void {
+            if (str_starts_with($query->sql, $statement)) {
+                $this->assertSame(1, DB::transactionLevel());
+                throw new RuntimeException('Synthetic failure after the visit write.');
+            }
+        });
+        $this->withoutExceptionHandling();
+
+        try {
+            $this->{$method}($url, $this->payload());
+            $this->fail('The visit write must fail.');
+        } catch (RuntimeException $exception) {
+            $this->assertSame('Synthetic failure after the visit write.', $exception->getMessage());
+        }
+
+        $this->assertSame(0, DB::transactionLevel());
+        $this->assertSame($before, $this->snapshot());
     }
 
     public function test_association_account_reads_only_owned_parent_child_pairs_and_has_no_write_route(): void

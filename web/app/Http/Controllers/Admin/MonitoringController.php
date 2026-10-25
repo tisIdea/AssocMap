@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Http\MonitoringVisitReportActions;
 use App\Http\Requests\StoreMonitoringRequest;
 use App\Http\Requests\StoreMonitoringVisitReportRequest;
 use App\Models\MonitoringRecord;
@@ -20,6 +21,13 @@ use Illuminate\Support\Carbon;
 
 class MonitoringController extends Controller
 {
+    private readonly MonitoringVisitReportActions $visitReports;
+
+    public function __construct(MonitoringVisitReportActions $visitReports)
+    {
+        $this->visitReports = $visitReports;
+    }
+
     public function index(Request $request): View
     {
         $records = MonitoringRecord::query()
@@ -130,9 +138,7 @@ class MonitoringController extends Controller
         MonitoringRecord $monitoringRecord,
         MonitoringService $service
     ): JsonResponse {
-        return response()->json([
-            'data' => $service->getVisitReports($monitoringRecord, $request->attributes->get('current_user')),
-        ]);
+        return $this->visitReports->index($request, $monitoringRecord, $service);
     }
 
     public function storeVisitReport(
@@ -140,20 +146,12 @@ class MonitoringController extends Controller
         MonitoringRecord $monitoringRecord,
         MonitoringService $service
     ): JsonResponse|RedirectResponse {
-        $service->createVisitReport(
+        return $this->visitReports->store(
+            $request,
             $monitoringRecord,
-            $request->validated(),
-            $request->attributes->get('current_user')
+            $service,
+            'admin.monitoring.index'
         );
-
-        if ($request->expectsJson()) {
-            return response()->json([
-                'data' => $service->getVisitReports($monitoringRecord, $request->attributes->get('current_user')),
-            ], 201);
-        }
-
-        return redirect()->route('admin.monitoring.index')
-            ->with('success', 'Monitoring visit report created successfully.');
     }
 
     public function updateVisitReport(
@@ -162,21 +160,13 @@ class MonitoringController extends Controller
         MonitoringVisitReport $visitReport,
         MonitoringService $service
     ): JsonResponse|RedirectResponse {
-        $service->updateVisitReport(
+        return $this->visitReports->update(
+            $request,
             $monitoringRecord,
-            $visitReport->id,
-            $request->validated(),
-            $request->attributes->get('current_user')
+            $visitReport,
+            $service,
+            'admin.monitoring.index'
         );
-
-        if ($request->expectsJson()) {
-            return response()->json([
-                'data' => $service->getVisitReports($monitoringRecord, $request->attributes->get('current_user')),
-            ]);
-        }
-
-        return redirect()->route('admin.monitoring.index')
-            ->with('success', 'Monitoring visit report updated successfully.');
     }
 
     protected function mapMonitoringRecord(
