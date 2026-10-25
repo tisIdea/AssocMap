@@ -7,8 +7,6 @@ use App\Http\Controllers\Admin\UserManagementController;
 use App\Http\Controllers\Admin\UserAccessController;
 use App\Http\Controllers\Admin\FieldOfficerAssignmentController;
 
-use App\Http\Controllers\Admin\MonitoringController as AdminMonitoringController;
-
 use App\Http\Controllers\AssociationAccount\MemberApplicationController
     as AssociationAccountMemberApplicationController;
 
@@ -17,9 +15,6 @@ use App\Http\Controllers\FieldOfficer\MemberApplicationController
 
 use App\Http\Controllers\MemberApplicationPhotoController;
 use App\Http\Middleware\MemberApplicationEvidenceHeaders;
-
-use App\Http\Controllers\FieldOfficer\MonitoringController
-    as FieldOfficerMonitoringController;
 
 use Illuminate\Support\Facades\Route;
 
@@ -202,21 +197,7 @@ Route::middleware([
 
     require __DIR__.'/admin/monitoring.php';
 
-    Route::get(
-        '/admin/monitoring/{monitoringRecord}/visit-reports',
-        [AdminMonitoringController::class, 'indexVisitReports']
-    )->whereUuid('monitoringRecord')->name('admin.monitoring.visit-reports.index');
-
-    Route::post(
-        '/admin/monitoring/{monitoringRecord}/visit-reports',
-        [AdminMonitoringController::class, 'storeVisitReport']
-    )->whereUuid('monitoringRecord')->name('admin.monitoring.visit-reports.store');
-
-    Route::patch(
-        '/admin/monitoring/{monitoringRecord}/visit-reports/{visitReport}',
-        [AdminMonitoringController::class, 'updateVisitReport']
-    )->whereUuid('monitoringRecord')->whereUuid('visitReport')->scopeBindings()
-        ->name('admin.monitoring.visit-reports.update');
+    require __DIR__.'/admin/visit-reports.php';
 });
 
 /*
@@ -313,21 +294,7 @@ Route::middleware([
 
     require __DIR__.'/field-officer/monitoring.php';
 
-    Route::get(
-        '/field-officer/monitoring/{monitoringRecord}/visit-reports',
-        [FieldOfficerMonitoringController::class, 'indexVisitReports']
-    )->whereUuid('monitoringRecord')->name('field-officer.monitoring.visit-reports.index');
-
-    Route::post(
-        '/field-officer/monitoring/{monitoringRecord}/visit-reports',
-        [FieldOfficerMonitoringController::class, 'storeVisitReport']
-    )->whereUuid('monitoringRecord')->name('field-officer.monitoring.visit-reports.store');
-
-    Route::patch(
-        '/field-officer/monitoring/{monitoringRecord}/visit-reports/{visitReport}',
-        [FieldOfficerMonitoringController::class, 'updateVisitReport']
-    )->whereUuid('monitoringRecord')->whereUuid('visitReport')->scopeBindings()
-        ->name('field-officer.monitoring.visit-reports.update');
+    require __DIR__.'/field-officer/visit-reports.php';
 });
 
 /*
@@ -376,32 +343,4 @@ Route::middleware([
 
 require __DIR__.'/shared/gis.php';
 
-// Shared Monitoring pages retain the existing role-specific URL namespaces.
-foreach (['admin' => 'system_admin', 'field-officer' => 'field_officer', 'association' => 'association_account'] as $area => $role) {
-    Route::middleware(['supabase.auth', 'role:'.$role])->prefix($area.'/monitoring')
-        ->name($area.'.monitoring.')->group(function () use ($role) {
-            $controller = \App\Http\Controllers\MonitoringWorkspaceController::class;
-            if ($role === 'association_account') Route::get('/', [$controller, 'index'])->name('index');
-            if ($role !== 'association_account') {
-                Route::get('/create', [$controller, 'createPage'])->name('create');
-                Route::post('/{monitoringRecord}/daily-production', [$controller, 'initializeHarvest'])->whereUuid('monitoringRecord')->name('harvest.initialize');
-                Route::post('/{monitoringRecord}/production/{productionId}/harvests', [$controller, 'saveHarvest'])->whereUuid(['monitoringRecord', 'productionId'])->name('harvest.store');
-                Route::get('/{monitoringRecord}/production/{productionId}/harvests/{entryId}/edit', [$controller, 'harvestPage'])->whereUuid(['monitoringRecord', 'productionId', 'entryId'])->name('harvest.edit');
-                Route::patch('/{monitoringRecord}/production/{productionId}/harvests/{entryId}', [$controller, 'saveHarvest'])->whereUuid(['monitoringRecord', 'productionId', 'entryId'])->name('harvest.update');
-                Route::patch('/{monitoringRecord}/production/{productionId}/harvests/{entryId}/void', [$controller, 'voidHarvest'])->whereUuid(['monitoringRecord', 'productionId', 'entryId'])->name('harvest.void');
-                Route::patch('/{monitoringRecord}/production/{productionId}/goal', [$controller, 'saveHarvestGoal'])->whereUuid(['monitoringRecord', 'productionId'])->name('harvest.goal');
-                Route::get('/{monitoringRecord}/edit', [$controller, 'editOverview'])->whereUuid('monitoringRecord')->name('overview.edit');
-                Route::patch('/{monitoringRecord}/overview', [$controller, 'saveOverview'])->whereUuid('monitoringRecord')->name('overview.update');
-                Route::get('/{monitoringRecord}/sections/{section}/edit', [$controller, 'editSection'])->whereUuid('monitoringRecord')->whereIn('section', ['production', 'income', 'materials'])->name('section.edit');
-                Route::patch('/{monitoringRecord}/sections/{section}', [$controller, 'saveSection'])->whereUuid('monitoringRecord')->whereIn('section', ['production', 'income', 'materials'])->name('section.update');
-                Route::get('/{monitoringRecord}/visits/create', [$controller, 'visitPage'])->whereUuid('monitoringRecord')->name('visit.create');
-                Route::post('/{monitoringRecord}/visits', [$controller, 'saveVisit'])->whereUuid('monitoringRecord')->name('visit.store');
-                Route::get('/{monitoringRecord}/visits/{reportId}/edit', [$controller, 'visitPage'])->whereUuid('monitoringRecord')->whereUuid('reportId')->name('visit.edit');
-                Route::patch('/{monitoringRecord}/visits/{reportId}', [$controller, 'saveVisit'])->whereUuid('monitoringRecord')->whereUuid('reportId')->name('visit.update');
-            }
-            Route::get('/{monitoringRecord}/workspace/{section?}', [$controller, 'workspace'])->whereUuid('monitoringRecord')->whereIn('section', ['overview', 'production', 'income', 'materials'])->name('workspace');
-            Route::get('/{monitoringRecord}/production/{productionId}/harvests', [$controller, 'harvestPage'])->whereUuid(['monitoringRecord', 'productionId'])->name('harvest.index');
-            Route::get('/{monitoringRecord}/visits', [$controller, 'visits'])->whereUuid('monitoringRecord')->name('visits');
-            Route::get('/{monitoringRecord}/visits/{reportId}', [$controller, 'visitPage'])->whereUuid('monitoringRecord')->whereUuid('reportId')->name('visit.view');
-        });
-}
+require __DIR__.'/shared/monitoring.php';
