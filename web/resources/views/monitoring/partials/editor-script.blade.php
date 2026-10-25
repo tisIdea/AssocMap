@@ -943,11 +943,16 @@ function initializeMonitoringEditor() {
                 input = production?.incomeGroup.querySelector('[data-income-frequency]');
             }
             if (!input) return;
-            const error = document.createElement('p');
-            error.className = 'field-error'; error.dataset.fieldError = ''; error.id = `${input.id}-error-${key.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
+            const container = input.closest('.field');
+            const existing = Array.from(container.querySelectorAll('.field-error'))
+                .find(error => !error.hasAttribute('data-field-error') || error.dataset.fieldError === key);
+            const error = existing ?? document.createElement('p');
+            error.className = 'field-error'; error.dataset.fieldError = key; error.hidden = false;
+            if (!error.id) error.id = `${input.id}-error-${key.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
             error.textContent = messages.join(' ');
-            input.setAttribute('aria-invalid', 'true'); input.setAttribute('aria-describedby', [input.getAttribute('aria-describedby'), error.id].filter(Boolean).join(' '));
-            input.closest('.field').append(error);
+            const descriptions = (input.getAttribute('aria-describedby') ?? '').split(/\s+/).filter(Boolean);
+            input.setAttribute('aria-invalid', 'true'); input.setAttribute('aria-describedby', [...new Set([...descriptions, error.id])].join(' '));
+            if (!existing) container.append(error);
         });
         const firstError = Array.from(form.querySelectorAll('[aria-invalid="true"]')).find(input => !input.disabled && !input.closest('.field[hidden]'));
         if (!activeSection && !firstError && Object.keys(errors).some(key => key.startsWith('production') || key.startsWith('materials'))) activateTab(form, Object.keys(errors).some(key => key.startsWith('production')) ? 'production' : 'materials');
