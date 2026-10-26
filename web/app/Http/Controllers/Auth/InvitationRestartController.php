@@ -5,7 +5,7 @@ namespace App\Http\Controllers\Auth;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\RequestInvitationRestartRequest;
 use App\Http\Requests\VerifyInvitationRestartRequest;
-use App\Services\InvitationRestartService;
+use App\Services\Auth\InvitationRestartService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;

@@ -2,8 +2,8 @@
 
 namespace App\Http\Middleware;
 
-use App\Services\MobileAssociationAccessService;
-use App\Services\SupabaseAuthService;
+use App\Services\Auth\MobileAssociationAccessService;
+use App\Services\Auth\SupabaseAuthService;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -41,7 +41,7 @@ class EnsureSupabaseApiAuthenticated
         }
 
         $context = $this->access->resolve($result['identity']);
-        if (! app(\App\Services\SupabaseSessionBoundary::class)->allows($context['profile'], $result['identity'], $accessToken)) {
+        if (! app(\App\Services\Auth\SupabaseSessionBoundary::class)->allows($context['profile'], $result['identity'], $accessToken)) {
             return ApiRequestGuard::error('account_unavailable', 'Fresh sign-in is required for this account.', 403);
         }
         $request->attributes->set('supabase_identity', $result['identity']);

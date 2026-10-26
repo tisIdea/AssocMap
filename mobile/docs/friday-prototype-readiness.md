@@ -69,8 +69,8 @@ Sources:
 
 - [API route](../../web/routes/api.php): `ApiRequestGuard`, `throttle:api-auth`, Supabase bearer middleware.
 - [Identity middleware](../../web/app/Http/Middleware/EnsureSupabaseApiAuthenticated.php): clears request context, verifies identity, resolves mobile eligibility.
-- [Provider verifier](../../web/app/Services/SupabaseAuthService.php): `verifyApiIdentity` requires a bounded JWT-shaped token, validates through Supabase `/auth/v1/user`, uses TLS, disables redirects/cookies, and bounds timeouts/response format/size.
-- [Eligibility resolver](../../web/app/Services/MobileAssociationAccessService.php): derives profile/role and association from the verified actor, using current write-connection reads.
+- [Provider verifier](../../web/app/Services/Auth/SupabaseAuthService.php): `verifyApiIdentity` requires a bounded JWT-shaped token, validates through Supabase `/auth/v1/user`, uses TLS, disables redirects/cookies, and bounds timeouts/response format/size.
+- [Eligibility resolver](../../web/app/Services/Auth/MobileAssociationAccessService.php): derives profile/role and association from the verified actor, using current write-connection reads.
 - [Response controller](../../web/app/Http/Controllers/Api/V1/MeController.php): emits profile fields and `data.mobile`.
 - [Error guard](../../web/app/Http/Middleware/ApiRequestGuard.php): safe JSON errors, no-store headers, numeric Retry-After for throttling.
 

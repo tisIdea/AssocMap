@@ -5,7 +5,7 @@ namespace Tests\Feature;
 use App\Http\Controllers\Admin\MonitoringController as AdminMonitoringController;
 use App\Http\Controllers\FieldOfficer\MonitoringController as FieldOfficerMonitoringController;
 use App\Models\Project;
-use App\Services\SupabaseAuthService;
+use App\Services\Auth\SupabaseAuthService;
 use Illuminate\Foundation\Bootstrap\HandleExceptions;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;

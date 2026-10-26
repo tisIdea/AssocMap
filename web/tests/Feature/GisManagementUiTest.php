@@ -2,10 +2,10 @@
 
 namespace Tests\Feature;
 
-use App\Services\GisAddressResolver;
-use App\Services\GisFeatureSerializer;
-use App\Services\GisQueryService;
-use App\Services\SupabaseAuthService;
+use App\Services\Auth\SupabaseAuthService;
+use App\Services\GIS\GisAddressResolver;
+use App\Services\GIS\GisFeatureSerializer;
+use App\Services\GIS\GisQueryService;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;

@@ -2,7 +2,7 @@
 
 namespace Tests\Feature;
 
-use App\Services\InvitationActivationContext;
+use App\Services\Auth\InvitationActivationContext;
 use App\Http\Requests\PasswordRecoveryRequest;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Http\Client\ConnectionException;

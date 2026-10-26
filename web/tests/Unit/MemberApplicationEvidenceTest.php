@@ -5,7 +5,7 @@ namespace Tests\Unit;
 use App\Exceptions\MemberApplicationPhotoUnavailableException;
 use App\Http\Requests\StoreMemberApplicationRequest;
 use App\Models\MemberApplication;
-use App\Services\MemberApplicationPhotoService;
+use App\Services\Members\MemberApplicationPhotoService;
 use App\Services\SupabaseStorageService;
 use GuzzleHttp\Promise\Create;
 use GuzzleHttp\Psr7\PumpStream;

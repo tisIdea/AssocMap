@@ -3,11 +3,11 @@
 // Standalone synthetic verification. Never loads .env or accepts a remote server.
 use App\Exceptions\InvitationActivationException;
 use App\Models\UserProfile;
-use App\Services\AccountReactivationService;
-use App\Services\InvitationActivationService;
-use App\Services\SupabaseSessionBoundary;
-use App\Services\UserAccessRevocationService;
-use App\Services\UserInvitationService;
+use App\Services\Auth\AccountReactivationService;
+use App\Services\Auth\InvitationActivationService;
+use App\Services\Auth\SupabaseSessionBoundary;
+use App\Services\Auth\UserAccessRevocationService;
+use App\Services\Auth\UserInvitationService;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Bootstrap\LoadConfiguration;

@@ -4,9 +4,9 @@ namespace Tests\Feature;
 
 use App\Models\MemberApplication;
 use App\Models\UserProfile;
-use App\Services\MemberApplicationService;
-use App\Services\MemberApplicationPhotoService;
-use App\Services\SupabaseAuthService;
+use App\Services\Auth\SupabaseAuthService;
+use App\Services\Members\MemberApplicationPhotoService;
+use App\Services\Members\MemberApplicationService;
 use App\Services\SupabaseStorageService;
 use App\Exceptions\MemberApplicationPhotoUnavailableException;
 use Illuminate\Database\Events\TransactionCommitted;

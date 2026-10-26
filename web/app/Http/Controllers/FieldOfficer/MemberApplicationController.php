@@ -4,9 +4,9 @@ namespace App\Http\Controllers\FieldOfficer;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\MemberRegisterRequest;
-use App\Services\MemberDirectoryQueryService;
+use App\Services\Members\MemberApplicationService;
 use App\Models\MemberApplication;
-use App\Services\MemberApplicationService;
+use App\Services\Members\MemberDirectoryQueryService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;

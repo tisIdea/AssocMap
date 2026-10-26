@@ -4,10 +4,10 @@ namespace Tests\Feature;
 
 use App\Models\MonitoringRecord;
 use App\Models\UserProfile;
-use App\Services\IncomeMonitoringService;
-use App\Services\MonitoringService;
-use App\Services\ProductionMonitoringService;
-use App\Services\SupabaseAuthService;
+use App\Services\Auth\SupabaseAuthService;
+use App\Services\Monitoring\IncomeMonitoringService;
+use App\Services\Monitoring\MonitoringService;
+use App\Services\Monitoring\ProductionMonitoringService;
 use Illuminate\Foundation\Bootstrap\HandleExceptions;
 use Illuminate\Http\Client\Factory;
 use Illuminate\Support\Facades\DB;

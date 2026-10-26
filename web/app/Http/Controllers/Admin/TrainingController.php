@@ -5,13 +5,13 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreTrainingRequest;
 use App\Http\Requests\ProgramDirectoryRequest;
-use App\Services\ProgramDirectoryQueryService;
-use App\Services\ProgramEditorQueryService;
+use App\Services\Associations\AssociationLifecycleService;
+use App\Services\Programs\ProgramDirectoryQueryService;
 use Illuminate\Http\JsonResponse;
 use App\Models\Training;
-use App\Services\TrainingService;
-use App\Services\AssociationLifecycleService;
-use App\Services\ProjectLifecycleService;
+use App\Services\Programs\ProgramEditorQueryService;
+use App\Services\Programs\TrainingService;
+use App\Services\Projects\ProjectLifecycleService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -51,7 +51,7 @@ class TrainingController extends Controller
         $actor = $request->attributes->get('current_user');
         abort_unless($actor->canAccessApplication() && in_array($actor->role?->code, ['system_admin', 'field_officer'], true), 403);
         $request->validate(['participant_page' => ['nullable', 'integer', 'min:1', 'max:1000000']]);
-        $training->load([...app(\App\Services\AssociationGeographyService::class)->relations('association'), 'relatedProject.association', 'saadActivity']);
+        $training->load([...app(\App\Services\Associations\AssociationGeographyService::class)->relations('association'), 'relatedProject.association', 'saadActivity']);
         $prefix = $actor->role->code === 'system_admin' ? 'admin' : 'field-officer';
         $lifecycle = app(AssociationLifecycleService::class);
         if ($prefix === 'field-officer') {

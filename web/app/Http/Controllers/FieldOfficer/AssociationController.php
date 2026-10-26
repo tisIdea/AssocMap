@@ -5,7 +5,7 @@ namespace App\Http\Controllers\FieldOfficer;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\AssociationIndexRequest;
 use App\Models\Association;
-use App\Services\AssociationDirectoryQueryService;
+use App\Services\Associations\AssociationDirectoryQueryService;
 use Illuminate\View\View;
 
 class AssociationController extends Controller

@@ -2,7 +2,7 @@
 
 namespace Tests\Unit;
 
-use App\Services\SupabaseAuthService;
+use App\Services\Auth\SupabaseAuthService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use PHPUnit\Framework\Attributes\DataProvider;

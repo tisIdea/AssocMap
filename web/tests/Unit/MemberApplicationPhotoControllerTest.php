@@ -6,7 +6,7 @@ use App\Http\Controllers\MemberApplicationPhotoController;
 use App\Models\MemberApplication;
 use App\Models\Role;
 use App\Models\UserProfile;
-use App\Services\MemberApplicationPhotoService;
+use App\Services\Members\MemberApplicationPhotoService;
 use App\Services\SupabaseStorageService;
 use Tests\Fixtures\PhotoReadFailureStream;
 use Illuminate\Database\Connection;

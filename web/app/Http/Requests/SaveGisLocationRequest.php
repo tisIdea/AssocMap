@@ -3,7 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Models\GisLocation;
-use App\Services\GisGeometry;
+use App\Services\GIS\GisGeometry;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;

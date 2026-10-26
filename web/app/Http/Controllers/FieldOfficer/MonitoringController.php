@@ -13,7 +13,7 @@ use App\Models\MonitoringVisitReport;
 use App\Models\Project;
 use App\Models\Quarter;
 use App\Models\UserProfile;
-use App\Services\MonitoringService;
+use App\Services\Monitoring\MonitoringService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;

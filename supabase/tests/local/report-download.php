@@ -7,9 +7,9 @@ require __DIR__.'/ScratchDatabase.php';
 require __DIR__.'/LocalTestRun.php';
 require dirname(__DIR__, 3).'/web/vendor/autoload.php';
 
+use App\Services\Auth\SupabaseAuthService;
 use App\Services\Reporting\PythonReportEngine;
 use App\Services\Reporting\ReportCatalog;
-use App\Services\SupabaseAuthService;
 use Illuminate\Contracts\Http\Kernel;
 use Illuminate\Foundation\Bootstrap\LoadConfiguration;
 use Illuminate\Foundation\Bootstrap\LoadEnvironmentVariables;

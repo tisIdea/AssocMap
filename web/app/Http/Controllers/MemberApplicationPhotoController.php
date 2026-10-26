@@ -7,7 +7,7 @@ use App\Models\Association;
 use App\Models\AssociationAccount;
 use App\Models\MemberApplication;
 use App\Models\UserProfile;
-use App\Services\MemberApplicationPhotoService;
+use App\Services\Members\MemberApplicationPhotoService;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 

@@ -2,10 +2,10 @@
 
 // Task 12 standalone synthetic verification. Never loads .env or accepts a remote server.
 use App\Models\UserProfile;
-use App\Services\AccountEmailChangeService;
-use App\Services\InvitationActivationContext;
-use App\Services\SupabaseSessionBoundary;
-use App\Services\UserAccessRevocationService;
+use App\Services\Auth\AccountEmailChangeService;
+use App\Services\Auth\InvitationActivationContext;
+use App\Services\Auth\SupabaseSessionBoundary;
+use App\Services\Auth\UserAccessRevocationService;
 use Illuminate\Contracts\Cache\Repository;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Database\QueryException;

@@ -4,15 +4,15 @@ declare(strict_types=1);
 require __DIR__.'/bootstrap-application.php';
 use App\Models\Project;
 use App\Models\UserProfile;
-use App\Services\AssociationLifecycleService;
-use App\Services\AuditLogService;
-use App\Services\GisAddressResolver;
-use App\Services\GisFeatureSerializer;
-use App\Services\GisGeometry;
-use App\Services\GisLocationService;
-use App\Services\GisQueryService;
-use App\Services\ProjectClosureService;
-use App\Services\ProjectLifecycleService;
+use App\Services\Associations\AssociationLifecycleService;
+use App\Services\Audit\AuditLogService;
+use App\Services\GIS\GisAddressResolver;
+use App\Services\GIS\GisFeatureSerializer;
+use App\Services\GIS\GisGeometry;
+use App\Services\GIS\GisLocationService;
+use App\Services\GIS\GisQueryService;
+use App\Services\Projects\ProjectClosureService;
+use App\Services\Projects\ProjectLifecycleService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -60,7 +60,7 @@ try {
                 'version'=>$job['version']],$user,$request);
             $result=['status'=>'PASS','version'=>$value['properties']['version']];
         } elseif ($job['operation']==='monitoring') {
-            $service=new App\Services\MonitoringService(new AssociationLifecycleService,$lifecycle,new App\Services\ProductionMonitoringService);
+            $service=new App\Services\Monitoring\MonitoringService(new AssociationLifecycleService,$lifecycle,new App\Services\Monitoring\ProductionMonitoringService);
             $service->updateOverview(App\Models\MonitoringRecord::findOrFail($job['monitoring']),
                 ['monitored_by'=>null,'site_validated'=>true],$user);
             $result=['status'=>'PASS','site_validated'=>true];

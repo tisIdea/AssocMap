@@ -3,11 +3,11 @@
 namespace Tests\Feature;
 
 use App\Models\UserProfile;
-use App\Services\AccountEmailChangeService;
-use App\Services\AccountReactivationService;
-use App\Services\InvitationActivationContext;
-use App\Services\SupabaseSessionBoundary;
-use App\Services\UserAccessRevocationService;
+use App\Services\Auth\AccountEmailChangeService;
+use App\Services\Auth\AccountReactivationService;
+use App\Services\Auth\InvitationActivationContext;
+use App\Services\Auth\SupabaseSessionBoundary;
+use App\Services\Auth\UserAccessRevocationService;
 use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Factory;

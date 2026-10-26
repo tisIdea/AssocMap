@@ -2,7 +2,7 @@
 
 namespace Tests\Unit;
 
-use App\Services\ProfileAuthIdentityService;
+use App\Services\Auth\ProfileAuthIdentityService;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;

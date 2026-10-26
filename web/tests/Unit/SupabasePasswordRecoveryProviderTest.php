@@ -2,7 +2,7 @@
 
 namespace Tests\Unit;
 
-use App\Services\SupabasePasswordRecoveryProvider;
+use App\Services\Auth\SupabasePasswordRecoveryProvider;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;

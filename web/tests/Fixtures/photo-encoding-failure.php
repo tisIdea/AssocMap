@@ -8,7 +8,7 @@ namespace Tests\Fixtures {
     }
 }
 
-namespace App\Services {
+namespace App\Services\Members {
     // Loaded only by the isolated encoder-failure test process.
     function imagepng(\GdImage $image, mixed $output = null, int $quality = -1, int $filters = -1): bool
     {

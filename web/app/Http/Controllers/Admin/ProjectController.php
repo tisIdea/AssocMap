@@ -6,14 +6,14 @@ use Illuminate\Support\Carbon;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreProjectRequest;
 use App\Http\Requests\ProgramDirectoryRequest;
-use App\Services\ProgramDirectoryQueryService;
-use App\Services\ProgramEditorQueryService;
+use App\Services\Associations\AssociationLifecycleService;
+use App\Services\Programs\ProgramDirectoryQueryService;
 use Illuminate\Http\JsonResponse;
 use App\Models\Association;
 use App\Models\Project;
-use App\Services\ProjectService;
-use App\Services\AssociationLifecycleService;
-use App\Services\ProjectLifecycleService;
+use App\Services\Programs\ProgramEditorQueryService;
+use App\Services\Projects\ProjectLifecycleService;
+use App\Services\Projects\ProjectService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -41,7 +41,7 @@ class ProjectController extends Controller
 
     public function edit(Request $request, Project $project, ProjectLifecycleService $lifecycle, AssociationLifecycleService $associations, ProgramEditorQueryService $editor): View
     {
-        $project->load([...app(\App\Services\AssociationGeographyService::class)->relations('association'), 'saadActivity', 'fisheriesCategory', 'commodity', 'materials', 'products']);
+        $project->load([...app(\App\Services\Associations\AssociationGeographyService::class)->relations('association'), 'saadActivity', 'fisheriesCategory', 'commodity', 'materials', 'products']);
         abort_unless($project->association, 404);
         $actor = $request->attributes->get('current_user');
         $lifecycle->authorize($actor, $project->association);

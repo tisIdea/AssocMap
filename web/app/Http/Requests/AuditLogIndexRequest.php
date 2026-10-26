@@ -3,7 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Models\UserProfile;
-use App\Services\AuditLogFilterOptions;
+use App\Services\Audit\AuditLogFilterOptions;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Http\Exceptions\HttpResponseException;

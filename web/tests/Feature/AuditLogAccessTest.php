@@ -3,8 +3,8 @@
 namespace Tests\Feature;
 
 use App\Models\AuditLog;
-use App\Services\AuditLogService;
-use App\Services\SupabaseAuthService;
+use App\Services\Audit\AuditLogService;
+use App\Services\Auth\SupabaseAuthService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;

@@ -4,7 +4,7 @@ namespace App\Http\Requests;
 
 use App\Models\Association;
 use App\Models\Role;
-use App\Services\UserInvitationService;
+use App\Services\Auth\UserInvitationService;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;

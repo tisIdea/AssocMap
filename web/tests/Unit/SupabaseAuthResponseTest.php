@@ -2,7 +2,7 @@
 
 namespace Tests\Unit;
 
-use App\Services\SupabaseAuthResponse;
+use App\Services\Auth\SupabaseAuthResponse;
 use GuzzleHttp\Psr7\Response as ProviderResponse;
 use Illuminate\Http\Client\Response;
 use PHPUnit\Framework\Attributes\DataProvider;

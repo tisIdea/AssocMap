@@ -6,11 +6,11 @@ require __DIR__.'/LocalTestRun.php';
 
 use App\Models\Project;
 use App\Models\UserProfile;
-use App\Services\AssociationLifecycleService;
-use App\Services\AuditLogService;
+use App\Services\Associations\AssociationLifecycleService;
+use App\Services\Audit\AuditLogService;
 use App\Services\DashboardService;
-use App\Services\ProjectClosureService;
-use App\Services\ProjectLifecycleService;
+use App\Services\Projects\ProjectClosureService;
+use App\Services\Projects\ProjectLifecycleService;
 use App\Services\Reporting\PythonReportEngine;
 use App\Services\Reporting\ReportCatalog;
 use App\Services\Reporting\ReportDataset;
@@ -227,8 +227,8 @@ $tests->check('actual Python export failure remains sanitized and releases locks
 
 $tests->check('authorized finalized GIS maintenance cannot change reporting totals',function () use ($scope,$service,$case,$actor,$request,$section,$pdo) {
     $user=$actor('admin');
-    $queries=new App\Services\GisQueryService(new App\Services\GisFeatureSerializer,new App\Services\GisAddressResolver);
-    $gis=new App\Services\GisLocationService(new App\Services\GisGeometry,$queries,new ProjectLifecycleService(new AssociationLifecycleService));
+    $queries=new App\Services\GIS\GisQueryService(new App\Services\GIS\GisFeatureSerializer,new App\Services\GIS\GisAddressResolver);
+    $gis=new App\Services\GIS\GisLocationService(new App\Services\GIS\GisGeometry,$queries,new ProjectLifecycleService(new AssociationLifecycleService));
     foreach (['completed','terminated'] as $status) {
         $c=$case('reporting_'.$status); $project=Project::findOrFail($c['project'])->getAttributes();
         $filters=['report_type'=>'comprehensive','project_id'=>$c['project'],'year'=>2026];

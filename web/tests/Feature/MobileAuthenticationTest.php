@@ -5,7 +5,7 @@ namespace Tests\Feature;
 use App\Http\Middleware\ApiRequestGuard;
 use App\Http\Middleware\EnsureMobileAssociationAccess;
 use App\Models\UserProfile;
-use App\Services\MobileAssociationAccessService;
+use App\Services\Auth\MobileAssociationAccessService;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Http\Request;
 use Illuminate\Http\Client\Factory;

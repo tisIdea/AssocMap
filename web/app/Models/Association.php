@@ -49,7 +49,7 @@ class Association extends Model
 
     public function locationBarangay(): ?Barangay
     {
-        return app(\App\Services\AssociationGeographyService::class)->usesDirectGeography()
+        return app(\App\Services\Associations\AssociationGeographyService::class)->usesDirectGeography()
             ? $this->barangay : $this->area?->barangay;
     }
 

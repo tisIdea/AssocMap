@@ -4,8 +4,8 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\AccountEmailChangeRequest;
-use App\Services\AccountEmailChangeService;
-use App\Services\EmailChangeContext;
+use App\Services\Auth\AccountEmailChangeService;
+use App\Services\Auth\EmailChangeContext;
 use Illuminate\Http\Request;
 use Throwable;
 

@@ -7,11 +7,11 @@ use App\Http\ProgramActivityPageData;
 use App\Http\Requests\ProgramDirectoryRequest;
 use App\Http\Requests\StoreProgramActivityRequest;
 use App\Models\ProgramActivityRecord;
-use App\Services\AssociationLifecycleService;
-use App\Services\ProgramActivityService;
-use App\Services\ProgramDirectoryQueryService;
-use App\Services\ProgramEditorQueryService;
-use App\Services\ProjectLifecycleService;
+use App\Services\Associations\AssociationLifecycleService;
+use App\Services\Programs\ProgramActivityService;
+use App\Services\Programs\ProgramDirectoryQueryService;
+use App\Services\Programs\ProgramEditorQueryService;
+use App\Services\Projects\ProjectLifecycleService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -42,7 +42,7 @@ class ProgramActivityController extends Controller
     {
         $actor = $request->attributes->get('current_user');
         abort_unless($actor->canAccessApplication() && in_array($actor->role?->code, ['system_admin', 'field_officer'], true), 403);
-        $programActivity->load([...app(\App\Services\AssociationGeographyService::class)->relations('association'), 'relatedProject.association', 'saadActivity']);
+        $programActivity->load([...app(\App\Services\Associations\AssociationGeographyService::class)->relations('association'), 'relatedProject.association', 'saadActivity']);
         $prefix = $actor->role->code === 'system_admin' ? 'admin' : 'field-officer';
         $lifecycle = app(AssociationLifecycleService::class);
         if ($prefix === 'field-officer') {

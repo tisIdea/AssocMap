@@ -4,10 +4,10 @@ namespace Tests\Feature;
 
 use App\Models\MonitoringRecord;
 use App\Models\UserProfile;
-use App\Services\MaterialsMonitoringService;
-use App\Services\MonitoringService;
-use App\Services\ProductionMonitoringService;
-use App\Services\SupabaseAuthService;
+use App\Services\Auth\SupabaseAuthService;
+use App\Services\Monitoring\MaterialsMonitoringService;
+use App\Services\Monitoring\MonitoringService;
+use App\Services\Monitoring\ProductionMonitoringService;
 use Illuminate\Foundation\Bootstrap\HandleExceptions;
 use Illuminate\Http\Client\Factory;
 use Illuminate\Support\Facades\DB;
@@ -291,7 +291,7 @@ class MonitoringMaterialsTest extends TestCase
         $data = $this->full($this->payload([$this->entry()]));
         $data['project_status'] = 'suspended';
         $data['production_revision'] = app(ProductionMonitoringService::class)->revision($this->record());
-        $data['income_revision'] = app(\App\Services\IncomeMonitoringService::class)->revision($this->record());
+        $data['income_revision'] = app(\App\Services\Monitoring\IncomeMonitoringService::class)->revision($this->record());
         $data['production'] = [['id' => self::PRODUCTION, 'project_product_id' => self::PRODUCT,
             'income' => [['period_type' => 'quarterly', 'gross_income' => '10.00', 'remarks' => 'Unsaved Income']]]];
         $before = $this->saved();

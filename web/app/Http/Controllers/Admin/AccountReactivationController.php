@@ -5,7 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\AccountReactivationRequest;
 use App\Models\UserProfile;
-use App\Services\AccountReactivationService;
+use App\Services\Auth\AccountReactivationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;

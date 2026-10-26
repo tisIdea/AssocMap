@@ -4,9 +4,9 @@ namespace App\Http;
 
 use App\Http\Requests\ProgramDirectoryRequest;
 use App\Models\ProgramActivityRecord;
-use App\Services\AssociationLifecycleService;
-use App\Services\ProgramDirectoryQueryService;
-use App\Services\ProgramEditorQueryService;
+use App\Services\Associations\AssociationLifecycleService;
+use App\Services\Programs\ProgramDirectoryQueryService;
+use App\Services\Programs\ProgramEditorQueryService;
 
 final class ProgramActivityPageData
 {

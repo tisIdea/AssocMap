@@ -3,8 +3,8 @@
 namespace Tests\Feature;
 
 use App\Models\MonitoringRecord;
-use App\Services\ProductionMonitoringService;
-use App\Services\SupabaseAuthService;
+use App\Services\Auth\SupabaseAuthService;
+use App\Services\Monitoring\ProductionMonitoringService;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Bootstrap\HandleExceptions;
 use Illuminate\Http\Client\Factory;

@@ -3,7 +3,7 @@
 namespace Tests\Unit;
 
 use App\Exceptions\MemberApplicationPhotoUnavailableException;
-use App\Services\MemberApplicationPhotoService;
+use App\Services\Members\MemberApplicationPhotoService;
 use App\Services\SupabaseStorageService;
 use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Foundation\Bootstrap\HandleExceptions;

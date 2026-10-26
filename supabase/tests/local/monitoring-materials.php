@@ -7,8 +7,8 @@ require __DIR__.'/bootstrap-application.php';
 use App\Exceptions\MonitoringMaterialsConflictException;
 use App\Models\MonitoringRecord;
 use App\Models\UserProfile;
-use App\Services\MaterialsMonitoringService;
-use App\Services\MonitoringService;
+use App\Services\Monitoring\MaterialsMonitoringService;
+use App\Services\Monitoring\MonitoringService;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\Process\Process;
 

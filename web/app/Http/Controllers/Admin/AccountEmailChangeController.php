@@ -5,7 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\AccountEmailChangeRequest;
 use App\Models\UserProfile;
-use App\Services\AccountEmailChangeService;
+use App\Services\Auth\AccountEmailChangeService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;

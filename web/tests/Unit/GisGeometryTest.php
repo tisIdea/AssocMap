@@ -2,7 +2,7 @@
 
 namespace Tests\Unit;
 
-use App\Services\GisGeometry;
+use App\Services\GIS\GisGeometry;
 use Illuminate\Validation\ValidationException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;

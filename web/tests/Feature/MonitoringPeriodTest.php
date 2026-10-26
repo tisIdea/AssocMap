@@ -5,7 +5,7 @@ namespace Tests\Feature;
 use App\Http\Controllers\MonitoringWorkspaceController;
 use App\Models\MonitoringRecord;
 use App\Models\UserProfile;
-use App\Services\MonitoringService;
+use App\Services\Monitoring\MonitoringService;
 use Illuminate\Database\QueryException;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Bootstrap\HandleExceptions;
