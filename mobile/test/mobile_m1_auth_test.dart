@@ -16,6 +16,7 @@ import 'package:mobile/data/remote/api_auth_repository.dart';
 import 'package:mobile/data/remote/api_analytics_repository.dart';
 import 'package:mobile/data/remote/api_dashboard_repository.dart';
 import 'package:mobile/data/repositories/dashboard_repository.dart';
+import 'package:mobile/data/repositories/analytics_repository.dart';
 
 import 'analytics_report_test.dart' show report;
 import 'association_dashboard_test.dart' show dashboard;
@@ -131,10 +132,12 @@ void main() {
       storage: storage,
       api: LaravelApiClient(
         config: config,
-        client: MockClient((request) async {
-          apiRequests.add(request);
-          return apiReply(request);
-        }),
+        client: BoundedHttpClient(
+          clientFactory: () => MockClient((request) async {
+            apiRequests.add(request);
+            return apiReply(request);
+          }),
+        ),
       ),
     );
   });
@@ -558,6 +561,150 @@ void main() {
         throwsA(isA<TimeoutException>()),
       );
       stalled.close();
+    },
+  );
+
+  test(
+    'report 401 refreshes once and replays only the safe report GET',
+    () async {
+      await login();
+      authReply = (_) => json(providerSession(suffix: 'renewed'));
+      var reports = 0;
+      apiReply = (_) => ++reports == 1
+          ? json({'error': 'expired'}, 401)
+          : json({'data': report()});
+      final analytics = ApiAnalyticsRepository(
+        config: config,
+        read: repository.read,
+      );
+      expect((await analytics.load({'report_type': 'income'})).empty, isFalse);
+      expect(reports, 2);
+      expect(
+        apiRequests.skip(1).every((request) => request.method == 'GET'),
+        isTrue,
+      );
+      expect(
+        authRequests.where(
+          (request) =>
+              request.url.queryParameters['grant_type'] == 'refresh_token',
+        ),
+        hasLength(1),
+      );
+      expect(
+        authRequests.where(
+          (request) => request.url.queryParameters['grant_type'] == 'password',
+        ),
+        hasLength(1),
+      );
+      expect(
+        apiRequests[1].headers['Authorization'],
+        isNot(apiRequests[2].headers['Authorization']),
+      );
+    },
+  );
+
+  for (final status in [401, 403, 429, 503]) {
+    test(
+      'report $status preserves session policy and bounded retry behavior',
+      () async {
+        await login();
+        authReply = (request) => request.url.path.endsWith('/logout')
+            ? http.Response('', 204)
+            : json(providerSession(suffix: 'renewed'));
+        apiReply = (_) => json({'error': 'synthetic'}, status);
+        final analytics = ApiAnalyticsRepository(
+          config: config,
+          read: repository.read,
+        );
+        final expected = switch (status) {
+          401 => AnalyticsFailureKind.expired,
+          403 => AnalyticsFailureKind.denied,
+          429 => AnalyticsFailureKind.rateLimited,
+          _ => AnalyticsFailureKind.unavailable,
+        };
+        await expectLater(
+          analytics.load({'report_type': 'income'}),
+          throwsA(
+            isA<AnalyticsFailure>().having((e) => e.kind, 'kind', expected),
+          ),
+        );
+        expect(apiRequests.length, status == 401 ? 3 : 2);
+        expect(
+          authRequests.where(
+            (request) =>
+                request.url.queryParameters['grant_type'] == 'refresh_token',
+          ),
+          hasLength(status == 401 ? 1 : 0),
+        );
+        expect(provider.currentSession == null, status == 401 || status == 403);
+        expect(await storage.hasAccessToken(), status == 429 || status == 503);
+      },
+    );
+  }
+
+  test(
+    'logout while report headers stall cancels immediately and rejects late data',
+    () async {
+      await login();
+      final pending = Completer<http.Response>();
+      apiReply = (_) => pending.future;
+      final analytics = ApiAnalyticsRepository(
+        config: config,
+        read: repository.read,
+      );
+      final check = expectLater(
+        analytics.load({'report_type': 'income'}),
+        throwsA(
+          isA<AnalyticsFailure>().having(
+            (e) => e.kind,
+            'kind',
+            AnalyticsFailureKind.expired,
+          ),
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+      await repository.signOut();
+      await check;
+      expect(await storage.hasAccessToken(), isFalse);
+      pending.complete(json({'data': report()}));
+      await Future<void>.delayed(Duration.zero);
+      expect(provider.currentSession, isNull);
+      apiReply = (_) => json(me());
+      await login();
+      expect(await storage.hasAccessToken(), isTrue);
+    },
+  );
+
+  test(
+    'provider sign-out cancels an active report without a refresh',
+    () async {
+      await login();
+      final pending = Completer<http.Response>();
+      apiReply = (_) => pending.future;
+      final check = expectLater(
+        repository.read(
+          Uri.parse('https://backend.example.test/api/v1/association/reports'),
+        ),
+        throwsA(
+          isA<ApiFailure>().having(
+            (e) => e.kind,
+            'kind',
+            ApiFailureKind.unauthenticated,
+          ),
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+      await provider.signOut(scope: SignOutScope.local);
+      await check;
+      pending.complete(json({'data': report()}));
+      expect(
+        authRequests.where(
+          (request) =>
+              request.url.queryParameters['grant_type'] == 'refresh_token',
+        ),
+        isEmpty,
+      );
+      expect(await storage.hasAccessToken(), isFalse);
     },
   );
 }

@@ -24,6 +24,7 @@ class ApiAuthRepository implements RestorableAuthRepository {
         if (state.event == AuthChangeEvent.signedOut && _approvedUser != null) {
           _approvedUser = null;
           ++_generation;
+          _api.cancelActive();
           _providerCleanup = storage?.clear().catchError((Object _) {
             if (!_invalidations.isClosed) {
               _invalidations.add(
@@ -289,6 +290,7 @@ class ApiAuthRepository implements RestorableAuthRepository {
   Future<void> signOut() async {
     ++_generation;
     _approvedUser = null;
+    _api.cancelActive();
     // Disable persistence before any late refresh/sign-in event can write again.
     AuthFailure? cleanupFailure;
     try {
