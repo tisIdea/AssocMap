@@ -27,7 +27,7 @@ class MemberApplicationController extends Controller
         $currentUser = $request->attributes->get('current_user');
 
         $associationAccount = AssociationAccount::query()
-            ->with(app(\App\Services\Associations\AssociationGeographyService::class)->relations('association'))
+            ->with(app(\App\Services\Associations\AssociationGeographyService::class)->displayRelations('association'))
             ->where('user_id', $currentUser->id)
             ->where('is_active', true)
             ->first();

@@ -80,9 +80,10 @@ class UserManagementQueryService
     {
         $ids = $profiles->pluck('id')->all();
         $identities = $this->identities->read($ids);
-        $links = AssociationAccount::whereIn('user_id', $ids)->with('association:id,name,status,archived_at')->get();
-        $associationCounts = AssociationAccount::whereIn('association_id', $links->pluck('association_id')->unique())
-            ->where('is_active', true)->groupBy('association_id')->selectRaw('association_id, COUNT(*) AS total')->pluck('total', 'association_id');
+        $associationCounts = AssociationAccount::query()->from('association_accounts as related_link')->selectRaw('COUNT(*)')
+            ->whereColumn('related_link.association_id', 'association_accounts.association_id')->where('related_link.is_active', true);
+        $links = AssociationAccount::query()->select('association_accounts.*')->selectSub($associationCounts, 'active_association_links_count')
+            ->whereIn('user_id', $ids)->with('association:id,name,status,archived_at')->get();
         $links = $links->groupBy('user_id');
         $invitations = UserInvitation::whereIn('auth_user_id', $ids)->orderByDesc('created_at')->orderByDesc('id')
             ->get(['id', 'auth_user_id', 'email', 'status'])->unique('auth_user_id')->keyBy('auth_user_id');
@@ -90,7 +91,7 @@ class UserManagementQueryService
             ->where('entity_type', 'user_profile')->whereIn('entity_id', $ids)
             ->groupBy('entity_id')->selectRaw('entity_id, MAX(performed_at) AS performed_at')->get()->keyBy('entity_id');
 
-        return $profiles->map(function (UserProfile $profile) use ($identities, $invitations, $revocations, $links, $associationCounts) {
+        return $profiles->map(function (UserProfile $profile) use ($identities, $invitations, $revocations, $links) {
             $identity = $identities?->get($profile->id);
             $invitation = $invitations->get($profile->id);
             $email = is_string($identity?->email) && filter_var($identity->email, FILTER_VALIDATE_EMAIL)
@@ -101,7 +102,7 @@ class UserManagementQueryService
             $association = $link?->association;
             $integrityIssue = ($allLinks->isNotEmpty() && $profile->role?->code !== 'association_account')
                 || $accountLinks->count() > 1 || ($link !== null && ($association === null
-                || (int) $associationCounts->get($link->association_id, 0) !== 1 || $profile->role?->code !== 'association_account'));
+                || (int) $link->active_association_links_count !== 1 || $profile->role?->code !== 'association_account'));
             $relationshipStatus = match (true) {
                 $integrityIssue => 'Relationship needs review',
                 $link === null => 'No active association linked',

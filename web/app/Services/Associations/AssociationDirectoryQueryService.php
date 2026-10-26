@@ -41,13 +41,10 @@ class AssociationDirectoryQueryService
                 ->whereNull('associations.archived_at'));
     }
 
-    /** @return list<string> */
+    /** @return array<int|string, string|\Closure> */
     private function locationRelations(): array
     {
-        $barangay = $this->barangayRelation();
-
-        return ['area:id,barangay_id,address,is_active', $barangay.':id,municipality_id,name,is_active',
-            $barangay.'.municipality:id,name,province,region,is_active', 'currentPresident'];
+        return [...$this->geography->displayRelations(withStatus: true), 'currentPresident'];
     }
 
     /**

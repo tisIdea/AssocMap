@@ -499,7 +499,7 @@ class ProgramManagementUiTest extends TestCase
         $response = $this->get('/'.$prefix.'/projects')->assertOk();
         $after = count(DB::getQueryLog());
         DB::disableQueryLog();
-        $this->assertSame(10, $before);
+        $this->assertSame(8, $before);
         $this->assertSame($before, $after);
         $response->assertSee('Test Barangay')->assertSee('Test Municipality');
         $this->assertCount(25, $response->viewData('projects'));

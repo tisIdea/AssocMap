@@ -124,15 +124,7 @@ class DashboardService
                 (clone $associations)->selectRaw('mu.name AS label, COUNT(*) AS value')->groupBy('mu.id', 'mu.name')
                     ->orderByDesc('value')->orderBy('mu.name')->limit(12)->get()->map(fn ($row) => (array) $row)->all()));
         }
-        $charts[] = $this->optional('project_status', fn () => $this->chart('project_status', 'Project portfolio status',
-            'Unarchived projects; current project status, not the historical monitoring status.',
-            (clone $currentProjects)->selectRaw('p.status AS label, COUNT(*) AS value')->groupBy('p.status')->orderBy('p.status')
-                ->get()->map(fn ($row) => ['label' => ucfirst($row->label), 'value' => (int) $row->value])->all()));
-        $charts[] = $this->optional('components', fn () => $this->chart('components', 'Projects by program component', 'Unarchived projects; one component per project. Up to 12 components.',
-            (clone $currentProjects)->join('saad_activities as sa', 'sa.id', '=', 'p.saad_activity_id')
-                ->join('saad_subcomponents as sc', 'sc.id', '=', 'sa.subcomponent_id')->join('saad_components as c', 'c.id', '=', 'sc.component_id')
-                ->selectRaw('c.name AS label, COUNT(*) AS value')->groupBy('c.id', 'c.name')->orderBy('c.name')
-                ->limit(12)->get()->map(fn ($row) => (array) $row)->all()));
+        array_push($charts, ...$this->projectCharts($currentProjects));
 
         $overview = $role === 'association_account' ? null : $this->optional('associations', fn () => (clone $associations)
             ->select(['a.id', 'a.name', 'a.status', 'a.archived_at', 'mu.name as municipality'])
@@ -183,6 +175,32 @@ class DashboardService
             'training' => $training, 'monitoring' => $monitoring, 'applications' => $applications,
             'officer_attention' => $attention, 'recent_projects' => $recentProjects, 'activities' => $activities,
         ];
+    }
+
+    private function projectCharts(Builder $projects): array
+    {
+        $statuses = (clone $projects)->selectRaw('p.status AS label, COUNT(*) AS value')->groupBy('p.status')->orderBy('p.status');
+        $components = (clone $projects)->join('saad_activities as sa', 'sa.id', '=', 'p.saad_activity_id')
+            ->join('saad_subcomponents as sc', 'sc.id', '=', 'sa.subcomponent_id')->join('saad_components as c', 'c.id', '=', 'sc.component_id')
+            ->selectRaw('c.name AS label, COUNT(*) AS value')->groupBy('c.id', 'c.name')->orderBy('c.name')->limit(12);
+        $statusChart = fn ($rows) => $this->chart('project_status', 'Project portfolio status',
+            'Unarchived projects; current project status, not the historical monitoring status.',
+            $rows->map(fn ($row) => ['label' => ucfirst($row->label), 'value' => (int) $row->value])->all());
+        $componentChart = fn ($rows) => $this->chart('components', 'Projects by program component',
+            'Unarchived projects; one component per project. Up to 12 components.', $rows->map(fn ($row) => (array) $row)->all());
+
+        try {
+            $rows = DB::query()->useWritePdo()->fromSub((clone $statuses)->selectRaw("'status' AS chart_kind")
+                ->unionAll((clone $components)->selectRaw("'components' AS chart_kind")), 'project_charts')
+                ->orderBy('chart_kind')->orderBy('label')->get();
+
+            return [$statusChart($rows->where('chart_kind', 'status')->values()),
+                $componentChart($rows->where('chart_kind', 'components')->values())];
+        } catch (QueryException) {
+            // Retain independent optional-widget failures when a source is unavailable.
+            return [$this->optional('project_status', fn () => $statusChart($statuses->get())),
+                $this->optional('components', fn () => $componentChart($components->get()))];
+        }
     }
 
     private function records(string $table, string $alias, Builder $ids): Builder

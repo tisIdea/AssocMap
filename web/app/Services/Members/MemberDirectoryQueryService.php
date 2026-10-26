@@ -41,7 +41,7 @@ class MemberDirectoryQueryService
         $geography = app(AssociationGeographyService::class);
 
         return $query->with(['association:'.implode(',', $geography->associationColumns(['id', 'name', 'area_id', 'status', 'archived_at'])),
-            ...$geography->relations('association'), 'sex:id,name', 'position:id,name', 'classifications'])
+            ...$geography->displayRelations('association'), 'sex:id,name', 'position:id,name', 'classifications'])
             ->paginate(25, total: $this->paginationTotal($filters, $summary, 'current'))->appends($filters);
     }
 
@@ -63,7 +63,7 @@ class MemberDirectoryQueryService
         if ($fieldOfficer) {
             $geography = app(AssociationGeographyService::class);
             $relations = [...$relations, 'association:'.implode(',', $geography->associationColumns(['id', 'name', 'area_id', 'status', 'archived_at'])),
-                ...$geography->relations('association')];
+                ...$geography->displayRelations('association')];
         }
 
         return $query->with($relations)->paginate(25, total: $this->paginationTotal($filters, $summary, 'total'))->appends($filters);
