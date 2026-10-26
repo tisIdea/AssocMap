@@ -19,7 +19,7 @@
                     <form method="POST" data-report-export class="report-export-panel">
                         @csrf
                         <div data-export-filters>@foreach($filters as $key => $value)<input type="hidden" name="{{ $key }}" value="{{ $value }}">@endforeach</div>
-                        <p class="field-help">Exports use the applied filters and current authorized records.</p>
+                        <p class="field-help">Exports use the applied filters and current authorized records. PDF/XLSX contain tables, summaries and notes; chart images are shown on this page.</p>
                         <button type="submit" class="button" formaction="{{ route($prefix.'.export', ['format' => 'pdf']) }}" @disabled(!$result)>Export PDF</button>
                         <button type="submit" class="button" formaction="{{ route($prefix.'.export', ['format' => 'xlsx']) }}" @disabled(!$result)>Export XLSX</button>
                     </form>
@@ -81,14 +81,38 @@
             <div data-report-result>
                 @if($result)
                     <h2>{{ $result['title'] }}</h2>
-                    <p>Generated {{ $result['meta']['generated_at'] }} · {{ $result['meta']['timezone'] }}</p>
-                    <p>{{ $result['meta']['scope_basis'] }}</p>
+                    <section class="report-context-card" id="report-scope" aria-labelledby="report-scope-title">
+                        <h3 id="report-scope-title">Reporting scope and period</h3>
+                        <p>{{ $result['meta']['scope_basis'] }}</p>
+                        <p>Associations: {{ implode('; ', $result['meta']['scope']) ?: 'None in this scope' }}</p>
+                        <p class="field-help">Generated {{ $result['meta']['generated_at'] }} · {{ $result['meta']['timezone'] }}</p>
+                        <p class="field-help">@foreach($result['meta']['filters'] as $key => $value){{ str_replace('_', ' ', $key) }}: {{ $value }}{{ $loop->last ? '' : ' · ' }}@endforeach</p>
+                        <p class="field-help">Current association/member counts and project statuses are snapshots. Program year selects a cohort; reporting year/quarter selects recorded events and monitoring periods.</p>
+                    </section>
                     @if($result['empty'])<p class="notice">No recorded results match the selected report and filters.</p>@endif
-                    <details open><summary>Data quality and interpretation</summary><ul>@foreach($result['notes'] as $note)<li>{{ $note }}</li>@endforeach</ul></details>
+                    <section class="report-summary" aria-labelledby="report-summary-title">
+                        <h3 id="report-summary-title">Summary indicators</h3>
+                        <p class="field-help">Recorded values within the applied scope. Unobserved values are not zero.</p>
+                        @foreach($result['sections'] as $section)
+                            @if($section['measures'])
+                                <h4>{{ $section['title'] }}</h4>
+                                <dl class="report-measures">@foreach($section['measures'] as $measure)<div><dt>{{ $measure['label'] }}</dt><dd><x-summary-counter :value="$measure['value'] ?? 'Unobserved'" /></dd></div>@endforeach</dl>
+                            @endif
+                        @endforeach
+                    </section>
+                    <section class="report-analytics" aria-labelledby="report-analytics-title">
+                        <h3 id="report-analytics-title">Visual analytics</h3>
+                        <p class="field-help">Enable JavaScript for charts. Summary indicators and detailed data tables remain available. PDF/XLSX contain canonical tables, summaries and notes; chart images are shown on this page.</p>
+                    </section>
+                    <details class="report-quality" open><summary>Data interpretation and quality</summary>
+                        <ul>@foreach($result['notes'] as $note)<li>{{ $note }}</li>@endforeach</ul>
+                        @foreach($result['sections'] as $section)
+                            @if($section['notes'])<h4>{{ $section['title'] }}</h4><ul>@foreach($section['notes'] as $note)<li>{{ $note }}</li>@endforeach</ul>@endif
+                        @endforeach
+                    </details>
+                    <h3>Detailed data tables</h3>
                     @foreach($result['sections'] as $section)
-                        <section class="report-section"><h3>{{ $section['title'] }}</h3>
-                            <dl class="report-measures">@foreach($section['measures'] as $measure)<div><dt>{{ $measure['label'] }}</dt><dd><x-summary-counter :value="$measure['value'] ?? 'Unobserved'" /></dd></div>@endforeach</dl>
-                            @foreach($section['notes'] as $note)<p class="field-help">{{ $note }}</p>@endforeach
+                        <section class="report-section report-data-section" id="report-table-{{ $section['key'] ?? $loop->index }}" tabindex="-1"><h4>{{ $section['title'] }}</h4>
                             @if($section['rows'])
                                 <div class="report-table-scroll" role="region" tabindex="0" aria-label="{{ $section['title'] }}"><table><caption>{{ $section['title'] }}</caption><thead><tr>@foreach($section['columns'] as $column)<th scope="col" @class(['report-numeric' => in_array($column['type'], ['integer', 'decimal'], true)])>{{ $column['label'] }}</th>@endforeach</tr></thead><tbody>
                                     @foreach(array_slice($section['rows'], 0, 100) as $row)<tr>@foreach($section['columns'] as $column)<td @class(['report-numeric' => in_array($column['type'], ['integer', 'decimal'], true)])>{{ $row[$column['key']] ?? 'Unobserved / N/A' }}</td>@endforeach</tr>@endforeach

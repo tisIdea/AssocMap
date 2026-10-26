@@ -605,6 +605,36 @@ class ReportAuthorizationTest extends TestCase
         }
     }
 
+    #[DataProvider('reportRoles')]
+    public function test_report_organization_retains_scoped_no_script_summary_notes_and_data(string $prefix, int $role, bool $export): void
+    {
+        $this->webIdentity($role);
+        $result = $this->uiResult(['report_type' => 'projects', 'program_year' => 2026]);
+        $result['sections'] = [[
+            'key' => 'projects', 'title' => 'Retained project portfolio',
+            'measures' => [['label' => 'Recorded zero', 'value' => 0], ['label' => 'Unobserved', 'value' => null]],
+            'notes' => ['Archived records retained; current statuses are not historical trends.'], 'chart' => [],
+            'columns' => [['key' => 'status', 'label' => 'Current status', 'type' => 'text']],
+            'rows' => [['status' => 'completed']],
+        ]];
+        $this->mockUiReport($result);
+        $html = $this->get('/'.$prefix.'/reports?report_type=projects&program_year=2026')->assertOk()->getContent();
+        $query = $this->htmlQuery($html);
+        foreach (['Reporting scope and period', 'Summary indicators', 'Visual analytics', 'Data interpretation and quality', 'Detailed data tables'] as $label) {
+            $this->assertStringContainsString($label, $html);
+        }
+        $this->assertSame(1, $query->query('//*[@id="report-scope"]')->length);
+        $this->assertSame('0', trim($query->query('//section[contains(@class,"report-summary")]//dd[1]')->item(0)->textContent));
+        $this->assertSame('Unobserved', trim($query->query('//section[contains(@class,"report-summary")]//div[2]/dd')->item(0)->textContent));
+        $this->assertSame('completed', $query->query('//*[@id="report-table-projects"]//tbody/tr/td')->item(0)->textContent);
+        $this->assertStringContainsString('Synthetic authorized scope', $html);
+        $this->assertStringContainsString('Synthetic association', $html);
+        $this->assertStringContainsString('program year: 2026', $html);
+        $this->assertStringContainsString('Enable JavaScript for charts', $html);
+        $this->assertStringContainsString('chart images are shown on this page', $html);
+        $this->assertSame($export ? 2 : 0, $query->query('//form[@data-report-export]/button')->length);
+    }
+
     public static function reportTypes(): array
     {
         return array_map(fn ($type) => [$type], array_keys(ReportCatalog::TYPES));

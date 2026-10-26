@@ -226,63 +226,72 @@ export function initReports() {
         container.append(scroll, controls);
     }
 
-    function chart(section, container) {
-        if (!section.chart.title || !section.rows.length) return;
-        container.append(element('h4', `${section.chart.title} (${section.chart.unit})`));
-        const plot = element('div', undefined, 'report-bars');
-        // Scaling affects presentation only; all values come from Python.
-        plot.setAttribute('aria-hidden', 'true');
-        const rows = section.rows.slice(0, 20);
-        const max = Math.max(0, ...rows.map(row => Number(row[section.chart.value_key])));
-        for (const row of rows) {
-            const bar = element('div', undefined, 'report-bar-row');
-            const value = row[section.chart.value_key];
-            const track = element('span', undefined, 'report-bar-track');
-            const fill = element('span', undefined, 'report-bar-fill');
-            fill.style.width = `${max > 0 ? Number(value) / max * 100 : 0}%`;
-            track.append(fill);
-            bar.append(element('span', row[section.chart.label_key]), track, element('span', value));
-            plot.append(bar);
-        }
-        container.append(plot, element('p', 'Chart shows up to 20 groups. The table below provides all recorded values.', 'field-help'));
-    }
-
     function render(result, animateSummaries = false) {
-        preview.replaceChildren(element('h2', result.title), element('p', `Generated ${result.meta.generated_at} · ${result.meta.timezone}`),
-            element('p', result.meta.scope_basis), element('p', `Associations: ${result.meta.scope.join('; ') || 'None in this scope'}`));
+        preview.replaceChildren(element('h2', result.title));
+        const scope = element('section', undefined, 'report-context-card');
+        scope.id = 'report-scope';
+        scope.append(element('h3', 'Reporting scope and period'), element('p', result.meta.scope_basis),
+            element('p', `Associations: ${result.meta.scope.join('; ') || 'None in this scope'}`),
+            element('p', `Generated ${result.meta.generated_at} · ${result.meta.timezone}`, 'field-help'));
+        const snapshot = ['associations', 'members', 'projects'].includes(result.meta.filters.report_type);
+        scope.append(element('p', snapshot ? 'Current snapshot. Program year selects a cohort; reporting dates do not reconstruct historical counts.'
+            : 'Reporting year/quarter selects training start dates, activity dates and quarterly monitoring periods. Association/member counts and project statuses remain current snapshots.', 'field-help'));
         const context = Object.entries(result.meta.filters).map(([key, value]) => {
             const select = field(key);
             const label = select ? [...select.options].find(option => option.value === String(value))?.textContent : value;
             return `${key.replaceAll('_', ' ')}: ${label || value}`;
         }).join(' · ');
-        preview.append(element('p', context, 'field-help'));
+        scope.append(element('p', context, 'field-help'));
+        preview.append(scope);
         if (result.empty) preview.append(element('p', 'No recorded results match the selected report and filters.', 'notice'));
-        const quality = element('details');
-        quality.open = true;
-        quality.append(element('summary', 'Data quality and interpretation'));
-        const notes = element('ul');
-        for (const note of result.notes) notes.append(element('li', note));
-        quality.append(notes);
-        preview.append(quality);
-        for (const section of result.sections) {
-            const container = element('section', undefined, 'report-section');
-            container.append(element('h3', section.title));
+        const summary = element('section', undefined, 'report-summary');
+        summary.append(element('h3', 'Summary indicators'), element('p', 'Recorded values within the applied scope. Unobserved values are not zero.', 'field-help'));
+        for (const section of result.sections.filter(section => section.measures.length)) {
+            summary.append(element('h4', section.title));
             const measures = element('dl', undefined, 'report-measures');
             for (const measure of section.measures) {
                 const card = element('div');
                 const value = element('span', measure.value ?? 'Unobserved');
                 if (animateSummaries) value.setAttribute('data-summary-counter', '');
-                const definition = element('dd');
-                definition.append(value);
-                card.append(element('dt', measure.label), definition);
-                measures.append(card);
+                const definition = element('dd'); definition.append(value);
+                card.append(element('dt', measure.label), definition); measures.append(card);
             }
-            container.append(measures);
-            for (const note of section.notes) container.append(element('p', note, 'field-help'));
-            chart(section, container);
+            summary.append(measures);
+        }
+        preview.append(summary);
+        const analytics = element('section', undefined, 'report-analytics');
+        analytics.setAttribute('aria-busy', 'true');
+        analytics.append(element('h3', 'Visual analytics'), element('p', 'Loading charts. Summary indicators and detailed data remain available.', 'field-help'));
+        preview.append(analytics);
+        // Load presentation code only on report pages; never request a dataset per chart.
+        import('../../components/report-analytics.js').then(({ renderReportAnalytics }) => {
+            if (preview.contains(analytics)) renderReportAnalytics(result, analytics);
+        }).catch(() => {
+            if (!preview.contains(analytics)) return;
+            analytics.removeAttribute('aria-busy');
+            analytics.replaceChildren(element('h3', 'Visual analytics'), element('p', 'Charts are unavailable. Summary indicators and detailed data tables remain available.', 'report-empty'));
+        });
+        const quality = element('details', undefined, 'report-quality');
+        quality.open = true;
+        quality.append(element('summary', 'Data interpretation and quality'));
+        const notes = element('ul');
+        for (const note of result.notes) notes.append(element('li', note));
+        quality.append(notes);
+        for (const section of result.sections.filter(section => section.notes.length)) {
+            quality.append(element('h4', section.title));
+            const sectionNotes = element('ul');
+            for (const note of section.notes) sectionNotes.append(element('li', note));
+            quality.append(sectionNotes);
+        }
+        preview.append(quality, element('h3', 'Detailed data tables'));
+        result.sections.forEach((section, index) => {
+            const container = element('section', undefined, 'report-section report-data-section');
+            container.id = `report-table-${section.key || index}`;
+            container.tabIndex = -1;
+            container.append(element('h4', section.title));
             table(section, container);
             preview.append(container);
-        }
+        });
         const hidden = exportForm?.querySelector('[data-export-filters]');
         if (hidden) {
             hidden.replaceChildren();
