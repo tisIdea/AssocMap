@@ -10,6 +10,9 @@
             <p>{{ $project->title }}</p>
         </div>
         @if($canEdit)<a class="button button-primary" href="{{ route($prefix.'.projects.edit', $project) }}"><x-icon name="pencil" />Edit Project</a>@endif
+        <x-contextual-report :prefix="$prefix" type="projects" :association="$project->association"
+            :filters="['association_id' => $project->association_id, 'project_id' => $project->id, 'program_year' => (int) $project->program_year]"
+            :scope="'Selected project: '.$project->title.'. Program year '.$project->program_year.'. Current portfolio snapshot; no event reporting period. Materials, deliveries, monitoring and private documents are not included. Register filters do not apply.'" />
     </header>
     @php($closureErrors = $errors->getBag('projectClosure'))
     @php($terminationErrors = $errors->getBag('projectTermination'))

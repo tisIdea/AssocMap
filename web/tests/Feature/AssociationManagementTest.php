@@ -13,6 +13,7 @@ use App\Services\Associations\AssociationGeographyService;
 use App\Services\Associations\AssociationService;
 use App\Services\Associations\FieldOfficerAssignmentService;
 use App\Services\Auth\SupabaseAuthService;
+use App\Services\Reporting\ReportService;
 use Illuminate\Database\QueryException;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Bootstrap\HandleExceptions;
@@ -64,6 +65,34 @@ class AssociationManagementTest extends TestCase
             parent::tearDown();
         } finally {
             HandleExceptions::flushState($this);
+        }
+    }
+
+    public function test_association_contextual_actions_use_distribution_only_without_reporting_queries_on_get(): void
+    {
+        $reporting = Mockery::mock(ReportService::class);
+        $reporting->shouldNotReceive('generate');
+        $reporting->shouldNotReceive('options');
+        $this->app->instance(ReportService::class, $reporting);
+        foreach (['admin' => 1, 'field-officer' => 2] as $prefix => $identity) {
+            $this->identity = self::id($identity);
+            DB::enableQueryLog();
+            DB::flushQueryLog();
+            $page = $this->get('/'.$prefix.'/associations')->assertOk();
+            $this->assertCount($prefix === 'admin' ? 9 : 7, DB::getQueryLog(), 'Normal association GET retains its pre-change query count.');
+            DB::disableQueryLog();
+            $page->assertSee('Open related report')->assertDontSee('data-contextual-report-export', false);
+            $this->get('/'.$prefix.'/associations?q=Alpha&status=active&municipality=Town&barangay=Test&sort=za')
+                ->assertOk()->assertSee('report_type=associations', false)
+                ->assertSee('Search, status, municipality, barangay, officer, sorting and pagination selections from this register are not applied.');
+            $detail = $this->get('/'.$prefix.'/associations/'.self::id(10))->assertOk();
+            $detail->assertSee('Export Association Distribution Report')
+                ->assertSee('name="association_id" value="'.self::id(10).'"', false)
+                ->assertSee('Current snapshot; no reporting period.');
+            foreach (['pdf', 'xlsx'] as $format) {
+                $detail->assertSee(route($prefix.'.reports.export', ['format' => $format]));
+            }
+            $this->get('/'.$prefix.'/association-officers')->assertOk()->assertDontSee('data-contextual-report', false);
         }
     }
 

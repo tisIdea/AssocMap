@@ -3,6 +3,7 @@ import { applyFormErrors, showFeedback, showOperationError } from '../core/feedb
 export function initReportDownloads(form) {
     if (!form || form.dataset.downloadInitialized === 'true') return;
     form.dataset.downloadInitialized = 'true';
+    const status = form.querySelector?.('[data-report-download-status]');
     let pending = false;
     form.addEventListener('submit', async event => {
         event.preventDefault();
@@ -15,6 +16,7 @@ export function initReportDownloads(form) {
         if (!['pdf', 'xlsx'].includes(format)) return;
         const buttons = [...form.querySelectorAll('button')].map(node => [node, node.disabled]);
         pending = true; form.dataset.downloadPending = 'true'; form.setAttribute('aria-busy', 'true');
+        if (status) status.textContent = 'Generating report. Please wait…';
         buttons.forEach(([node]) => { node.disabled = true; });
         try {
             const response = await fetch(url.href, { method: 'POST', body: new FormData(form), credentials: 'same-origin',
@@ -43,7 +45,9 @@ export function initReportDownloads(form) {
             finally { link.remove(); setTimeout(() => URL.revokeObjectURL(objectUrl), 1000); }
             void showFeedback({ type: 'success', title: 'Report Generated',
                 message: 'The report was generated and the download was requested. Check your browser downloads.', returnFocus: button });
+            if (status) status.textContent = 'Download requested. Check your browser downloads.';
         } catch (error) {
+            if (status) status.textContent = 'The report could not be downloaded. Use View report to review its scope or try again.';
             void showOperationError(error, { context: 'Report', returnFocus: button });
         } finally {
             pending = false; delete form.dataset.downloadPending; form.removeAttribute('aria-busy');

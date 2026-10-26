@@ -2,6 +2,7 @@
 @import './base/foundation.css';
 @import './layouts/admin-shell.css';
 @import './components/controls.css';
+@import './components/contextual-report.css';
 @import './pages/admin-dashboard.css';
 @import './components/summary-counter.css';
 @import './components/tables.css';

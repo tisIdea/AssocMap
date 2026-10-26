@@ -14,6 +14,7 @@ import { initProgramLookups } from './pages/program-lookups.js';
 import { initProgramActivities } from './pages/program-activities.js';
 import { initFeedback, showFeedback } from './core/feedback.js';
 import { mountSummaryCounters } from './components/summary-counter.js';
+import { initContextualReports } from './components/contextual-report.js';
 
 initFeedback();
 initDisclosures();
@@ -25,6 +26,7 @@ initForms();
 initUserMenus();
 initAssociationUi();
 initReports();
+initContextualReports();
 mountSummaryCounters();
 initStaffLogin();
 initUserInvitations();

@@ -6,6 +6,7 @@ use App\Models\Project;
 use App\Models\ProgramActivityRecord;
 use App\Models\UserProfile;
 use App\Services\Auth\SupabaseAuthService;
+use App\Services\Reporting\ReportService;
 use App\Models\Training;
 use App\Services\GIS\GisQueryService;
 use App\Services\Programs\ProgramActivityService;
@@ -130,6 +131,40 @@ class ProgramManagementUiTest extends TestCase
         DB::table('projects')->insert(array_replace(['id' => $this->id($id), 'association_id' => $this->id(11),
             'saad_activity_id' => 1, 'fisheries_category_id' => 1, 'commodity_id' => 1, 'title' => 'Test Project',
             'program_year' => 2026, 'implementation_start_date' => '2026-01-01', 'status' => 'ongoing', 'updated_at' => '2026-01-01 00:00:00'], $overrides));
+    }
+
+    public function test_project_contextual_actions_preserve_cohort_and_single_project_without_running_reporting_on_get(): void
+    {
+        $this->project(101);
+        $reporting = Mockery::mock(ReportService::class);
+        $reporting->shouldNotReceive('generate');
+        $reporting->shouldNotReceive('options');
+        $this->app->instance(ReportService::class, $reporting);
+        foreach (['admin' => 1, 'field-officer' => 2] as $prefix => $identity) {
+            $this->identity = $this->id($identity);
+            DB::enableQueryLog();
+            DB::flushQueryLog();
+            $page = $this->get('/'.$prefix.'/projects')->assertOk();
+            $this->assertCount(8, DB::getQueryLog(), 'Normal project GET retains its pre-change query count.');
+            DB::disableQueryLog();
+            $page->assertSee('Open related report')->assertDontSee('data-contextual-report-export', false);
+            $filtered = $this->get('/'.$prefix.'/projects?q=Test&association=Association&status=ongoing&year=2026&sort=az')->assertOk();
+            $filtered->assertSee('report_type=projects&amp;program_year=2026', false)
+                ->assertSee('Search, association-name, status, sorting and pagination selections from this register are not applied.');
+            $detail = $this->get('/'.$prefix.'/projects/'.$this->id(101))->assertOk();
+            $detail->assertSee('Export Project Portfolio Report')->assertSee('Program year 2026.')
+                ->assertSee('name="project_id" value="'.$this->id(101).'"', false)
+                ->assertSee('name="association_id" value="'.$this->id(11).'"', false)
+                ->assertSee('name="program_year" value="2026"', false);
+            foreach (['pdf', 'xlsx'] as $format) {
+                $detail->assertSee(route($prefix.'.reports.export', ['format' => $format]));
+            }
+        }
+        $this->identity = $this->id(2);
+        $this->project(102, ['association_id' => $this->id(12)]);
+        $this->get('/field-officer/projects/'.$this->id(102))->assertForbidden();
+        DB::table('associations')->where('id', $this->id(11))->update(['status' => 'inactive']);
+        $this->get('/field-officer/projects/'.$this->id(101))->assertOk()->assertDontSee('data-contextual-report', false);
     }
 
     private function training(int $id, array $overrides = []): void

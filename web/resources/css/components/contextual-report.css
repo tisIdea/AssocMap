@@ -1,0 +1,15 @@
+.contextual-report { flex: 1 1 100%; min-width: 0; }
+.contextual-report-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; }
+.contextual-report-actions .button { white-space: normal; text-align: left; }
+.contextual-report-scope { margin-top: 8px; max-width: 560px; margin-left: auto; color: var(--text-secondary); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.contextual-report-menu { position: relative; }
+.contextual-report-menu > summary { list-style: none; cursor: pointer; }
+.contextual-report-menu > summary::-webkit-details-marker { display: none; }
+.contextual-report-panel { position: absolute; right: 0; top: calc(100% + 8px); z-index: 10; display: grid; gap: 10px; width: min(280px, calc(100vw - 64px)); padding: 16px; border: 1px solid var(--border-color); border-radius: var(--radius-md); background: white; box-shadow: var(--shadow-sm); }
+.contextual-report-panel [data-report-download-status]:empty { display: none; }
+@media (max-width: 760px) {
+    .contextual-report-actions { justify-content: flex-start; }
+    .contextual-report-menu, .contextual-report-actions > .button { width: 100%; }
+    .contextual-report-menu > summary { width: 100%; }
+    .contextual-report-panel { position: static; width: 100%; margin-top: 10px; box-shadow: none; }
+}

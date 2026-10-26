@@ -7,6 +7,10 @@
                 @if($prefix === 'admin')<a class="button button-primary" href="{{ route('admin.associations.index', $filters + ['editor' => 'create']) }}"><x-icon name="plus" />Add Association</a>@endif
             @else<a class="button" href="{{ route($prefix.'.associations.index') }}">Back to {{ $prefix === 'admin' ? 'Association Management' : 'Assigned Associations' }}</a>@endif
         </div>
+        @unless($officerDirectory)
+            <x-contextual-report :prefix="$prefix" type="associations" :related="true"
+                :scope="($prefix === 'admin' ? 'All authorized associations, including archived associations.' : 'Your currently assigned active, unarchived associations.').' Current snapshot; no reporting period. Search, status, municipality, barangay, officer, sorting and pagination selections from this register are not applied. Open an association for a single-association report.'" />
+        @endunless
     </header>
     @if($summary !== null)
         <nav class="association-summary" aria-label="Association status groups">
