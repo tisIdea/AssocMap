@@ -1,4 +1,4 @@
-import { $, $$, setDisclosure } from '../core/helpers.js';
+import { $, $$ } from '../core/helpers.js';
 
 export function initAdminNavigation(sidebarController) {
     if (!$('#admin-sidebar')) return;
@@ -19,9 +19,6 @@ export function initAdminNavigation(sidebarController) {
                 if (active) link.setAttribute('aria-current', 'page');
                 else link.removeAttribute('aria-current');
             });
-            const operations = ['projects', 'trainings', 'monitoring', 'program-activities'].includes(module);
-            $('.program-toggle').classList.toggle('active', operations);
-            setDisclosure($('.program-toggle'), operations);
             $('#current-context').textContent = title;
             document.title = `${title} · AssocMap`;
             sidebarController?.closeDrawer();
@@ -39,9 +36,6 @@ export function initAdminNavigation(sidebarController) {
             if (active) link.setAttribute('aria-current', 'page');
             else link.removeAttribute('aria-current');
         });
-        const operations = ['projects', 'trainings', 'monitoring', 'program-activities'].includes(module);
-        $('.program-toggle').classList.toggle('active', operations);
-        if (operations) setDisclosure($('.program-toggle'), true);
         $('#current-context').textContent = current.dataset.title;
         document.title = `${current.dataset.title} · AssocMap`;
         $$('details[open]').forEach(menu => { menu.open = false; });

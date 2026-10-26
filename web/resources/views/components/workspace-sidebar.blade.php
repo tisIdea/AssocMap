@@ -5,7 +5,6 @@
         <span class="brand-symbol"><x-assocmap-mark /></span>
         <span class="brand-copy"><strong>Assoc<span>Map</span></strong><small>{{ $workspace }}</small></span>
     </a>
-    <div class="sidebar-section-label">WORKSPACE</div>
     <nav class="sidebar-nav" aria-label="Main navigation">
         {{ $slot }}
     </nav>

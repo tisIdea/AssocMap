@@ -7,6 +7,8 @@
 .brand-copy strong span { font-weight: 400; }
 .brand-copy small { display: block; color: #b7cde6; font-size: 8px; letter-spacing: 1.1px; margin-top: 6px; white-space: nowrap; }
 .sidebar-section-label { font-size: 10px; font-weight: 650; letter-spacing: 1.5px; padding: 2px 27px 14px; color: #a8c3e1; }
+.nav-section + .nav-section { margin-top: 14px; padding-top: 14px; border-top: 1px solid rgb(255 255 255 / 12%); }
+.nav-section > .sidebar-section-label { margin: 0; padding: 0 13px 9px; font-size: 10px; letter-spacing: 1px; line-height: 1.5; }
 .sidebar-nav { padding: 0 13px 20px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #6685a9 transparent; }
 [data-workspace-sidebar] > .brand, [data-workspace-sidebar] > .sidebar-section-label, [data-workspace-sidebar] > .sidebar-footer { flex-shrink: 0; }
 [data-workspace-sidebar] > .sidebar-nav { flex: 1; min-height: 0; }
