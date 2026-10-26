@@ -13,6 +13,7 @@ use App\Services\Reporting\ReportScope;
 use App\Services\Reporting\ReportService;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -362,6 +363,112 @@ class ReportAuthorizationTest extends TestCase
         $this->getJson('/association/reports/data?association_id='.self::OUTSIDE)->assertForbidden();
         foreach (['pdf','xlsx'] as $format) $this->postJson('/association/reports/export/'.$format)->assertForbidden();
         $this->postJson('/association/reports/export/csv')->assertNotFound();
+    }
+
+    public static function contextualExports(): array
+    {
+        $cases = [];
+        foreach (['admin' => 2, 'field-officer' => 1] as $prefix => $role) {
+            foreach (['associations', 'projects'] as $type) {
+                foreach (['pdf', 'xlsx'] as $format) {
+                    $cases[$prefix.'.'.$type.'.'.$format] = [$prefix, $role, $type, $format];
+                }
+            }
+        }
+
+        return $cases;
+    }
+
+    #[DataProvider('contextualExports')]
+    public function test_contextual_post_keeps_validated_filters_scope_and_binary_response(string $prefix, int $role, string $type, string $format): void
+    {
+        $this->webIdentity($role);
+        $filters = ['report_type' => $type, 'association_id' => self::OWN];
+        if ($type === 'projects') {
+            $filters += ['project_id' => self::OWN, 'program_year' => 2026];
+        }
+        $artifact = $format === 'pdf' ? '%PDF-1.7 synthetic transport fixture' : 'PK synthetic transport fixture';
+        $service = Mockery::mock(ReportService::class);
+        $service->shouldReceive('generate')->once()->withArgs(function (Request $request, array $actual, string $action) use ($filters, $format) {
+            $this->assertSame($filters, $actual);
+            $scope = app(ReportScope::class);
+            $this->assertSame([self::OWN], $scope->ids($scope->actor($request, true), $actual));
+
+            return $action === $format;
+        })->andReturn(['artifact' => $artifact]);
+        $this->app->instance(ReportService::class, $service);
+        $this->post('/'.$prefix.'/reports/export/'.$format, $filters)->assertOk()->assertContent($artifact)
+            ->assertHeader('Content-Type', $format === 'pdf' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+            ->assertHeader('X-Content-Type-Options', 'nosniff');
+    }
+
+    public static function contextualFormats(): array
+    {
+        return [['pdf'], ['xlsx']];
+    }
+
+    #[DataProvider('contextualFormats')]
+    public function test_contextual_export_posts_reject_unsupported_filters_and_outside_associations_before_python(string $format): void
+    {
+        $this->webIdentity();
+        $engine = Mockery::mock(PythonReportEngine::class);
+        $engine->shouldNotReceive('run');
+        $this->app->instance(PythonReportEngine::class, $engine);
+        foreach ([['status' => 'active'], ['q' => 'search'], ['year' => 2026], ['program_year' => 1900], ['project_id' => 'invalid']] as $extra) {
+            $this->postJson('/field-officer/reports/export/'.$format, ['report_type' => 'projects'] + $extra)->assertUnprocessable();
+        }
+        $this->postJson('/field-officer/reports/export/'.$format, ['report_type' => 'associations', 'association_id' => self::OUTSIDE])->assertForbidden();
+    }
+
+    public function test_contextual_single_project_extraction_cannot_cross_association_or_assignment_scope(): void
+    {
+        DB::unprepared('CREATE TABLE saad_components (id INTEGER PRIMARY KEY, name TEXT);
+            CREATE TABLE saad_subcomponents (id INTEGER PRIMARY KEY, component_id INTEGER);
+            CREATE TABLE saad_activities (id INTEGER PRIMARY KEY, subcomponent_id INTEGER);
+            CREATE TABLE fisheries_project_categories (id INTEGER PRIMARY KEY, name TEXT);
+            CREATE TABLE projects (id TEXT PRIMARY KEY, association_id TEXT, saad_activity_id INTEGER, fisheries_category_id INTEGER, title TEXT, program_year INTEGER, status TEXT, archived_at TEXT);');
+        DB::table('saad_components')->insert(['id' => 1, 'name' => 'Synthetic component']);
+        DB::table('saad_subcomponents')->insert(['id' => 1, 'component_id' => 1]);
+        DB::table('saad_activities')->insert(['id' => 1, 'subcomponent_id' => 1]);
+        DB::table('fisheries_project_categories')->insert(['id' => 1, 'name' => 'Synthetic category']);
+        foreach ([self::OWN, self::OUTSIDE] as $id) {
+            DB::table('projects')->insert([
+                'id' => $id, 'association_id' => $id, 'saad_activity_id' => 1, 'fisheries_category_id' => 1,
+                'title' => 'Synthetic project', 'program_year' => 2026, 'status' => 'ongoing',
+            ]);
+        }
+        $actor = $this->actor();
+        $dataset = app(ReportDataset::class);
+        $filters = ['report_type' => 'projects', 'project_id' => self::OWN, 'program_year' => 2026];
+        $this->assertSame([self::OWN], array_column($dataset->extract($actor, $filters, [self::OWN])['projects'], 'id'));
+        $this->assertSame([], $dataset->extract($actor, array_replace($filters, ['program_year' => 2025]), [self::OWN])['projects']);
+        $this->forbidden(fn () => $dataset->extract($actor, array_replace($filters, ['project_id' => self::OUTSIDE]), [self::OWN]));
+    }
+
+    public function test_contextual_exports_enforce_csrf_expiry_and_revocation_before_generation(): void
+    {
+        $this->webIdentity(2);
+        $engine = Mockery::mock(PythonReportEngine::class);
+        $engine->shouldNotReceive('run');
+        $this->app->instance(PythonReportEngine::class, $engine);
+        $csrf = Mockery::mock(ValidateCsrfToken::class, [$this->app, $this->app['encrypter']])
+            ->makePartial()->shouldAllowMockingProtectedMethods();
+        $csrf->shouldReceive('runningUnitTests')->andReturn(false);
+        $this->app->instance(ValidateCsrfToken::class, $csrf);
+        $this->postJson('/admin/reports/export/pdf', ['report_type' => 'associations'])->assertStatus(419);
+        $token = session()->token();
+        $service = Mockery::mock(ReportService::class);
+        $service->shouldReceive('generate')->once()->andReturn(['artifact' => '%PDF synthetic CSRF transport fixture']);
+        $this->app->instance(ReportService::class, $service);
+        $this->post('/admin/reports/export/pdf', ['report_type' => 'associations', '_token' => $token])->assertOk();
+        DB::table('user_profiles')->where('id', self::USER)->update(['is_active' => false]);
+        $this->postJson('/admin/reports/export/xlsx', ['report_type' => 'associations', '_token' => $token])->assertRedirect(route('login'))
+            ->assertSessionMissing('supabase_access_token');
+        $auth = Mockery::mock(SupabaseAuthService::class);
+        $auth->shouldReceive('getUser')->andReturn(null);
+        $this->app->instance(SupabaseAuthService::class, $auth);
+        $this->withSession(['supabase_access_token' => 'expired-synthetic-session']);
+        $this->postJson('/admin/reports/export/xlsx', ['report_type' => 'associations', '_token' => session()->token()])->assertRedirect(route('login'));
     }
 
     public static function reportRoles(): array

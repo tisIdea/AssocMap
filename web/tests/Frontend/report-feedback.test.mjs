@@ -18,7 +18,9 @@ function fixture(reply = response(), { format = 'pdf', clickThrows = false } = {
     const success = [], errors = [], fields = [], requests = [], anchors = [], revoked = [], timers = [], listeners = [];
     const button = { formAction: `https://assocmap.test/admin/reports/export/${format}`, disabled: false }, second = { disabled: false };
     const filterForm = {};
+    const status = { textContent: '' };
     const form = { dataset: { exportReady: 'true' }, attributes: new Map(),
+        querySelector: selector => selector === '[data-report-download-status]' ? status : null,
         addEventListener: (name, fn) => listeners.push(fn), querySelectorAll: () => [button, second],
         closest: () => ({ querySelector: () => filterForm }),
         setAttribute(name, value) { this.attributes.set(name, value); }, removeAttribute(name) { this.attributes.delete(name); } };
@@ -34,7 +36,7 @@ function fixture(reply = response(), { format = 'pdf', clickThrows = false } = {
         applyFormErrors: (target, errors) => fields.push({ target, errors }),
         showFeedback: result => success.push(result), showOperationError: error => errors.push(error), setTimeout: fn => timers.push(fn) };
     runInNewContext(downloads, context); context.initReportDownloads(form); context.initReportDownloads(form);
-    return { form, button, second, listeners, success, errors, fields, requests, anchors, revoked, filterForm,
+    return { form, button, second, listeners, success, errors, fields, requests, anchors, revoked, filterForm, status,
         submit: () => listeners[0]({ submitter: button, preventDefault() {} }), flush: () => timers.splice(0).forEach(fn => fn()) };
 }
 
@@ -48,6 +50,7 @@ for (const [format, mime] of [['pdf', 'application/pdf'], ['xlsx', 'application/
         assert.equal(f.anchors[0].download, filename); assert.equal(f.anchors[0].removed, true); assert.equal(f.anchors[0].clicks, 1);
         assert.equal(f.success.length, 1); assert.match(f.success[0].message, /download was requested/); assert.doesNotMatch(f.success[0].message, /saved/);
         assert.equal(f.button.disabled, false); assert.equal(f.form.attributes.has('aria-busy'), false);
+        assert.match(f.status.textContent, /Download requested/);
         f.flush(); assert.deepEqual(f.revoked, ['blob:synthetic']);
     });
 }
@@ -56,6 +59,7 @@ test('pending export suppresses duplicate submission and respects filters becomi
     let resolve;
     const f = fixture(() => new Promise(done => { resolve = done; }));
     const pending = f.submit(); await f.submit(); assert.equal(f.requests.length, 1); assert.equal(f.button.disabled, true);
+    assert.match(f.status.textContent, /Generating report/);
     f.form.dataset.exportReady = 'false'; resolve(response()); await pending;
     assert.equal(f.success.length, 1); assert.equal(f.button.disabled, true); assert.equal(f.second.disabled, true);
 });
@@ -67,6 +71,7 @@ test('HTTP failures never download; malformed JSON retains the original status a
             assert.equal(f.errors[0].status, status); assert.equal(f.anchors.length, 0); assert.equal(f.success.length, 0);
             if (status === 422) assert.equal(f.fields[0].target, f.filterForm);
             assert.equal(f.button.disabled, false);
+            assert.match(f.status.textContent, /could not be downloaded/);
         }
     }
 });

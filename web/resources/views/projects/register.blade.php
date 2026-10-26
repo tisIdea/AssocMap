@@ -8,7 +8,11 @@
 @endphp
 @section('content')
 <section class="program-management" data-workspace-module="projects" data-workspace-title="Project Management" data-project-actions>
-    <header class="card program-heading"><div><p class="eyebrow">{{ $prefix === 'admin' ? 'System Administrator' : 'Field Officer' }}</p><h1 tabindex="-1">Project Management</h1><p>{{ $prefix === 'admin' ? 'Manage association projects, implementation progress, and project resources.' : 'Manage projects and resources within your assigned associations.' }}</p></div><a class="button button-primary" href="{{ route($projectRoutePrefix.'.index', $filters + ['editor' => 'create']) }}"><x-icon name="plus" />Add Project</a></header>
+    <header class="card program-heading"><div><p class="eyebrow">{{ $prefix === 'admin' ? 'System Administrator' : 'Field Officer' }}</p><h1 tabindex="-1">Project Management</h1><p>{{ $prefix === 'admin' ? 'Manage association projects, implementation progress, and project resources.' : 'Manage projects and resources within your assigned associations.' }}</p></div><a class="button button-primary" href="{{ route($projectRoutePrefix.'.index', $filters + ['editor' => 'create']) }}"><x-icon name="plus" />Add Project</a>
+        <x-contextual-report :prefix="$prefix" type="projects" :related="true"
+            :filters="$filters['year'] !== '' ? ['program_year' => (int) $filters['year']] : []"
+            :scope="($filters['year'] !== '' ? 'Program year '.$filters['year'].'. ' : 'All program years. ').($prefix === 'admin' ? 'All authorized associations, including archived associations. ' : 'Your currently assigned active, unarchived associations. ').'Current project statuses, including archived projects; no event reporting period. Search, association-name, status, sorting and pagination selections from this register are not applied. Open a project for a single-project report.'" />
+    </header>
     @include('program-management.partials.summary')
     <section class="card program-register" aria-labelledby="project-register-title">
         <div class="program-section-heading"><div><h2 id="project-register-title">Project register</h2><p>{{ number_format($projects->total()) }} matching project(s)</p></div><p>Completed and terminated projects remain permanently read-only.</p></div>
