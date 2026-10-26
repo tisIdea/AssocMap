@@ -4,6 +4,7 @@
         + (int) (isset($years) && $selectedYear !== $years->first());
 @endphp
 <form method="GET" action="{{ $filterAction }}" aria-label="Search and filter Monitoring records">
+    @foreach(app(\App\View\WorkflowNavigation::class)->carry(request()) as $key => $value)<input type="hidden" name="{{ $key }}" value="{{ $value }}">@endforeach
     <div class="monitoring-search-bar">
         <div class="field monitoring-search"><label for="monitoring-search">Search {{ isset($years) ? 'Monitoring' : 'visit history' }}</label><div><x-icon name="search" /><input id="monitoring-search" type="search" name="search" maxlength="255" value="{{ $filters['search'] }}" placeholder="{{ $searchPlaceholder }}"></div></div>
         <button class="button button-primary" type="submit">Search</button>

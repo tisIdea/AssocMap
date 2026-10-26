@@ -2,20 +2,30 @@
     $visitsActive = request()->routeIs($monitoringPrefix.'.visits', $monitoringPrefix.'.visit.*');
     $activeSection = $visitsActive ? 'visits' : ($section ?? 'overview');
     $sections = ['overview' => ['Overview', 'clipboard-check'], 'production' => ['Production', 'chart'], 'income' => ['Income', 'trend'], 'materials' => ['Materials', 'layers'], 'visits' => ['Visit Reports', 'calendar']];
+    $workflow = app(\App\View\WorkflowNavigation::class);
+    $programPrefix = str_replace('.monitoring', '', $monitoringPrefix);
+    $parentAssociation = $record->project?->association;
+    $canViewParentProject = $record->project && $parentAssociation && ($programPrefix !== 'association'
+        || ($parentAssociation->status === 'active' && $parentAssociation->archived_at === null));
+    $parents = $canViewParentProject ? [['name' => $programPrefix.'.projects.show', 'parameters' => ['project' => $record->project_id], 'label' => $record->project->title]] : [];
+    $workflowBack = $workflow->back(request(), $monitoringPrefix.'.index', ['year' => $record->year], $parents);
+    $breadcrumbs = [];
+    if ($parentAssociation) $breadcrumbs[] = ['label' => $parentAssociation->name, 'url' => $programPrefix === 'association' ? null : route($programPrefix.'.associations.show', ['association' => $parentAssociation->id, 'section' => 'projects'])];
+    if ($record->project) $breadcrumbs[] = ['label' => $record->project->title, 'url' => $canViewParentProject ? $workflow->parent(request(), $programPrefix.'.projects.show', ['project' => $record->project_id]) : null];
 @endphp
+<x-workflow-navigation :back="$workflowBack" :parents="$breadcrumbs" :current="'Q'.$record->quarter?->quarter_number.' '.$record->year.' · '.$sections[$activeSection][0]" />
 <header class="card monitoring-heading">
     <div><p class="eyebrow">Quarterly Monitoring · Q{{ $record->quarter?->quarter_number }} {{ $record->year }}</p>
         <h1 tabindex="-1">{{ $sections[$activeSection][0] }}</h1>
         <p>{{ $record->project?->association?->name ?? 'Association unavailable' }}</p>
-        <p>@if($monitoringPrefix !== 'association.monitoring' && $record->project)<a href="{{ route($monitoringPrefix === 'admin.monitoring' ? 'admin.projects.show' : 'field-officer.projects.show', $record->project) }}">{{ $record->project->title }}</a>@else{{ $record->project?->title ?? 'Project unavailable' }}@endif</p>
+        <p>{{ $record->project?->title ?? 'Project unavailable' }}</p>
     </div>
-    <a class="button" href="{{ route($monitoringPrefix.'.index', ['year' => $record->year]) }}"><x-icon name="back" />Back to Dashboard</a>
 </header>
 @if($record->project?->association?->archived_at)<p class="notice">Association Archived — Read Only. Monitoring values and history are preserved.</p>@endif
 @if($record->project?->archived_at)<p class="notice">Project Archived — Read Only.</p>@elseif($record->project?->isFinalized())<p class="notice">Project finalized — Read Only.</p>@endif
 <nav class="monitoring-nav" aria-label="Monitoring navigation">
     @foreach($sections as $tab => [$label, $icon])
-        <a href="{{ $tab === 'visits' ? route($monitoringPrefix.'.visits', $record) : route($monitoringPrefix.'.workspace', [$record, $tab]) }}" @if($activeSection === $tab) aria-current="page" @endif><x-icon :name="$icon" /><span>{{ $label }}</span></a>
+        <a href="{{ $tab === 'visits' ? route($monitoringPrefix.'.visits', [$record] + $workflow->carry(request())) : route($monitoringPrefix.'.workspace', [$record, $tab] + $workflow->carry(request())) }}" @if($activeSection === $tab) aria-current="page" @endif><x-icon :name="$icon" /><span>{{ $label }}</span></a>
     @endforeach
 </nav>
 <section class="card monitoring-overview" aria-labelledby="quarterly-overview-heading">

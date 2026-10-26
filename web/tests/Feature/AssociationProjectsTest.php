@@ -210,7 +210,9 @@ class AssociationProjectsTest extends TestCase
             DB::table('monitoring_records')->insert(['id' => $this->id(4000 + $number), 'project_id' => $this->id(101), 'year' => 2000 + $number,
                 'quarter_id' => 2, 'monitoring_date' => (2000 + $number).'-04-15', 'project_status' => 'ongoing']);
         }
-        $page = $this->get('/association/projects/'.$this->id(101).'?products_page=2&monitoring_page=2&association_id='.$this->id(11))->assertOk();
+        $origin = '/association/projects?search=With&year=2026&page=1';
+        $page = $this->get('/association/projects/'.$this->id(101).'?'.http_build_query(['products_page' => 2, 'monitoring_page' => 2, 'association_id' => $this->id(11), 'return_to' => $origin]))->assertOk();
+        $page->assertSee('href="'.e(url($origin)).'" data-workflow-back', false);
         $this->assertCount(2, $page->viewData('products'));
         $this->assertCount(25, $page->viewData('materials'));
         $this->assertCount(2, $page->viewData('monitoring'));
@@ -219,6 +221,8 @@ class AssociationProjectsTest extends TestCase
         $this->assertStringContainsString('monitoring_page=2', $next);
         $this->assertStringContainsString('#project-assistance', $next);
         $this->assertStringNotContainsString('association_id', $next);
+        parse_str(parse_url($next, PHP_URL_QUERY), $query);
+        $this->assertSame($origin, $query['return_to']);
     }
 
     public function test_foreign_and_nonexistent_projects_and_foreign_monitoring_are_not_found(): void

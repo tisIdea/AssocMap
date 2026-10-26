@@ -2,7 +2,7 @@
     <summary aria-label="Actions for {{ $association->name }}"><x-icon name="ellipsis" /></summary>
     <div class="association-actions-panel" data-user-actions-panel>
         <a href="{{ route($prefix.'.associations.show', $recordParameters) }}"><x-icon name="eye" />View Association Details</a>
-        <a href="{{ route($prefix.'.association-officers.show', $association->id) }}"><x-icon name="users" />{{ $association->archived_at || $association->status !== 'active' ? 'View officers' : 'Manage officers' }}</a>
+        <a href="{{ app(\App\View\WorkflowNavigation::class)->to($prefix.'.association-officers.show', ['association' => $association->id]) }}"><x-icon name="users" />{{ $association->archived_at || $association->status !== 'active' ? 'View officers' : 'Manage officers' }}</a>
         @if($prefix === 'admin' && ($allowRecordChanges ?? false))
             @if($association->archived_at)
                 <button type="button" data-association-unarchive data-unarchive-url="{{ route('admin.associations.unarchive', $association->id) }}" data-confirm="Unarchive {{ $association->name }}? Its existing Active/Inactive status will be preserved." data-confirm-title="Unarchive Association" data-confirm-label="Unarchive"><x-icon name="archive-restore" />Unarchive</button>

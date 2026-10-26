@@ -1,8 +1,13 @@
 @extends('layouts.association')
+@php
+    $workflow = app(\App\View\WorkflowNavigation::class);
+    foreach ([$products, $materials, $monitoring] as $paginator) $paginator->appends($workflow->carry(request()));
+    $workflowBack = $workflow->back(request(), 'association.projects.index');
+@endphp
 
 @section('content')
 <section class="program-management" data-workspace-module="association-projects" data-workspace-title="Project Details" data-association-projects>
-    <a class="back-link" href="{{ route('association.projects.index') }}"><x-icon name="back" />Back to My Projects</a>
+    <x-workflow-navigation :back="$workflowBack" :parents="[['label' => $association->name]]" :current="$project->title" />
     <header class="card program-heading"><div><p class="eyebrow">{{ $association->name }}</p><h1 tabindex="-1">Project Details</h1><p>{{ $project->title }}</p></div></header>
     @if($errors->any())<div class="notice notice-error" role="alert">@foreach($errors->all() as $error)<p>{{ $error }}</p>@endforeach</div>@endif
     <section class="card program-information" aria-labelledby="project-information-title">
@@ -51,9 +56,9 @@
             <div class="table-scroll" role="region" aria-label="Project Monitoring history" tabindex="0"><table class="data-table program-register-table">
                 <caption class="sr-only">Existing quarterly Monitoring records and authorized read-only workspaces</caption><thead><tr><th scope="col">Reporting period</th><th scope="col">Monitoring date</th><th scope="col">Status during Monitoring</th><th scope="col">Site validated</th><th scope="col">View records</th></tr></thead><tbody>
                     @forelse($monitoring as $record)<tr><th scope="row">{{ $record->year }} · Q{{ $record->quarter?->quarter_number ?? '?' }}</th><td>{{ $record->monitoring_date?->format('M j, Y') ?? 'Not recorded' }}</td><td><x-status-badge :value="ucfirst($record->project_status)" /></td><td>{{ $record->site_validated ? 'Yes' : 'No' }}</td><td>
-                        <a class="button" href="{{ route('association.monitoring.workspace', $record->id) }}" aria-label="View Overview for Q{{ $record->quarter?->quarter_number ?? '?' }} {{ $record->year }}">Overview</a>
-                        @foreach(['production' => 'Production', 'income' => 'Income', 'materials' => 'Materials'] as $section => $label)<a class="button" href="{{ route('association.monitoring.workspace', [$record->id, $section]) }}" aria-label="View {{ $label }} for Q{{ $record->quarter?->quarter_number ?? '?' }} {{ $record->year }}">{{ $label }}</a>@endforeach
-                        <a class="button" href="{{ route('association.monitoring.visits', $record->id) }}" aria-label="View Visit Reports for Q{{ $record->quarter?->quarter_number ?? '?' }} {{ $record->year }}">Visit Reports</a>
+                        <a class="button" href="{{ $workflow->to('association.monitoring.workspace', [$record->id], 'project-monitoring') }}" aria-label="View Overview for Q{{ $record->quarter?->quarter_number ?? '?' }} {{ $record->year }}">Overview</a>
+                        @foreach(['production' => 'Production', 'income' => 'Income', 'materials' => 'Materials'] as $section => $label)<a class="button" href="{{ $workflow->to('association.monitoring.workspace', [$record->id, $section], 'project-monitoring') }}" aria-label="View {{ $label }} for Q{{ $record->quarter?->quarter_number ?? '?' }} {{ $record->year }}">{{ $label }}</a>@endforeach
+                        <a class="button" href="{{ $workflow->to('association.monitoring.visits', [$record->id], 'project-monitoring') }}" aria-label="View Visit Reports for Q{{ $record->quarter?->quarter_number ?? '?' }} {{ $record->year }}">Visit Reports</a>
                     </td></tr>@empty<tr><td colspan="5">No Monitoring records on this page.</td></tr>@endforelse
                 </tbody></table></div>
         @endif

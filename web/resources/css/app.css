@@ -3,6 +3,7 @@
 @import './layouts/admin-shell.css';
 @import './components/controls.css';
 @import './components/contextual-report.css';
+@import './components/workflow-navigation.css';
 @import './pages/admin-dashboard.css';
 @import './components/summary-counter.css';
 @import './components/tables.css';

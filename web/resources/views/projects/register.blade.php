@@ -1,5 +1,6 @@
 @extends($prefix === 'admin' ? 'layouts.admin' : 'layouts.field-officer')
 @php
+    $workflow = app(\App\View\WorkflowNavigation::class);
     $module = 'projects';
     $moduleLabel = 'Projects';
     $projectRoutePrefix = $prefix.'.projects';
@@ -22,13 +23,13 @@
                 @php
                     $canManage = $project->association && $project->association->status === 'active' && !$project->association->archived_at && !$project->isFinalized();
                 @endphp
-                <tr><th scope="row"><a href="{{ route($projectRoutePrefix.'.show', $project) }}">{{ $project->title }}</a><small>{{ $project->fisheriesCategory?->name ?? 'Category unavailable' }}@if($project->commodity) · {{ $project->commodity->name }}@endif</small></th>
-                    <td><a href="{{ route($prefix.'.associations.show', $project->association_id) }}">{{ $project->association?->name ?? 'Association unavailable' }}</a><small>{{ $project->association?->locationBarangay()?->name ?? '—' }} · {{ $project->association?->locationBarangay()?->municipality?->name ?? '—' }}</small>@if($project->association?->archived_at)<small>Association archived</small>@elseif($project->association?->status !== 'active')<small>Association inactive</small>@endif</td>
+                <tr><th scope="row"><a href="{{ $workflow->to($projectRoutePrefix.'.show', [$project]) }}">{{ $project->title }}</a><small>{{ $project->fisheriesCategory?->name ?? 'Category unavailable' }}@if($project->commodity) · {{ $project->commodity->name }}@endif</small></th>
+                    <td><a href="{{ $workflow->to($prefix.'.associations.show', ['association' => $project->association_id, 'section' => 'projects']) }}">{{ $project->association?->name ?? 'Association unavailable' }}</a><small>{{ $project->association?->locationBarangay()?->name ?? '—' }} · {{ $project->association?->locationBarangay()?->municipality?->name ?? '—' }}</small>@if($project->association?->archived_at)<small>Association archived</small>@elseif($project->association?->status !== 'active')<small>Association inactive</small>@endif</td>
                     <td>{{ $project->implementation_start_date?->format('M j, Y') ?? 'Not recorded' }}<small>Program year {{ $project->program_year }}@if($project->implementation_end_date) · Ends {{ $project->implementation_end_date->format('M j, Y') }}@endif</small></td>
                     <td><x-status-badge :value="ucfirst($project->status)" />@if($project->archived_at)<span class="badge badge-neutral">Archived</span>@endif</td>
                     <td class="project-actions-cell">
                         <div class="row-actions program-row-actions project-row-actions">
-                            <a class="button button-quiet" href="{{ route($projectRoutePrefix.'.show', $project) }}" aria-label="View {{ $project->title }}"><x-icon name="eye" />View</a>
+                            <a class="button button-quiet" href="{{ $workflow->to($projectRoutePrefix.'.show', [$project]) }}" aria-label="View {{ $project->title }}"><x-icon name="eye" />View</a>
                             @if($canManage)
                                 <details class="project-actions" data-user-actions>
                                     <summary aria-label="Actions for {{ $project->title }}"><x-icon name="ellipsis" /></summary>

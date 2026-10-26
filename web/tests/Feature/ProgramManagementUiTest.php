@@ -21,6 +21,7 @@ use Tests\TestCase;
 
 class ProgramManagementUiTest extends TestCase
 {
+    use \Tests\Support\AssertsWorkflowNavigation;
     private string $identity;
 
     protected function setUp(): void
@@ -131,6 +132,48 @@ class ProgramManagementUiTest extends TestCase
         DB::table('projects')->insert(array_replace(['id' => $this->id($id), 'association_id' => $this->id(11),
             'saad_activity_id' => 1, 'fisheries_category_id' => 1, 'commodity_id' => 1, 'title' => 'Test Project',
             'program_year' => 2026, 'implementation_start_date' => '2026-01-01', 'status' => 'ongoing', 'updated_at' => '2026-01-01 00:00:00'], $overrides));
+    }
+
+    public function test_connected_staff_record_links_restore_registers_and_actual_parent_history(): void
+    {
+        $this->project(101);
+        $this->training(201, ['related_project_id' => $this->id(101)]);
+        $this->activity(301, ['related_project_id' => $this->id(101)]);
+        foreach (['admin' => 1, 'field-officer' => 2] as $prefix => $actor) {
+            $this->identity = $this->id($actor);
+            foreach (['projects' => 101, 'trainings' => 201, 'program-activities' => 301] as $module => $id) {
+                $register = '/'.$prefix.'/'.$module.'?q=Test&year=2026&sort=za&page=1';
+                if ($module === 'program-activities') $register = str_replace('q=Test', 'q=Activity', $register);
+                $page = $this->get($register)->assertOk();
+                $dom = new \DOMDocument;
+                @$dom->loadHTML($page->getContent());
+                $xpath = new \DOMXPath($dom);
+                $link = $xpath->query('//a[contains(@href, "/'.$module.'/'.$this->id($id).'") and contains(@href, "return_to=")]')->item(0);
+                $this->assertNotNull($link, 'Record link must retain its filtered register.');
+                $detail = $this->get($link->getAttribute('href'))->assertOk();
+                $this->assertWorkflowBack($detail, $register);
+            }
+            $parent = '/'.$prefix.'/projects/'.$this->id(101).'?training_page=1&activity_page=1';
+            foreach (['trainings' => [201, 'project-trainings'], 'program-activities' => [301, 'project-activities']] as $module => [$id, $anchor]) {
+                $this->get('/'.$prefix.'/'.$module.'/'.$this->id($id).'?'.http_build_query(['return_to' => $parent.'#'.$anchor]))
+                    ->assertOk()->assertSee('href="'.e(url($parent).'#'.$anchor).'" data-workflow-back', false);
+            }
+            $this->get('/'.$prefix.'/trainings/'.$this->id(201).'?'.http_build_query(['return_to' => '/'.$prefix.'/projects/'.$this->id(999)]))
+                ->assertOk()->assertDontSee('/projects/'.$this->id(999));
+        }
+        $this->identity = $this->id(3);
+        $this->get('/field-officer/projects/'.$this->id(101).'?return_to=/field-officer/projects')->assertForbidden();
+        $this->get('/field-officer/trainings/'.$this->id(201))->assertForbidden();
+        $this->get('/field-officer/program-activities/'.$this->id(301))->assertForbidden();
+        DB::table('projects')->where('id', $this->id(101))->delete();
+        foreach (['admin' => 1, 'field-officer' => 2] as $prefix => $actor) {
+            $this->identity = $this->id($actor);
+            foreach (['trainings' => 201, 'program-activities' => 301] as $module => $id) {
+                $page = $this->get('/'.$prefix.'/'.$module.'/'.$this->id($id).'?'.http_build_query(['return_to' => '/'.$prefix.'/projects/'.$this->id(101)]))->assertOk();
+                $page->assertDontSee('href="'.route($prefix.'.projects.show', $this->id(101)), false);
+                $this->assertWorkflowBack($page, '/'.$prefix.'/'.$module);
+            }
+        }
     }
 
     public function test_project_contextual_actions_preserve_cohort_and_single_project_without_running_reporting_on_get(): void
@@ -477,7 +520,7 @@ class ProgramManagementUiTest extends TestCase
             $xpath = new \DOMXPath($document);
             foreach ($cases as $id => $case) {
                 if (isset($case['archived_at']) !== $archived) continue;
-                $viewUrl = route($prefix.'.projects.show', $this->id($id));
+                $viewUrl = route($prefix.'.projects.show', ['project' => $this->id($id), 'return_to' => '/'.$prefix.'/projects'.($archived ? '?status=archived' : '')]);
                 $rows = $xpath->query('//table/tbody/tr[th/a[@href="'.$viewUrl.'"]]');
                 if ($prefix === 'field-officer' && in_array($id, [109, 110], true)) {
                     $this->assertSame(0, $rows->length);
@@ -879,7 +922,7 @@ class ProgramManagementUiTest extends TestCase
             $xpath = new \DOMXPath($document);
             foreach (range(201, 208) as $id) {
                 if (($id === 207) !== $archived) continue;
-                $url = route($prefix.'.program-activities.show', $this->id($id));
+                $url = route($prefix.'.program-activities.show', ['programActivity' => $this->id($id), 'return_to' => '/'.$prefix.'/program-activities'.($archived ? '?status=archived' : '')]);
                 $rows = $xpath->query('//table/tbody/tr[th/a[@href="'.$url.'"]]');
                 if ($prefix === 'field-officer' && in_array($id, [205, 206, 208], true)) {
                     $this->assertSame(0, $rows->length);

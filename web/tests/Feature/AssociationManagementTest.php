@@ -33,6 +33,7 @@ use Tests\TestCase;
 
 class AssociationManagementTest extends TestCase
 {
+    use \Tests\Support\AssertsWorkflowNavigation;
     protected string $identity;
 
     protected static function id(int $number): string
@@ -93,6 +94,35 @@ class AssociationManagementTest extends TestCase
                 $detail->assertSee(route($prefix.'.reports.export', ['format' => $format]));
             }
             $this->get('/'.$prefix.'/association-officers')->assertOk()->assertDontSee('data-contextual-report', false);
+        }
+    }
+
+    public function test_connected_association_tabs_keep_context_and_member_links_use_valid_ids(): void
+    {
+        foreach (['admin' => 1, 'field-officer' => 2] as $prefix => $actor) {
+            $this->identity = self::id($actor);
+            $origin = '/'.$prefix.'/associations?q=Alpha&status=active&sort=za&page=1';
+            $parameters = ['q' => 'Alpha', 'status' => 'active', 'sort' => 'za', 'page' => 1, 'section' => 'members', 'return_to' => $origin];
+            $page = $this->get('/'.$prefix.'/associations/'.self::id(10).'?'.http_build_query($parameters))->assertOk();
+            $dom = new \DOMDocument;
+            @$dom->loadHTML($page->getContent());
+            $xpath = new \DOMXPath($dom);
+            $memberLink = $xpath->query('//a[contains(@href, "/members?") and contains(., "Open member register")]')->item(0);
+            $this->assertNotNull($memberLink);
+            parse_str(parse_url($memberLink->getAttribute('href'), PHP_URL_QUERY), $query);
+            $this->assertSame(self::id(10), $query['association']);
+            $this->assertStringContainsString('section=members', $query['return_to']);
+            $this->assertSame('related-association-records', parse_url($query['return_to'], PHP_URL_FRAGMENT));
+            $page->assertSee('href="'.e(url($origin)).'" data-workflow-back', false);
+            $officerLink = $xpath->query('//a[contains(@href, "/associations/'.self::id(10).'/officers") and contains(., "officers")]')->item(0);
+            $officers = $this->get($officerLink->getAttribute('href'))->assertOk();
+            $officers->assertSee('Back to Alpha', false)->assertSee('data-workflow-back', false);
+            foreach (['associations', 'association-officers'] as $register) {
+                $origin = '/'.$prefix.'/'.$register.'?q=Alpha&sort=za&page=1';
+                $officers = $this->get('/'.$prefix.'/associations/'.self::id(10).'/officers?'.http_build_query(['member' => self::id(51), 'return_to' => $origin]))->assertOk();
+                $this->assertWorkflowBack($officers, $origin);
+                $officers->assertSee('Save officer position')->assertSee('name="_token"', false);
+            }
         }
     }
 

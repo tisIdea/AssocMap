@@ -1,20 +1,26 @@
 @extends($prefix === 'admin' ? 'layouts.admin' : 'layouts.field-officer')
 @php
     $trainingPrefix = $prefix.'.trainings';
+    $workflow = app(\App\View\WorkflowNavigation::class);
+    $parents = [];
+    if ($training->association) $parents[] = ['name' => $prefix.'.associations.show', 'parameters' => ['association' => $training->association_id], 'label' => $training->association->name];
+    if ($canViewProject) $parents[] = ['name' => $prefix.'.projects.show', 'parameters' => ['project' => $training->related_project_id], 'label' => $row['related_project']];
+    $workflowBack = $workflow->back(request(), $trainingPrefix.'.index', [], $parents);
+    $breadcrumbs = array_map(fn ($parent) => ['label' => $parent['label'], 'url' => $workflow->parent(request(), $parent['name'], $parent['parameters'])], $parents);
     $nameOf = fn ($member) => $member ? collect([$member->first_name, $member->middle_name, $member->last_name, $member->suffix])->filter(fn ($part) => filled($part))->implode(' ') : 'Member unavailable';
 @endphp
 @section('content')
 <section class="program-management" data-workspace-module="trainings" data-workspace-title="Training Details">
-    <a class="back-link" href="{{ route($trainingPrefix.'.index') }}"><x-icon name="back" />Back to Trainings</a>
+    <x-workflow-navigation :back="$workflowBack" :parents="$breadcrumbs" :current="$training->title" />
     <header class="card program-heading"><div><p class="eyebrow">Training Management</p><h1 tabindex="-1">Training Details</h1><p>{{ $training->title }}</p></div><div class="program-heading-actions"><x-status-badge :value="ucfirst($training->status)" />@if($training->archived_at)<span class="badge badge-neutral">Archived</span>@endif @if($canEdit)<a class="button button-primary" href="{{ route($trainingPrefix.'.edit', $training) }}"><x-icon name="pencil" />Edit Training</a>@endif</div></header>
     @if($row['association_archived'])<p class="notice">Association Archived - Read Only. Historical details remain available.</p>@elseif(!$canEdit)<p class="notice">This record is currently read-only.</p>@endif
     @if($row['project_finalized'])<p class="notice">The linked project is completed or terminated. This training and its participants are permanently read-only.</p>@endif
     @if(!$row['project_finalized'] && $row['archived'])<p class="notice">This training is archived and read-only. @if($row['parents_operational'])Unarchive it before editing.@endif</p>@endif
     <section class="card program-information"><h2>General Information</h2><dl class="detail-grid">
         <div><dt>Training Title</dt><dd>{{ $training->title }}</dd></div>
-        <div><dt>Association</dt><dd><a href="{{ route($prefix.'.associations.show', $training->association_id) }}">{{ $training->association?->name ?? 'Not available' }}</a></dd></div>
+        <div><dt>Association</dt><dd>@if($training->association)<a href="{{ $workflow->parent(request(), $prefix.'.associations.show', ['association' => $training->association_id]) }}">{{ $training->association->name }}</a>@else Not available @endif</dd></div>
         <div><dt>SAAD Activity</dt><dd>{{ $training->saadActivity?->name ?? 'Not recorded' }}</dd></div>
-        <div><dt>Related Project</dt><dd>@if($canViewProject)<a href="{{ route($prefix.'.projects.show', $training->related_project_id) }}">{{ $row['related_project'] }}</a>@else{{ $row['related_project'] }}@endif</dd></div>
+        <div><dt>Related Project</dt><dd>@if($canViewProject)<a href="{{ $workflow->parent(request(), $prefix.'.projects.show', ['project' => $training->related_project_id]) }}">{{ $row['related_project'] }}</a>@else{{ $row['related_project'] }}@endif</dd></div>
         <div><dt>Description</dt><dd>{{ $training->description ?: 'Not recorded' }}</dd></div>
         <div><dt>Remarks</dt><dd>{{ $training->remarks ?: 'Not recorded' }}</dd></div>
     </dl></section>

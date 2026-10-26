@@ -1,5 +1,6 @@
 @extends($prefix === 'admin' ? 'layouts.admin' : 'layouts.field-officer')
 @php
+    $workflow = app(\App\View\WorkflowNavigation::class);
     $module = 'program-activities';
     $moduleLabel = 'Program Activities';
     $activityPrefix = $prefix.'.'.$module;
@@ -27,10 +28,10 @@
                 <tbody>
                     @forelse($rows as $row)
                         <tr>
-                            <th scope="row"><a href="{{ route($activityPrefix.'.show', $row['id']) }}">{{ $row['title'] }}</a><small>{{ $row['activity'] }}</small></th>
+                            <th scope="row"><a href="{{ $workflow->to($activityPrefix.'.show', [$row['id']]) }}">{{ $row['title'] }}</a><small>{{ $row['activity'] }}</small></th>
                             <td>
                                 @if($row['association_id'])
-                                    <a href="{{ route($prefix.'.associations.show', $row['association_id']) }}">{{ $row['association'] }}</a>
+                                    <a href="{{ $workflow->to($prefix.'.associations.show', ['association' => $row['association_id'], 'section' => 'activities']) }}">{{ $row['association'] }}</a>
                                     <small>{{ $row['barangay'] }} · {{ $row['municipality'] }}</small>
                                 @else
                                     <span class="badge badge-neutral">Program-wide</span>
@@ -49,7 +50,7 @@
                             </td>
                             <td class="activity-actions-cell">
                                 <div class="row-actions activity-row-actions">
-                                    <a class="button button-quiet" href="{{ route($activityPrefix.'.show', $row['id']) }}" aria-label="View {{ $row['title'] }}"><x-icon name="eye" />View</a>
+                                    <a class="button button-quiet" href="{{ $workflow->to($activityPrefix.'.show', [$row['id']]) }}" aria-label="View {{ $row['title'] }}"><x-icon name="eye" />View</a>
                                     @if($row['can_manage'])
                                         <details class="activity-actions" data-user-actions>
                                             <summary aria-label="Actions for {{ $row['title'] }}"><x-icon name="ellipsis" /></summary>
