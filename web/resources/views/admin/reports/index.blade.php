@@ -2,13 +2,30 @@
     $defaultYear = (int) now('Asia/Manila')->format('Y');
     $activeFilterCount = count(array_filter($filters, fn ($value, $key) => $key !== 'report_type'
         && !($key === 'year' && (int) $value === $defaultYear), ARRAY_FILTER_USE_BOTH));
+    $primaryMeasureMap = [
+        'comprehensive' => [['associations', 'Distinct associations'], ['members', 'Distinct official members'], ['projects', 'Distinct projects'], ['trainings', 'Training activities']],
+        'associations' => [['associations', 'Distinct associations'], ['associations', 'Active and unarchived associations'], ['associations', 'Archived associations']],
+        'members' => [['members', 'Distinct official members'], ['members', 'Active unarchived members'], ['members', 'Archived members']],
+        'projects' => [['projects', 'Distinct projects'], ['projects', 'Archived projects']],
+        'trainings' => [['trainings', 'Training activities'], ['trainings', 'Participant rows recorded'], ['trainings', 'Distinct members recorded'], ['trainings', 'Present attendance occurrences']],
+        'production' => [['production', 'Production observations'], ['production', 'Recorded zero actual observations'], ['production', 'Monitoring records without production'], ['monthly_production', 'Monthly detail observations']],
+        'income' => [['income', 'Sum of recorded gross income (PHP)'], ['income', 'Recorded income observations'], ['income', 'Recorded zero income observations'], ['income', 'Production observations without selected income']],
+        'activities' => [['activities', 'Recorded program activities'], ['monitoring', 'Monitoring records'], ['monitoring', 'Visit-report rows'], ['monitoring', 'Selected projects without monitoring']],
+    ];
+    $primaryMeasures = [];
+    $measureValue = fn ($value) => $value === null ? 'Unobserved' : preg_replace('/\B(?=(\d{3})+(?!\d))/', ',', (string) $value);
+    foreach ($primaryMeasureMap[$filters['report_type']] as [$sectionKey, $measureLabel]) {
+        $sourceSection = collect($result['sections'] ?? [])->firstWhere('key', $sectionKey);
+        $measure = collect($sourceSection['measures'] ?? [])->firstWhere('label', $measureLabel);
+        if ($measure !== null) $primaryMeasures[] = $measure;
+    }
 @endphp
 <div class="reports-layout" data-report-workspace data-data-url="{{ route($prefix.'.data') }}" data-options-url="{{ route($prefix.'.options') }}">
     <header class="card report-page-header">
         <div class="report-page-heading">
             <p class="eyebrow">Reporting workspace</p>
             <h1 tabindex="-1">Reports &amp; Analytics</h1>
-            <p>Review authorized program records, observation coverage and reporting periods.</p>
+            <p>Recorded program data and reporting coverage.</p>
             <span class="report-access-label"><x-icon name="shield" />{{ match ($role) { 'system_admin' => 'Organizational reporting', 'field_officer' => 'Current assigned associations', default => 'Your association · View only' } }}</span>
         </div>
         <div class="report-toolbar" role="group" aria-label="Report actions">
@@ -74,7 +91,6 @@
     </section>
     <div class="report-preview">
         <section class="card report-document">
-            <div class="report-document-header"><span class="brand-symbol"><x-assocmap-mark /></span><div><strong>ASSOCMAP</strong><small>Association and project monitoring</small></div><span class="badge badge-neutral">Authorized report</span></div>
             <p data-report-status role="{{ isset($sizeLimitMessage) ? 'alert' : 'status' }}" aria-live="polite"
                 @if($unavailable || isset($sizeLimitMessage)) data-feedback-fallback @endif
                 @class(['notice-error' => $unavailable || isset($sizeLimitMessage)])>{{ $sizeLimitMessage ?? ($unavailable ? 'Reporting is temporarily unavailable. Please try again later.' : 'Report loaded from authorized records.') }}</p>
@@ -83,34 +99,41 @@
                     <h2>{{ $result['title'] }}</h2>
                     <section class="report-context-card" id="report-scope" aria-labelledby="report-scope-title">
                         <h3 id="report-scope-title">Reporting scope and period</h3>
-                        <p>{{ $result['meta']['scope_basis'] }}</p>
-                        <p>Associations: {{ implode('; ', $result['meta']['scope']) ?: 'None in this scope' }}</p>
-                        <p class="field-help">Generated {{ $result['meta']['generated_at'] }} · {{ $result['meta']['timezone'] }}</p>
-                        <p class="field-help">@foreach($result['meta']['filters'] as $key => $value){{ str_replace('_', ' ', $key) }}: {{ $value }}{{ $loop->last ? '' : ' · ' }}@endforeach</p>
-                        <p class="field-help">Current association/member counts and project statuses are snapshots. Program year selects a cohort; reporting year/quarter selects recorded events and monitoring periods.</p>
+                        <p class="report-context-brief">{{ count($result['meta']['scope']) === 1 ? $result['meta']['scope'][0] : count($result['meta']['scope']).' authorized associations' }} · {{ isset($filters['year']) ? 'Reporting year '.$filters['year'] : 'Current snapshot' }}{{ isset($filters['quarter']) ? ' · Q'.$filters['quarter'] : '' }}{{ isset($filters['month']) ? ' · Month '.$filters['month'] : '' }}{{ isset($filters['program_year']) ? ' · Program year '.$filters['program_year'] : '' }}</p>
+                        <details class="report-scope-details"><summary>Scope and applied filters</summary>
+                            <p>{{ $result['meta']['scope_basis'] }}</p>
+                            <p>Associations: {{ implode('; ', $result['meta']['scope']) ?: 'None in this scope' }}</p>
+                            <p class="field-help">Generated {{ $result['meta']['generated_at'] }} · {{ $result['meta']['timezone'] }}</p>
+                            <p class="field-help">@foreach($result['meta']['filters'] as $key => $value){{ str_replace('_', ' ', $key) }}: {{ $value }}{{ $loop->last ? '' : ' · ' }}@endforeach</p>
+                            <p class="field-help">Current association/member counts and project statuses are snapshots. Program year selects a cohort; reporting year/quarter selects recorded events and monitoring periods.</p>
+                        </details>
                     </section>
                     @if($result['empty'])<p class="notice">No recorded results match the selected report and filters.</p>@endif
                     <section class="report-summary" aria-labelledby="report-summary-title">
                         <h3 id="report-summary-title">Summary indicators</h3>
+                        <dl class="report-measures report-primary-measures" data-report-kpis>@foreach($primaryMeasures as $measure)<div><dt>{{ $measure['label'] }}</dt><dd>{{ $measureValue($measure['value']) }}</dd></div>@endforeach</dl>
+                        <details class="report-all-measures"><summary>All report measures</summary>
                         <p class="field-help">Recorded values within the applied scope. Unobserved values are not zero.</p>
                         @foreach($result['sections'] as $section)
                             @if($section['measures'])
                                 <h4>{{ $section['title'] }}</h4>
-                                <dl class="report-measures">@foreach($section['measures'] as $measure)<div><dt>{{ $measure['label'] }}</dt><dd><x-summary-counter :value="$measure['value'] ?? 'Unobserved'" /></dd></div>@endforeach</dl>
+                                <dl class="report-secondary-measures">@foreach($section['measures'] as $measure)<div><dt>{{ $measure['label'] }}</dt><dd>{{ $measureValue($measure['value']) }}</dd></div>@endforeach</dl>
                             @endif
                         @endforeach
+                        </details>
                     </section>
                     <section class="report-analytics" aria-labelledby="report-analytics-title">
                         <h3 id="report-analytics-title">Visual analytics</h3>
-                        <p class="field-help">Enable JavaScript for charts. Summary indicators and detailed data tables remain available. PDF/XLSX contain canonical tables, summaries and notes; chart images are shown on this page.</p>
+                        <p class="field-help">Enable JavaScript for charts. All measures and detailed tables remain available. Chart images are HTML-only.</p>
+                        @include('admin.reports.partials.geography', ['geography' => collect($result['sections'])->firstWhere('key', 'association_geography')])
                     </section>
-                    <details class="report-quality" open><summary>Data interpretation and quality</summary>
+                    <details class="report-quality"><summary>Data interpretation and quality</summary>
                         <ul>@foreach($result['notes'] as $note)<li>{{ $note }}</li>@endforeach</ul>
                         @foreach($result['sections'] as $section)
                             @if($section['notes'])<h4>{{ $section['title'] }}</h4><ul>@foreach($section['notes'] as $note)<li>{{ $note }}</li>@endforeach</ul>@endif
                         @endforeach
                     </details>
-                    <h3>Detailed data tables</h3>
+                    <details class="report-detailed-data"><summary>Detailed data tables ({{ count($result['sections']) }})</summary>
                     @foreach($result['sections'] as $section)
                         <section class="report-section report-data-section" id="report-table-{{ $section['key'] ?? $loop->index }}" tabindex="-1"><h4>{{ $section['title'] }}</h4>
                             @if($section['rows'])
@@ -121,10 +144,11 @@
                             @else<p class="report-empty">No recorded rows for this section.</p>@endif
                         </section>
                     @endforeach
+                    </details>
                 @endif
             </div>
         </section>
     </div>
-    @php $initialReport = ['result' => $result, 'options' => $options, 'filterMap' => $filterMap, 'defaultYear' => (int) now('Asia/Manila')->format('Y')]; @endphp
+    @php $initialReport = ['result' => $result, 'options' => $options, 'filterMap' => $filterMap, 'primaryMeasureMap' => $primaryMeasureMap, 'defaultYear' => (int) now('Asia/Manila')->format('Y')]; @endphp
     <script type="application/json" data-report-initial>@json($initialReport)</script>
 </div>

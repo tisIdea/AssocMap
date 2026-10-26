@@ -41,6 +41,34 @@ class AnalyticsTest(unittest.TestCase):
     def result(self, payload):
         return calculate(validate(payload))
 
+    def test_geography_keeps_same_names_separate_by_id_and_reconciles_authorized_population(self):
+        payload = fixture("associations")
+        original = payload["datasets"]["associations"][0]
+        payload["datasets"]["associations"] += [
+            {**original, "id": uid(31), "archived_at": "2026-01-01T00:00:00+08:00"},
+            {**original, "id": uid(32), "barangay_id": uid(33)},
+            {**original, "id": uid(34), "municipality_id": uid(35), "barangay_id": uid(36)},
+        ]
+        payload["meta"]["scope"] = [row["name"] for row in payload["datasets"]["associations"]]
+        result = self.result(payload)
+        rows = by_key(result, "association_geography")["rows"]
+        self.assertEqual(3, len(rows))
+        self.assertEqual([2, 1, 1], [row["count"] for row in rows])
+        self.assertEqual([3, 3, 1], [row["municipality_total"] for row in rows])
+        self.assertEqual(4, sum(row["count"] for row in rows))
+        self.assertEqual(4, sum({row["municipality_id"]: row["municipality_total"] for row in rows}.values()))
+        self.assertEqual(4, by_key(result, "associations")["measures"][0]["value"])
+        self.assertEqual(1, by_key(result, "associations")["measures"][2]["value"])
+
+    def test_geography_contract_rejects_conflicting_parent_or_labels_and_duplicate_associations(self):
+        for change in ({"municipality_id": uid(99)}, {"municipality": "Conflicting name"}, {"barangay": "Conflicting name"}, {"id": uid(1)}):
+            with self.subTest(change=change):
+                payload = fixture("associations")
+                payload["datasets"]["associations"].append({**payload["datasets"]["associations"][0], "id": uid(98), **change})
+                payload["meta"]["scope"] *= 2
+                with self.assertRaises(ContractError):
+                    validate(payload)
+
     def test_all_report_types_handle_an_empty_authorized_dataset(self):
         from contracts import TITLES
         for report in TITLES:

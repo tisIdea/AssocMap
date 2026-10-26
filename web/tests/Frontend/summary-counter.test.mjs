@@ -288,11 +288,12 @@ test('does not depend on requests, storage, navigation, feedback or global mutat
     assert.equal(f.value.textContent, '45');
 });
 
-test('only initial report measures opt in; filtered results and table values stay static', () => {
+test('report dashboard values stay static while other modules retain summary counters', () => {
     const reports = readFileSync(new URL('../../resources/js/pages/admin/reports.js', import.meta.url), 'utf8');
-    assert.match(reports, /function render\(result, animateSummaries = false\)/);
-    assert.match(reports, /if \(animateSummaries\) value.setAttribute\('data-summary-counter', ''\)/);
-    assert.match(reports, /render\(initial.result, true\)/);
+    const blade = readFileSync(new URL('../../resources/views/admin/reports/index.blade.php', import.meta.url), 'utf8');
+    assert.match(reports, /function render\(result\)/);
+    assert.match(reports, /render\(initial.result\)/);
     assert.match(reports, /render\(result\);/);
-    assert.equal((reports.match(/data-summary-counter/g) || []).length, 1);
+    assert.doesNotMatch(reports, /data-summary-counter/);
+    assert.doesNotMatch(blade, /x-summary-counter/);
 });

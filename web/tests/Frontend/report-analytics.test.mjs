@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildReportCharts, formatReportValue, renderReportAnalytics, reportPeriod } from '../../resources/js/components/report-analytics.js';
+import { buildReportCharts, formatReportValue, rankReportPoints, renderReportAnalytics, reportPeriod, reportScale } from '../../resources/js/components/report-analytics.js';
 
 const section = (key, rows, chart = {}) => ({ key, title: key, rows, chart, notes: [], measures: [] });
 const result = (sections, filters = {}) => ({ sections, meta: { filters: { report_type: 'comprehensive', year: 2026, ...filters }, scope: ['Synthetic association'], scope_basis: 'Synthetic authorized scope' } });
@@ -19,11 +19,11 @@ test('known mutually exclusive status counts use complete doughnuts; overlapping
 });
 
 test('existing category and income sections keep exact canonical labels, values and units', () => {
-    for (const key of ['association_municipality', 'association_barangay', 'members', 'project_component', 'training_component', 'production_coverage', 'activity_component', 'monitoring_status', 'income_periods']) {
+    for (const key of ['members', 'project_component', 'training_component', 'production_coverage', 'activity_component', 'monitoring_status', 'income_periods']) {
         const rows = [{ label: 'Recorded <label>', count: key === 'income_periods' ? '1234567890.12' : 0 }];
         const [chart] = buildReportCharts(result([distribution(key, rows)]));
         assert.equal(chart.kind, 'bar');
-        assert.deepEqual(chart.points, [{ label: 'Recorded <label>', values: [rows[0].count] }]);
+        assert.deepEqual(chart.points.map(({ label, values }) => ({ label, values })), [{ label: 'Recorded <label>', values: [rows[0].count] }]);
         if (key === 'income_periods') { assert.equal(chart.unit, 'PHP'); assert.match(chart.explanation, /not profit/); }
     }
 });
@@ -109,9 +109,70 @@ test('rendered charts have visible exact table equivalents and no HTML interpola
     assert.ok(output.all('figure').every(figure => figure.attributes.has('aria-labelledby')));
     assert.ok(output.all('svg').every(plot => plot.attributes.get('aria-hidden') === 'true'));
     assert.ok(output.all('td').some(cell => cell.textContent === 'Unobserved'));
-    assert.ok(output.all('strong').some(cell => String(cell.textContent).includes('<script>unsafe</script>')));
+    assert.ok(output.all('th').some(cell => String(cell.textContent).includes('<script>unsafe</script>')));
     assert.equal(output.all('script').length, 0);
     assert.ok(output.all('a').every(link => link.href.startsWith('#report-table-')));
+});
+
+test('rankings sort descending without mutating source, share competition ranks and bound ties to Top 10', () => {
+    const points = [{ label: 'B', values: [2] }, { label: 'Z', values: [9] }, { label: 'A', values: [2] }, { label: 'A', values: [2] }, { label: 'Zero', values: [0] }];
+    assert.deepEqual(rankReportPoints(points).map(p => [p.label, p.values[0], p.rank]), [['Z', 9, 1], ['A', 2, 2], ['A', 2, 2], ['B', 2, 2], ['Zero', 0, 5]]);
+    assert.deepEqual(points.map(p => p.label), ['B', 'Z', 'A', 'A', 'Zero']);
+    assert.equal(rankReportPoints(Array.from({ length: 14 }, (_, index) => ({ label: `A${index}`, values: [1] }))).length, 10);
+    const [chart] = buildReportCharts(result([distribution('project_component', Array.from({ length: 14 }, (_, index) => ({ label: `C${index}`, count: index })))]));
+    assert.equal(chart.points.length, 5); assert.deepEqual(chart.points.map(point => point.values[0]), [13, 12, 11, 10, 9]);
+    assert.equal(chart.total, 14);
+    assert.deepEqual(buildReportCharts(result([section('association_geography', [{ municipality_id: 'M', municipality_total: null }])])), []);
+});
+
+test('geography ranking uses canonical municipality IDs and subtotals without combining namesakes or duplicating barangays', () => {
+    const rows = [{ municipality_id: 'm1', municipality: 'Same', barangay_id: 'b1', barangay: 'Same', count: 2, municipality_total: 3 },
+        { municipality_id: 'm1', municipality: 'Same', barangay_id: 'b2', barangay: 'Same', count: 1, municipality_total: 3 },
+        { municipality_id: 'm2', municipality: 'Same', barangay_id: 'b3', barangay: 'Same', count: 1, municipality_total: 1 }];
+    const input = result([section('associations', []), section('association_geography', rows), distribution('association_municipality'), distribution('association_barangay')]);
+    input.sections[0].measures = [{ label: 'Distinct associations', value: 4 }];
+    const [chart] = buildReportCharts(input);
+    assert.equal(chart.key, 'association_geography'); assert.deepEqual(chart.points.map(p => p.values[0]), [3, 1]);
+    assert.equal(buildReportCharts(input).length, 1, 'Old geography sections remain data-only.');
+    const output = render(input);
+    const geography = output.all('section').find(section => section.id === 'report-geography');
+    assert.deepEqual(geography.all('tbody').map(body => body.dataset.municipalityId), ['m1', 'm2']);
+    assert.deepEqual(geography.all('tr').filter(row => row.dataset.barangayId).map(row => row.dataset.barangayId), ['b1', 'b2', 'b3']);
+    assert.equal(geography.all('tfoot')[0].all('td')[0].textContent, '4');
+    assert.equal(geography.all('span')[0].style.width, '50%');
+});
+
+test('conventional bars have SVG rects, zero-based numeric gridlines, category labels and exact values', () => {
+    const output = render(result([distribution('training_component', [{ label: 'A', count: 2 }, { label: 'B', count: 4 }])]));
+    const plot = output.all('svg')[0];
+    assert.match(plot.attributes.get('class'), /vertical-bars/);
+    assert.equal(output.all('rect').length, 2);
+    assert.ok(output.all('text').some(text => text.textContent === '0'));
+    assert.ok(output.all('text').some(text => text.textContent === '4'));
+    assert.ok(output.all('tspan').some(text => text.textContent === 'A'));
+    assert.ok(output.all('path').length >= 4);
+    const long = render(result([distribution('training_component', [{ label: 'A long component name requiring readable horizontal labels', count: 2 }])]));
+    assert.match(long.all('svg')[0].attributes.get('class'), /horizontal-bars/);
+});
+
+test('numeric scales contain zero, cover actual maxima and retain integer count ticks', () => {
+    assert.deepEqual(reportScale(0, true), [0, 1]);
+    assert.deepEqual(reportScale(4, true), [0, 1, 2, 3, 4]);
+    assert.deepEqual(reportScale(10.25), [0, 5, 10, 15]);
+    for (const maximum of [0.03, 3, 12, 1234567890.12]) {
+        const ticks = reportScale(maximum); assert.equal(ticks[0], 0); assert.ok(ticks.at(-1) >= maximum);
+        assert.ok(ticks.every((value, index) => !index || value > ticks[index - 1]));
+    }
+});
+
+test('main dashboard bounds chart cards and keeps methodology closed and secondary charts available', () => {
+    const input = result(['members', 'project_component', 'training_component', 'production_coverage', 'activity_component', 'monitoring_status'].map(key => distribution(key)));
+    const output = render(input), grid = output.children.find(node => node.className === 'report-chart-grid');
+    assert.equal(grid.all('figure').length, 4);
+    const more = output.all('details').find(node => node.className === 'report-more-charts');
+    assert.equal(more.all('figure').length, 2); assert.notEqual(more.open, true);
+    assert.ok(output.all('details').filter(node => node.className === 'report-chart-info').every(node => !node.open));
+    assert.ok(output.all('table').some(table => table.all('th').some(th => th.textContent === 'Rank')));
 });
 
 test('line paths break at missing months and accessible tables retain exact point values', () => {

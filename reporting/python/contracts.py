@@ -134,6 +134,11 @@ def validate(payload):
             seen.add(identity)
     require(total <= 20000)
     require(meta["scope"] == [row["name"] for row in data["associations"]])
+    municipalities, barangays = {}, {}
+    for row in data["associations"]:
+        require(municipalities.setdefault(row["municipality_id"], row["municipality"]) == row["municipality"], dataset="associations", field="municipality_id")
+        geography = (row["municipality_id"], row["barangay"])
+        require(barangays.setdefault(row["barangay_id"], geography) == geography, dataset="associations", field="barangay_id")
     for key in ("association_id", "municipality_id"):
         if key in filters:
             require(all(row["id" if key == "association_id" else key] == filters[key] for row in data["associations"]))

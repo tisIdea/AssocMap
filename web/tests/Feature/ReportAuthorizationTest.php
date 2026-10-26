@@ -20,6 +20,7 @@ use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
 use Mockery;
 use PHPUnit\Framework\Attributes\DataProvider;
+use ReflectionMethod;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 use Tests\TestCase;
@@ -612,7 +613,7 @@ class ReportAuthorizationTest extends TestCase
         $result = $this->uiResult(['report_type' => 'projects', 'program_year' => 2026]);
         $result['sections'] = [[
             'key' => 'projects', 'title' => 'Retained project portfolio',
-            'measures' => [['label' => 'Recorded zero', 'value' => 0], ['label' => 'Unobserved', 'value' => null]],
+            'measures' => [['label' => 'Distinct projects', 'value' => 0], ['label' => 'Archived projects', 'value' => null]],
             'notes' => ['Archived records retained; current statuses are not historical trends.'], 'chart' => [],
             'columns' => [['key' => 'status', 'label' => 'Current status', 'type' => 'text']],
             'rows' => [['status' => 'completed']],
@@ -624,20 +625,107 @@ class ReportAuthorizationTest extends TestCase
             $this->assertStringContainsString($label, $html);
         }
         $this->assertSame(1, $query->query('//*[@id="report-scope"]')->length);
-        $this->assertSame('0', trim($query->query('//section[contains(@class,"report-summary")]//dd[1]')->item(0)->textContent));
-        $this->assertSame('Unobserved', trim($query->query('//section[contains(@class,"report-summary")]//div[2]/dd')->item(0)->textContent));
+        $this->assertSame('0', trim($query->query('//*[@data-report-kpis]/div[1]/dd')->item(0)->textContent));
+        $this->assertSame('Unobserved', trim($query->query('//*[@data-report-kpis]/div[2]/dd')->item(0)->textContent));
+        $this->assertSame(0, $query->query('//*[contains(@class,"report-document-header")]')->length);
+        $this->assertSame(1, $query->query('//details[contains(@class,"report-all-measures") and not(@open)]')->length);
+        $this->assertSame(1, $query->query('//details[contains(@class,"report-quality") and not(@open)]')->length);
         $this->assertSame('completed', $query->query('//*[@id="report-table-projects"]//tbody/tr/td')->item(0)->textContent);
         $this->assertStringContainsString('Synthetic authorized scope', $html);
         $this->assertStringContainsString('Synthetic association', $html);
         $this->assertStringContainsString('program year: 2026', $html);
         $this->assertStringContainsString('Enable JavaScript for charts', $html);
-        $this->assertStringContainsString('chart images are shown on this page', $html);
+        $this->assertStringContainsString('Chart images are HTML-only', $html);
         $this->assertSame($export ? 2 : 0, $query->query('//form[@data-report-export]/button')->length);
     }
 
     public static function reportTypes(): array
     {
         return array_map(fn ($type) => [$type], array_keys(ReportCatalog::TYPES));
+    }
+
+    public static function dashboardRoles(): array
+    {
+        $cases = [];
+        foreach (self::reportRoles() as [$prefix, $role, $export]) {
+            foreach (array_keys(ReportCatalog::TYPES) as $type) {
+                $cases[] = [$prefix, $role, $export, $type];
+            }
+        }
+
+        return $cases;
+    }
+
+    #[DataProvider('dashboardRoles')]
+    public function test_dashboard_curates_canonical_kpis_and_retains_every_secondary_measure(string $prefix, int $role, bool $export, string $type): void
+    {
+        $this->webIdentity($role);
+        $expected = match ($type) {
+            'comprehensive' => [['associations', 'Distinct associations'], ['members', 'Distinct official members'], ['projects', 'Distinct projects'], ['trainings', 'Training activities']],
+            'associations' => [['associations', 'Distinct associations'], ['associations', 'Active and unarchived associations'], ['associations', 'Archived associations']],
+            'members' => [['members', 'Distinct official members'], ['members', 'Active unarchived members'], ['members', 'Archived members']],
+            'projects' => [['projects', 'Distinct projects'], ['projects', 'Archived projects']],
+            'trainings' => [['trainings', 'Training activities'], ['trainings', 'Participant rows recorded'], ['trainings', 'Distinct members recorded'], ['trainings', 'Present attendance occurrences']],
+            'production' => [['production', 'Production observations'], ['production', 'Recorded zero actual observations'], ['production', 'Monitoring records without production'], ['monthly_production', 'Monthly detail observations']],
+            'income' => [['income', 'Sum of recorded gross income (PHP)'], ['income', 'Recorded income observations'], ['income', 'Recorded zero income observations'], ['income', 'Production observations without selected income']],
+            'activities' => [['activities', 'Recorded program activities'], ['monitoring', 'Monitoring records'], ['monitoring', 'Visit-report rows'], ['monitoring', 'Selected projects without monitoring']],
+        };
+        $filters = ['report_type' => $type];
+        if (in_array('year', ReportCatalog::filters($type), true)) {
+            $filters['year'] = 2026;
+        }
+        $result = $this->uiResult($filters);
+        $sections = [];
+        foreach ($expected as $index => [$key, $label]) {
+            $sections[$key] ??= ['key' => $key, 'title' => $key, 'measures' => [], 'notes' => [], 'columns' => [], 'rows' => [], 'chart' => []];
+            $sections[$key]['measures'][] = ['label' => $label, 'value' => $index === 1 ? null : $index];
+        }
+        $firstKey = array_key_first($sections);
+        $sections[$firstKey]['measures'][] = ['label' => 'Secondary coverage only', 'value' => 17];
+        $result['sections'] = array_values($sections);
+        $this->mockUiReport($result);
+        $query = $this->htmlQuery($this->get('/'.$prefix.'/reports?'.http_build_query($filters))->assertOk()->getContent());
+        $actual = array_map(fn ($node) => $node->textContent, iterator_to_array($query->query('//*[@data-report-kpis]//dt')));
+        $this->assertSame(array_column($expected, 1), $actual);
+        $this->assertLessThanOrEqual(4, count($actual));
+        $this->assertSame('0', trim($query->query('//*[@data-report-kpis]/div[1]/dd')->item(0)->textContent));
+        $this->assertSame('Unobserved', trim($query->query('//*[@data-report-kpis]/div[2]/dd')->item(0)->textContent));
+        $this->assertSame(count($expected) + 1, $query->query('//details[contains(@class,"report-all-measures") and not(@open)]//dd')->length);
+        $this->assertSame(1, $query->query('//details[contains(@class,"report-all-measures")]//dt[text()="Secondary coverage only"]')->length);
+        $initial = json_decode($query->query('//script[@data-report-initial]')->item(0)->textContent, true, flags: JSON_THROW_ON_ERROR);
+        $this->assertSame($expected, $initial['primaryMeasureMap'][$type], 'Browser and Blade share the same presentation specification.');
+        $this->assertSame($export ? 2 : 0, $query->query('//form[@data-report-export]/button')->length);
+    }
+
+    #[DataProvider('reportRoles')]
+    public function test_geography_fallback_preserves_ids_subtotals_grand_total_and_archived_scope(string $prefix, int $role, bool $export): void
+    {
+        $this->webIdentity($role);
+        $result = $this->uiResult(['report_type' => 'associations']);
+        $result['sections'] = [
+            ['key' => 'associations', 'title' => 'Authorized associations', 'columns' => [['key' => 'association', 'label' => 'Association', 'type' => 'text']],
+                'measures' => [['label' => 'Distinct associations', 'value' => 4]], 'notes' => [], 'rows' => [], 'chart' => []],
+            ['key' => 'association_geography', 'title' => 'Association Distribution by Municipality and Barangay', 'columns' => [], 'measures' => [], 'notes' => [], 'chart' => [],
+                'rows' => [
+                    ['municipality_id' => self::TOWN, 'municipality' => 'Same town', 'barangay_id' => self::OWN, 'barangay' => 'Same barangay', 'count' => 2, 'municipality_total' => 3],
+                    ['municipality_id' => self::TOWN, 'municipality' => 'Same town', 'barangay_id' => self::OUTSIDE, 'barangay' => 'Same barangay', 'count' => 1, 'municipality_total' => 3],
+                    ['municipality_id' => self::OTHER_TOWN, 'municipality' => 'Same town', 'barangay_id' => self::OTHER, 'barangay' => 'Same barangay', 'count' => 1, 'municipality_total' => 1],
+                ]],
+        ];
+        foreach (array_keys($result['sections'][1]['rows'][0]) as $key) {
+            $result['sections'][1]['columns'][] = ['key' => $key, 'label' => $key, 'type' => in_array($key, ['count', 'municipality_total']) ? 'integer' : 'text'];
+        }
+        $engine = app(PythonReportEngine::class);
+        (new ReflectionMethod($engine, 'validateResult'))->invoke($engine, $result, $result['meta']);
+        $this->mockUiReport($result);
+        $query = $this->htmlQuery($this->get('/'.$prefix.'/reports?report_type=associations')->assertOk()->getContent());
+        $this->assertSame(2, $query->query('//*[@id="report-geography"]//tbody')->length);
+        $this->assertSame(3, $query->query('//*[@id="report-geography"]//tbody/tr[@data-barangay-id]')->length);
+        $this->assertSame('3', $query->query('//*[@id="report-geography"]//tbody[@data-municipality-id="'.self::TOWN.'"]/tr[1]/td[1]')->item(0)->textContent);
+        $this->assertSame('4', $query->query('//*[@id="report-geography"]//tfoot/tr/td[1]')->item(0)->textContent);
+        $this->assertSame(0, $query->query('//details[@open]')->length);
+        $this->assertSame(1, $query->query('//*[@id="report-geography"]//*[contains(.,"archived associations retained")]')->length);
+        $this->assertSame($export ? 2 : 0, $query->query('//form[@data-report-export]/button')->length);
     }
 
     #[DataProvider('reportTypes')]
