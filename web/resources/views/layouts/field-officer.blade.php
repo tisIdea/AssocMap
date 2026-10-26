@@ -16,19 +16,25 @@
 <body>
     <a class="skip-link" href="#main-content">Skip to content</a>
     <x-workspace-sidebar :dashboard-url="route('field-officer.dashboard')" workspace="FIELD OFFICER WORKSPACE" id="field-officer-sidebar" aria-label="Field Officer navigation">
-        <x-workspace-nav-link :href="route('field-officer.dashboard')" label="Dashboard" icon="layout-dashboard" :active="request()->routeIs('field-officer.dashboard')" />
-        <x-workspace-nav-link :href="route('field-officer.members.index')" label="Member Management" icon="users-round" :active="request()->routeIs('field-officer.members.*')" />
-        <x-workspace-nav-link :href="route('field-officer.associations.index')" label="Assigned Associations" icon="building" :active="request()->routeIs('field-officer.associations.*')" />
-        <x-workspace-nav-link :href="route('field-officer.association-officers.index')" label="Association Officers" icon="users" :active="request()->routeIs('field-officer.association-officers.*')" />
-        <x-workspace-nav-link :href="route('field-officer.member-applications.index')" label="Member Applications" icon="users" :active="request()->routeIs('field-officer.member-applications.*')" />
-        <x-workspace-nav-group id="field-officer-program-navigation" :active="request()->routeIs('field-officer.projects.*', 'field-officer.trainings.*', 'field-officer.monitoring.*', 'field-officer.program-activities.*')">
+        <x-workspace-nav-section id="field-officer-overview" label="OVERVIEW">
+            <x-workspace-nav-link :href="route('field-officer.dashboard')" label="Dashboard" icon="layout-dashboard" :active="request()->routeIs('field-officer.dashboard')" />
+        </x-workspace-nav-section>
+        <x-workspace-nav-section id="field-officer-associations-members" label="ASSOCIATIONS & MEMBERS">
+            <x-workspace-nav-link :href="route('field-officer.associations.index')" label="Assigned Associations" icon="building" :active="request()->routeIs('field-officer.associations.*')" />
+            <x-workspace-nav-link :href="route('field-officer.association-officers.index')" label="Association Officers" icon="users" :active="request()->routeIs('field-officer.association-officers.*')" />
+            <x-workspace-nav-link :href="route('field-officer.members.index')" label="Member Management" icon="users-round" :active="request()->routeIs('field-officer.members.*')" />
+            <x-workspace-nav-link :href="route('field-officer.member-applications.index')" label="Member Applications" icon="users" :active="request()->routeIs('field-officer.member-applications.*')" />
+        </x-workspace-nav-section>
+        <x-workspace-nav-section id="field-officer-projects-activities" label="PROJECTS & ACTIVITIES">
             <x-workspace-nav-link :href="route('field-officer.projects.index')" label="Projects" icon="folder-kanban" :active="request()->routeIs('field-officer.projects.*')" />
             <x-workspace-nav-link :href="route('field-officer.trainings.index')" label="Trainings" icon="graduation-cap" :active="request()->routeIs('field-officer.trainings.*')" />
-            <x-workspace-nav-link :href="route('field-officer.monitoring.index')" label="Monitoring" icon="clipboard-check" :active="request()->routeIs('field-officer.monitoring.*')" />
             <x-workspace-nav-link :href="route('field-officer.program-activities.index')" label="Program Activities" icon="calendar" :active="request()->routeIs('field-officer.program-activities.*')" />
-        </x-workspace-nav-group>
-        <x-workspace-nav-link :href="route('field-officer.gis.index')" label="GIS Mapping" icon="map-pinned" :active="request()->routeIs('field-officer.gis.*')" />
-        <x-workspace-nav-link :href="route('field-officer.reports.index')" label="Reports & Analytics" icon="chart-no-axes-column" :active="request()->routeIs('field-officer.reports.*')" />
+        </x-workspace-nav-section>
+        <x-workspace-nav-section id="field-officer-monitoring-insights" label="MONITORING & INSIGHTS">
+            <x-workspace-nav-link :href="route('field-officer.monitoring.index')" label="Monitoring" icon="clipboard-check" :active="request()->routeIs('field-officer.monitoring.*')" />
+            <x-workspace-nav-link :href="route('field-officer.gis.index')" label="GIS Mapping" icon="map-pinned" :active="request()->routeIs('field-officer.gis.*')" />
+            <x-workspace-nav-link :href="route('field-officer.reports.index')" label="Reports & Analytics" icon="chart-no-axes-column" :active="request()->routeIs('field-officer.reports.*')" />
+        </x-workspace-nav-section>
     </x-workspace-sidebar>
     <button type="button" class="sidebar-backdrop" data-fo-close hidden aria-label="Close navigation"></button>
     <div class="main-shell">

@@ -6,7 +6,7 @@ import { runInNewContext } from 'node:vm';
 const read = path => readFileSync(new URL(`../../resources/${path}`, import.meta.url), 'utf8');
 const operations = ['projects', 'trainings', 'monitoring', 'program-activities'];
 
-function fixture(role, { width = 390, module = 'monitoring' } = {}) {
+function fixture(role, { width = 390, module = 'monitoring', hashPages = false } = {}) {
     const document = { activeElement: null, dialogOpen: false };
     function node(parent = null) {
         const events = new Map(), attributes = new Map(), classes = new Set();
@@ -35,7 +35,7 @@ function fixture(role, { width = 390, module = 'monitoring' } = {}) {
     Object.assign(document, node());
     const body = node(), sidebar = node(body), shell = node(body), opener = node(shell), backdrop = node(body);
     const brand = node(sidebar), nav = node(sidebar), collapse = node(sidebar), collapseLabel = node(collapse);
-    const context = node(shell), workspace = node(shell), program = role === 'association' ? null : node(nav);
+    const context = node(shell), workspace = node(shell), program = null;
     const panel = program ? node(nav) : null;
     const mobile = Object.assign(node(), { matches: width <= 1020 });
     const window = Object.assign(node(), {
@@ -45,17 +45,17 @@ function fixture(role, { width = 390, module = 'monitoring' } = {}) {
     sidebar.id = `${role}-sidebar`;
     sidebar.dataset.dashboardUrl = '/dashboard';
     workspace.dataset = { workspaceModule: module, workspaceTitle: module === 'monitoring' ? 'Monitoring' : module };
-    const groupId = role === 'admin' ? 'program-navigation' : 'field-officer-program-navigation';
-    if (program) {
-        program.dataset.disclosure = groupId;
-        const active = role === 'field-officer' && operations.includes(module);
-        program.setAttribute('aria-expanded', String(active));
-        program.classList.toggle('active', active);
-        panel.hidden = !active;
-    }
-    const modules = role === 'association' ? ['dashboard', 'reports', 'gis', 'member-applications', 'monitoring']
-        : role === 'field-officer' ? ['dashboard', 'members', 'association-officers', 'member-applications', ...operations, 'gis', 'reports']
-            : ['dashboard', 'users', 'areas', 'associations', 'members', ...operations, 'gis', 'reports', 'audit-logs'];
+    const groupId = null;
+    const modules = role === 'association' ? ['dashboard', 'member-applications', 'projects', 'trainings', 'program-activities', 'monitoring', 'gis', 'reports']
+        : role === 'field-officer' ? ['dashboard', 'associations', 'association-officers', 'members', 'member-applications', 'projects', 'trainings', 'program-activities', 'monitoring', 'gis', 'reports']
+            : ['dashboard', 'areas', 'associations', 'members', 'projects', 'trainings', 'program-activities', 'monitoring', 'gis', 'reports', 'users', 'audit-logs'];
+    const pages = hashPages ? modules.map(key => {
+        const page = Object.assign(node(shell), { dataset: { page: key, title: key } });
+        page.heading = node(page);
+        page.querySelector = selector => selector === 'h1' ? page.heading : null;
+        return page;
+    }) : [];
+    const location = { hash: '#' + module };
     const links = modules.map(key => {
         const link = node(panel && operations.includes(key) ? panel : nav);
         link.module = key;
@@ -85,7 +85,7 @@ function fixture(role, { width = 390, module = 'monitoring' } = {}) {
     };
     document.body = body;
     document.querySelector = selector => selector === 'dialog[open]' ? (document.dialogOpen ? {} : null) : selectors[selector] ?? null;
-    document.querySelectorAll = selector => selector === '[data-nav]' && role === 'admin' ? links : [];
+    document.querySelectorAll = selector => selector === '[data-page]' ? pages : selector === '[data-nav]' && role === 'admin' ? links : [];
     document.getElementById = id => id === groupId ? panel : selectors[`#${id}`];
     sidebar.querySelector = selector => selector === 'a' ? brand : selector === '[data-collapse-sidebar]' ? collapse : null;
     sidebar.querySelectorAll = selector => selector === 'a, button' ? items : [];
@@ -94,7 +94,7 @@ function fixture(role, { width = 390, module = 'monitoring' } = {}) {
     const source = path => read(path).replace(/^import .*;\r?\n/gm, '').replace(/^export /gm, '');
     const script = source('js/core/helpers.js') + source('js/layouts/workspace-sidebar.js') + source('js/layouts/admin-navigation.js')
         + '\ninitDisclosures(); const controller = initWorkspaceSidebar(); initAdminNavigation(controller); globalThis.reinitialize = initWorkspaceSidebar;';
-    const sandbox = { document, window };
+    const sandbox = { document, window, location, history: { replaceState(_state, _unused, hash) { location.hash = hash; } } };
     runInNewContext(script, sandbox);
     const click = (target, { nested = false } = {}) => {
         if (target.disabled) return;
@@ -118,7 +118,7 @@ function fixture(role, { width = 390, module = 'monitoring' } = {}) {
         if (changed) mobile.fire('change');
     };
     const visibleItems = () => items.filter(item => item.getClientRects().length && !item.disabled);
-    return { document, body, sidebar, shell, opener, backdrop, brand, links, mobile, context, program, panel, collapse, collapseLabel, click, key, activateButton, setWidth, visibleItems, reinitialize: sandbox.reinitialize };
+    return { pages, setHash(value) { location.hash = '#' + value; window.fire('hashchange'); }, document, body, sidebar, shell, opener, backdrop, brand, links, mobile, context, program, panel, collapse, collapseLabel, click, key, activateButton, setWidth, visibleItems, reinitialize: sandbox.reinitialize };
 }
 
 for (const role of ['admin', 'field-officer', 'association']) {
@@ -227,49 +227,26 @@ for (const role of ['admin', 'field-officer', 'association']) {
     });
 }
 
-for (const role of ['admin', 'field-officer']) {
-    test(`${role}: Program Operations responds once to click, Enter and Space while collapsed`, () => {
-        const f = fixture(role, { width: 1440 });
-        assert.equal(f.program.classList.contains('active'), true);
-        assert.equal(f.program.getAttribute('aria-expanded'), 'true');
-        assert.equal(f.panel.hidden, false);
-        f.click(f.collapse);
-        f.click(f.program, { nested: true });
-        assert.equal(f.panel.hidden, true);
-        assert.equal(f.program.getAttribute('aria-expanded'), 'false');
-        assert.equal(f.program.classList.contains('active'), true);
-        f.activateButton(f.program, 'Enter');
-        assert.equal(f.panel.hidden, false);
-        assert.equal(f.program.getAttribute('aria-expanded'), 'true');
-        for (const link of f.links.filter(link => operations.includes(link.module))) assert.equal(link.getClientRects().length, 1);
-        f.activateButton(f.program, ' ');
-        assert.equal(f.panel.hidden, true);
-        assert.equal(f.links.find(link => link.module === 'monitoring').getAttribute('aria-current'), 'page');
-    });
-
-    test(`${role}: mobile focus includes disclosure buttons and skips hidden children`, () => {
-        const f = fixture(role);
-        f.click(f.opener);
-        f.click(f.program);
-        assert.ok(f.visibleItems().includes(f.program));
-        assert.ok(!f.visibleItems().includes(f.collapse));
-        for (const link of f.links.filter(link => operations.includes(link.module))) assert.ok(!f.visibleItems().includes(link));
-        f.brand.focus();
-        f.key('Tab', true);
-        assert.equal(f.document.activeElement, f.visibleItems().at(-1));
-        f.key('Tab');
-        assert.equal(f.document.activeElement, f.brand);
+for (const role of ['admin', 'field-officer', 'association']) {
+    test(`${role}: every destination is directly available in desktop and mobile navigation`, () => {
+        for (const width of [390, 1440]) {
+            const f = fixture(role, { width });
+            if (width <= 1020) f.click(f.opener);
+            else f.click(f.collapse);
+            assert.equal(f.program, null);
+            assert.equal(f.panel, null);
+            for (const link of f.links) assert.ok(f.visibleItems().includes(link), link.module);
+            assert.equal(f.links.length, role === 'admin' ? 12 : role === 'field-officer' ? 11 : 8);
+        }
     });
 }
 
-test('Admin route navigation preserves active child, parent, title and disclosure state', () => {
+test('Admin route navigation preserves the active destination and title without a disclosure', () => {
     for (const module of ['dashboard', 'users', 'areas', 'associations', 'members', ...operations, 'gis', 'reports', 'audit-logs']) {
         const f = fixture('admin', { module });
         assert.equal(f.context.textContent, module === 'monitoring' ? 'Monitoring' : module);
         assert.equal(f.links.filter(link => link.getAttribute('aria-current') === 'page').length, 1);
         assert.equal(f.links.find(link => link.module === module).classList.contains('active'), true);
-        assert.equal(f.program.classList.contains('active'), operations.includes(module));
-        assert.equal(f.panel.hidden, !operations.includes(module));
     }
 });
 
@@ -277,5 +254,20 @@ test('Association Account stays flat without an artificial operational disclosur
     const f = fixture('association');
     assert.equal(f.program, null);
     assert.equal(f.panel, null);
-    assert.equal(f.links.length, 5);
+    assert.equal(f.links.length, 8);
+});
+
+test('Admin dashboard hash navigation keeps each destination active and handles unknown hashes', () => {
+    const f = fixture('admin', { width: 1440, module: 'dashboard', hashPages: true });
+    for (const link of f.links) {
+        f.setHash(link.module);
+        assert.equal(f.links.filter(link => link.getAttribute('aria-current') === 'page').length, 1);
+        assert.equal(link.classList.contains('active'), true);
+        assert.equal(f.context.textContent, link.module);
+        assert.deepEqual(f.pages.filter(page => !page.hidden).map(page => page.dataset.page), [link.module]);
+        assert.equal(f.document.activeElement, f.pages.find(page => page.dataset.page === link.module).heading);
+    }
+    f.setHash('unknown');
+    assert.equal(f.links.find(link => link.module === 'dashboard').getAttribute('aria-current'), 'page');
+    assert.equal(f.context.textContent, 'dashboard');
 });

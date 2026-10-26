@@ -110,14 +110,14 @@ class WorkspaceHeaderTest extends TestCase
     public function test_sidebars_keep_their_existing_role_specific_destinations(): void
     {
         $destinations = [
-            'admin' => ['dashboard', 'users.index', 'areas.index', 'associations.index', 'members.index', 'projects.index', 'trainings.index', 'monitoring.index', 'program-activities.index', 'gis.index', 'reports.index', 'audit-logs.index'],
-            'field-officer' => ['dashboard', 'members.index', 'associations.index', 'association-officers.index', 'member-applications.index', 'projects.index', 'trainings.index', 'monitoring.index', 'program-activities.index', 'gis.index', 'reports.index'],
-            'association' => ['dashboard', 'projects.index', 'trainings.index', 'monitoring.index', 'program-activities.index', 'reports.index', 'gis.index', 'member-applications.index'],
+            'admin' => ['dashboard', 'areas.index', 'associations.index', 'members.index', 'projects.index', 'trainings.index', 'program-activities.index', 'monitoring.index', 'gis.index', 'reports.index', 'users.index', 'audit-logs.index'],
+            'field-officer' => ['dashboard', 'associations.index', 'association-officers.index', 'members.index', 'member-applications.index', 'projects.index', 'trainings.index', 'program-activities.index', 'monitoring.index', 'gis.index', 'reports.index'],
+            'association' => ['dashboard', 'member-applications.index', 'projects.index', 'trainings.index', 'program-activities.index', 'monitoring.index', 'gis.index', 'reports.index'],
         ];
         $labels = [
-            'admin' => ['Dashboard', 'User Management', 'Area Management', 'Association Management', 'Member Management', 'Projects', 'Trainings', 'Monitoring', 'Program Activities', 'GIS Mapping', 'Reports & Analytics', 'Audit Log'],
-            'field-officer' => ['Dashboard', 'Member Management', 'Assigned Associations', 'Association Officers', 'Member Applications', 'Projects', 'Trainings', 'Monitoring', 'Program Activities', 'GIS Mapping', 'Reports & Analytics'],
-            'association' => ['Dashboard', 'Projects', 'Trainings', 'Monitoring', 'Program Activities', 'Reports & Analytics', 'GIS Mapping', 'Member Applications'],
+            'admin' => ['Dashboard', 'Area Management', 'Association Management', 'Member Management', 'Projects', 'Trainings', 'Program Activities', 'Monitoring', 'GIS Mapping', 'Reports & Analytics', 'User Management', 'Audit Log'],
+            'field-officer' => ['Dashboard', 'Assigned Associations', 'Association Officers', 'Member Management', 'Member Applications', 'Projects', 'Trainings', 'Program Activities', 'Monitoring', 'GIS Mapping', 'Reports & Analytics'],
+            'association' => ['Dashboard', 'Member Applications', 'Projects', 'Trainings', 'Program Activities', 'Monitoring', 'GIS Mapping', 'Reports & Analytics'],
         ];
         foreach ($destinations as $prefix => $routes) {
             $xpath = $this->document($this->renderLayout($prefix, $prefix.'.dashboard'));
@@ -132,7 +132,19 @@ class WorkspaceHeaderTest extends TestCase
             $this->assertSame('AssocMap Information System', $xpath->evaluate('string(//aside/div[@class="sidebar-footer"]//strong)'));
             $this->assertSame(1, $xpath->query('//aside[@data-workspace-sidebar]')->length);
             $this->assertSame(1, $xpath->query('//aside//button[@data-collapse-sidebar and @type="button" and @aria-expanded="true" and @aria-label="Collapse sidebar" and @aria-controls="'.$prefix.'-sidebar"]')->length);
-            $this->assertSame(1, $xpath->query('//aside//button[@data-disclosure and @type="button" and @aria-label="Program Operations"]')->length);
+            $this->assertSame(0, $xpath->query('//aside//*[@data-disclosure or @hidden]')->length);
+            $headings = $prefix === 'association'
+                ? ['OVERVIEW', 'MEMBERSHIP', 'PROJECTS & ACTIVITIES', 'MONITORING & INSIGHTS']
+                : ['OVERVIEW', 'ASSOCIATIONS & MEMBERS', 'PROJECTS & ACTIVITIES', 'MONITORING & INSIGHTS'];
+            if ($prefix === 'admin') $headings[] = 'ADMINISTRATION';
+            $actualHeadings = [];
+            foreach ($xpath->query('//aside/nav/section') as $section) {
+                $heading = $section->getElementsByTagName('h2')->item(0);
+                $this->assertSame($heading->getAttribute('id'), $section->getAttribute('aria-labelledby'));
+                $this->assertSame(1, $xpath->query('//*[@id="'.$heading->getAttribute('id').'"]')->length);
+                $actualHeadings[] = $heading->textContent;
+            }
+            $this->assertSame($headings, $actualHeadings);
             foreach ($xpath->query('//aside/nav//a') as $link) {
                 $this->assertSame(trim($link->textContent), $link->getAttribute('aria-label'));
                 $this->assertSame($link->getAttribute('aria-label'), $link->getAttribute('title'));
@@ -141,6 +153,29 @@ class WorkspaceHeaderTest extends TestCase
             $this->assertSame(0, $xpath->query('//aside//svg[not(@aria-hidden="true") or not(@focusable="false")]')->length);
             $this->assertSame('Capstone Project Prototype', $xpath->evaluate('string(//footer[@class="app-footer"]/span[2])'));
             $this->assertStringNotContainsString('BFAR', $xpath->evaluate('string(//aside)'));
+        }
+    }
+
+    public function test_every_navigation_route_family_keeps_one_active_destination(): void
+    {
+        foreach (['admin', 'field-officer', 'association'] as $prefix) {
+            $dashboard = $this->document($this->renderLayout($prefix, $prefix.'.dashboard'));
+            $destinations = [];
+            foreach ($dashboard->query('//aside/nav//a') as $link) {
+                $destinations[$link->getAttribute('href')] = $link->getAttribute('aria-label');
+            }
+            foreach (Route::getRoutes() as $route) {
+                $name = $route->getName();
+                if (! $name || ! str_starts_with($name, $prefix.'.')) continue;
+                $parts = explode('.', $name);
+                $index = count($parts) === 2 ? $name : $prefix.'.'.$parts[1].'.index';
+                if (! Route::has($index) || ! isset($destinations[route($index)])) continue;
+                $xpath = $this->document($this->renderLayout($prefix, $name));
+                $active = $xpath->query('//aside/nav//a[@aria-current="page"]');
+                $this->assertSame(1, $active->length, $name);
+                $this->assertSame(route($index), $active->item(0)->getAttribute('href'), $name);
+                $this->assertStringContainsString('active', $active->item(0)->getAttribute('class'), $name);
+            }
         }
     }
 
@@ -172,7 +207,7 @@ class WorkspaceHeaderTest extends TestCase
     public static function operations(): array
     {
         $cases = [];
-        foreach (['admin', 'field-officer'] as $prefix) {
+        foreach (['admin', 'field-officer', 'association'] as $prefix) {
             foreach (['projects', 'trainings', 'monitoring', 'program-activities'] as $module) {
                 $cases[$prefix.'.'.$module] = [$prefix, $module];
             }
@@ -181,22 +216,19 @@ class WorkspaceHeaderTest extends TestCase
     }
 
     #[DataProvider('operations')]
-    public function test_active_operational_route_opens_its_group_without_duplicate_destinations(string $prefix, string $module): void
+    public function test_active_operational_route_is_visible_in_its_workflow_section(string $prefix, string $module): void
     {
         $xpath = $this->document($this->renderLayout($prefix, $prefix.'.'.$module.'.index'));
-        $groupId = $prefix === 'admin' ? 'program-navigation' : 'field-officer-program-navigation';
-        $group = '//aside/nav/div[@id="'.$groupId.'"]';
-        $this->assertSame(1, $xpath->query('//aside/nav/button[@aria-controls="'.$groupId.'" and @aria-expanded="true" and contains(concat(" ", @class, " "), " active ")]')->length);
-        $this->assertSame(1, $xpath->query($group.'[not(@hidden)]')->length);
+        $sectionId = $prefix.($module === 'monitoring' ? '-monitoring-insights' : '-projects-activities');
+        $group = '//aside/nav/section[@aria-labelledby="'.$sectionId.'"]';
+        $this->assertSame(1, $xpath->query($group)->length);
+        $this->assertSame(0, $xpath->query('//aside/nav//*[@hidden or @data-disclosure]')->length);
+        $modules = $module === 'monitoring' ? ['monitoring', 'gis', 'reports'] : ['projects', 'trainings', 'program-activities'];
         $destinations = [];
         foreach ($xpath->query($group.'/a/@href') as $href) $destinations[] = $href->nodeValue;
-        $this->assertSame(array_map(fn ($key) => route($prefix.'.'.$key.'.index'), ['projects', 'trainings', 'monitoring', 'program-activities']), $destinations);
+        $this->assertSame(array_map(fn ($key) => route($prefix.'.'.$key.'.index'), $modules), $destinations);
         $this->assertSame(route($prefix.'.'.$module.'.index'), $xpath->evaluate('string('.$group.'/a[@aria-current="page"]/@href)'));
         foreach ($destinations as $href) $this->assertSame(1, $xpath->query('//aside/nav//a[@href="'.$href.'"]')->length);
-
-        $dashboard = $this->document($this->renderLayout($prefix, $prefix.'.dashboard'));
-        $this->assertSame(1, $dashboard->query('//aside/nav/button[@aria-controls="'.$groupId.'" and @aria-expanded="false"]')->length);
-        $this->assertSame(1, $dashboard->query($group.'[@hidden]')->length);
     }
 
     #[DataProvider('roles')]

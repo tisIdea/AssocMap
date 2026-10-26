@@ -16,16 +16,22 @@
 <body>
     <a class="skip-link" href="#main-content">Skip to content</a>
     <x-workspace-sidebar :dashboard-url="route('association.dashboard')" workspace="ASSOCIATION WORKSPACE" id="association-sidebar" aria-label="Association Account navigation">
-        <x-workspace-nav-link :href="route('association.dashboard')" label="Dashboard" icon="layout-dashboard" :active="request()->routeIs('association.dashboard')" />
-        <x-workspace-nav-group id="association-program-navigation" :active="request()->routeIs('association.projects.*', 'association.trainings.*', 'association.monitoring.*', 'association.program-activities.*')">
+        <x-workspace-nav-section id="association-overview" label="OVERVIEW">
+            <x-workspace-nav-link :href="route('association.dashboard')" label="Dashboard" icon="layout-dashboard" :active="request()->routeIs('association.dashboard')" />
+        </x-workspace-nav-section>
+        <x-workspace-nav-section id="association-membership" label="MEMBERSHIP">
+            <x-workspace-nav-link :href="route('association.member-applications.index')" label="Member Applications" icon="users" :active="request()->routeIs('association.member-applications.*')" />
+        </x-workspace-nav-section>
+        <x-workspace-nav-section id="association-projects-activities" label="PROJECTS & ACTIVITIES">
             <x-workspace-nav-link :href="route('association.projects.index')" label="Projects" icon="folder-kanban" :active="request()->routeIs('association.projects.*')" />
             <x-workspace-nav-link :href="route('association.trainings.index')" label="Trainings" icon="graduation" :active="request()->routeIs('association.trainings.*')" />
-            <x-workspace-nav-link :href="route('association.monitoring.index')" label="Monitoring" icon="clipboard-check" :active="request()->routeIs('association.monitoring.*')" />
             <x-workspace-nav-link :href="route('association.program-activities.index')" label="Program Activities" icon="calendar" :active="request()->routeIs('association.program-activities.*')" />
-        </x-workspace-nav-group>
-        <x-workspace-nav-link :href="route('association.reports.index')" label="Reports & Analytics" icon="chart-no-axes-column" :active="request()->routeIs('association.reports.*')" />
-        <x-workspace-nav-link :href="route('association.gis.index')" label="GIS Mapping" icon="map-pinned" :active="request()->routeIs('association.gis.*')" />
-        <x-workspace-nav-link :href="route('association.member-applications.index')" label="Member Applications" icon="users" :active="request()->routeIs('association.member-applications.*')" />
+        </x-workspace-nav-section>
+        <x-workspace-nav-section id="association-monitoring-insights" label="MONITORING & INSIGHTS">
+            <x-workspace-nav-link :href="route('association.monitoring.index')" label="Monitoring" icon="clipboard-check" :active="request()->routeIs('association.monitoring.*')" />
+            <x-workspace-nav-link :href="route('association.gis.index')" label="GIS Mapping" icon="map-pinned" :active="request()->routeIs('association.gis.*')" />
+            <x-workspace-nav-link :href="route('association.reports.index')" label="Reports & Analytics" icon="chart-no-axes-column" :active="request()->routeIs('association.reports.*')" />
+        </x-workspace-nav-section>
     </x-workspace-sidebar>
     <button type="button" class="sidebar-backdrop" data-aa-close hidden aria-label="Close navigation"></button>
     <div class="main-shell">
