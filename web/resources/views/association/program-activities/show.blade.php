@@ -1,8 +1,15 @@
 @extends('layouts.association')
+@php
+    $workflow = app(\App\View\WorkflowNavigation::class);
+    $parents = $activity->relatedProject ? [['name' => 'association.projects.show', 'parameters' => ['project' => $activity->relatedProject->id], 'label' => $activity->relatedProject->title]] : [];
+    $workflowBack = $workflow->back(request(), 'association.program-activities.index', [], $parents);
+    $breadcrumbs = [['label' => $association->name]];
+    foreach ($parents as $parent) $breadcrumbs[] = ['label' => $parent['label'], 'url' => $workflow->parent(request(), $parent['name'], $parent['parameters'])];
+@endphp
 
 @section('content')
 <section class="program-management" data-workspace-module="association-program-activities" data-workspace-title="Program Activity Details" data-association-program-activities>
-    <a class="back-link" href="{{ route('association.program-activities.index') }}"><x-icon name="back" />Back to Program Activities</a>
+    <x-workflow-navigation :back="$workflowBack" :parents="$breadcrumbs" :current="$activity->title" />
     <header class="card program-heading"><div><p class="eyebrow">{{ $association->name }}</p><h1 tabindex="-1">Program Activity Details</h1><p>{{ $activity->title }}</p></div></header>
     <section class="card program-information" aria-labelledby="activity-information-title">
         <h2 id="activity-information-title">Program Activity information</h2>

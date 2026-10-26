@@ -1,5 +1,7 @@
 @extends('layouts.admin')
 @php
+    $workflow = app(\App\View\WorkflowNavigation::class);
+    $workflowPrefix = 'admin';
     $applicationRegister = false;
     $indexRoute = 'admin.members.index';
     $cards = ['current' => ['Current Members', '', 'users'], 'active' => ['Active Members', 'active', 'check'], 'inactive' => ['Inactive Members', 'inactive', 'user'], 'archived' => ['Archived Members', 'archived', 'archive']];
@@ -7,6 +9,7 @@
 @endphp
 @section('content')
 <section class="member-management" data-workspace-module="members" data-workspace-title="Member Management">
+    @include('members.partials.workflow-navigation')
     <header class="card member-heading"><div><p class="eyebrow">System Administrator</p><h1 tabindex="-1">Member Management</h1><p>View official member profiles, association positions, and membership history.</p></div><span class="badge badge-blue">View only</span></header>
     @include('members.partials.summary')
     <section class="card member-register" aria-labelledby="member-register-title">

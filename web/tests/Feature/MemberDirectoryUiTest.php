@@ -14,6 +14,7 @@ use Tests\TestCase;
 
 class MemberDirectoryUiTest extends TestCase
 {
+    use \Tests\Support\AssertsWorkflowNavigation;
     private string $identity;
 
     protected function setUp(): void
@@ -127,6 +128,22 @@ class MemberDirectoryUiTest extends TestCase
             'sex_id' => 1, 'position_id' => 1, 'status' => 'pending', 'endorsement_letter' => '<script>Private letter</script>',
             'created_at' => '2026-01-01 00:00:00', 'updated_at' => '2026-01-01 00:00:00'], $overrides));
         DB::table('member_application_classifications')->insert(['member_application_id' => $this->id($id), 'classification_id' => 1]);
+    }
+
+    public function test_connected_member_register_returns_to_its_selected_association_and_retains_context_when_paged(): void
+    {
+        foreach (range(101, 130) as $id) $this->member($id);
+        foreach (['admin' => 1, 'field-officer' => 2] as $prefix => $actor) {
+            $this->identity = $this->id($actor);
+            $parent = '/'.$prefix.'/associations/'.$this->id(11).'?section=members&related_page=2#related-association-records';
+            $page = $this->get('/'.$prefix.'/members?'.http_build_query(['association' => $this->id(11), 'status' => 'active', 'return_to' => $parent]))->assertOk();
+            $this->assertWorkflowBack($page, $parent);
+            $next = $page->viewData('members')->nextPageUrl();
+            parse_str(parse_url($next, PHP_URL_QUERY), $query);
+            $this->assertSame($parent, $query['return_to']);
+            $this->get($next)->assertOk()->assertSee('data-workflow-back', false);
+        }
+        $this->get('/field-officer/members?'.http_build_query(['association' => $this->id(12), 'return_to' => '/field-officer/associations/'.$this->id(12)]))->assertNotFound();
     }
 
     public function test_admin_register_is_paginated_view_only_and_preserves_details(): void

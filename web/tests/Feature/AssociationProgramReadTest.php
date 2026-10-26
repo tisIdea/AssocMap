@@ -147,6 +147,20 @@ class AssociationProgramReadTest extends TestCase
             '/association/program-activities', '/association/program-activities/'.$this->id(151)];
     }
 
+    public function test_connected_account_programs_restore_own_registers_and_never_link_foreign_parents(): void
+    {
+        foreach (['trainings' => 101, 'program-activities' => 151] as $module => $id) {
+            $origin = '/association/'.$module.'?search=Own&year=2026&page=1';
+            $page = $this->get('/association/'.$module.'/'.$this->id($id).'?'.http_build_query(['return_to' => $origin]))->assertOk();
+            $page->assertSee('href="'.e(url($origin)).'" data-workflow-back', false)
+                ->assertSee('href="'.route('association.projects.show', $this->id(201)).'"', false)
+                ->assertDontSee('/admin/')->assertDontSee('/field-officer/');
+            $foreign = '/association/projects/'.$this->id(202);
+            $this->get('/association/'.$module.'/'.$this->id($id + 1).'?'.http_build_query(['return_to' => $foreign]))->assertOk()
+                ->assertDontSee($foreign)->assertSee('Back to '.($module === 'trainings' ? 'Trainings' : 'Program Activities'));
+        }
+    }
+
     public function test_directories_use_server_ownership_exclude_programwide_and_constrain_related_projects(): void
     {
         foreach (['trainings', 'program-activities'] as $module) {

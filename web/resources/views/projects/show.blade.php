@@ -1,8 +1,13 @@
 @extends($prefix === 'admin' ? 'layouts.admin' : 'layouts.field-officer')
+@php
+    $workflow = app(\App\View\WorkflowNavigation::class);
+    $associationUrl = $workflow->parent(request(), $prefix.'.associations.show', ['association' => $project->association_id, 'section' => 'projects']);
+    $workflowBack = $workflow->back(request(), $prefix.'.projects.index', [], [['name' => $prefix.'.associations.show', 'parameters' => ['association' => $project->association_id], 'label' => $project->association->name]]);
+@endphp
 
 @section('content')
 <section class="program-management" data-workspace-module="projects" data-workspace-title="Project Details">
-    <a class="back-link" href="{{ route($prefix.'.projects.index') }}"><x-icon name="back" />Back to Projects</a>
+    <x-workflow-navigation :back="$workflowBack" :parents="[['label' => $project->association->name, 'url' => $associationUrl]]" :current="$project->title" />
     <header class="card program-heading">
         <div>
             <div class="eyebrow">Project Management</div>
@@ -24,7 +29,7 @@
         @if($project->archived_at)<p class="notice">Project Archived — Read Only.</p>@endif
         <dl class="detail-grid">
             <div><dt>Status</dt><dd><x-status-badge :value="$project->isFinalized() ? strtoupper($project->status) : ucfirst($project->status)" /></dd></div>
-            <div><dt>Association</dt><dd><a href="{{ route($prefix.'.associations.show', $project->association_id) }}">{{ $project->association->name }}</a></dd></div>
+            <div><dt>Association</dt><dd><a href="{{ $associationUrl }}">{{ $project->association->name }}</a></dd></div>
             <div><dt>Classification</dt><dd>{{ $project->saadActivity?->name ?? 'Not recorded' }}</dd></div>
             <div><dt>Fisheries category</dt><dd>{{ $project->fisheriesCategory?->name ?? 'Not recorded' }}</dd></div>
             <div><dt>Commodity</dt><dd>{{ $project->commodity?->name ?? 'Not recorded' }}</dd></div>
@@ -72,12 +77,13 @@
         </dl></div>@empty<p>No materials recorded.</p>@endforelse
     </div>
     @foreach(['Monitoring history' => $monitoring, 'Training history' => $trainings, 'Program activity history' => $activities] as $heading => $history)
-        <section class="card program-information"><h2>{{ $heading }}</h2>
+        @php($historyAnchor = $heading === 'Monitoring history' ? 'project-monitoring' : ($heading === 'Training history' ? 'project-trainings' : 'project-activities'))
+        <section class="card program-information" id="{{ $historyAnchor }}"><h2>{{ $heading }}</h2>
             @if($history === null)<p>This history is unavailable under your existing access scope.</p>
             @else
                 <ul>@forelse($history as $entry)
-                    <li>@if($heading === 'Monitoring history')<a href="{{ route($prefix.'.monitoring.workspace', $entry) }}">{{ $entry->monitoring_date?->format('Y-m-d') }} — {{ $entry->year }} Q{{ $entry->quarter?->quarter_number }}</a> ({{ ucfirst(str_replace('_', ' ', $entry->project_status)) }})
-                    @else<a href="{{ route($prefix.($heading === 'Training history' ? '.trainings.show' : '.program-activities.show'), $entry) }}">{{ $entry->title }}</a> — {{ ($heading === 'Training history' ? $entry->start_date : $entry->activity_date)?->format('Y-m-d') }} ({{ ucfirst($entry->status) }})@endif</li>
+                    <li>@if($heading === 'Monitoring history')<a href="{{ $workflow->to($prefix.'.monitoring.workspace', [$entry], $historyAnchor) }}">{{ $entry->monitoring_date?->format('Y-m-d') }} — {{ $entry->year }} Q{{ $entry->quarter?->quarter_number }}</a> ({{ ucfirst(str_replace('_', ' ', $entry->project_status)) }})
+                    @else<a href="{{ $workflow->to($prefix.($heading === 'Training history' ? '.trainings.show' : '.program-activities.show'), [$entry], $historyAnchor) }}">{{ $entry->title }}</a> — {{ ($heading === 'Training history' ? $entry->start_date : $entry->activity_date)?->format('Y-m-d') }} ({{ ucfirst($entry->status) }})@endif</li>
                 @empty<li>No linked records recorded.</li>@endforelse</ul>
                 <nav aria-label="{{ $heading }} pages">@if($history->previousPageUrl())<a class="button" href="{{ $history->previousPageUrl() }}">Previous</a>@endif @if($history->nextPageUrl())<a class="button" href="{{ $history->nextPageUrl() }}">Next</a>@endif</nav>
             @endif

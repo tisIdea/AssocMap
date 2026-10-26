@@ -1,8 +1,16 @@
 @extends($prefix === 'admin' ? 'layouts.admin' : 'layouts.field-officer')
+@php
+    $workflow = app(\App\View\WorkflowNavigation::class);
+    $parameters += $workflow->carry(request());
+    $related->appends($workflow->carry(request()));
+    $workflowBack = $workflow->back(request(), $prefix.'.'.(($parameters['origin'] ?? '') === 'officers' ? 'association-officers.index' : 'associations.index'), $parameters,
+        array_map(fn ($module) => ['name' => $prefix.'.'.$module.'.index', 'parameters' => [], 'label' => match ($module) { 'projects' => 'Projects', 'trainings' => 'Trainings', 'members' => 'Member Management', default => 'Program Activities' }], ['projects', 'trainings', 'program-activities', 'members']));
+    $backUrl = $workflowBack['url'];
+@endphp
 @section('content')
 <section class="association-management" data-association-ui data-workspace-module="associations" data-workspace-title="Association Details">
-    <nav class="association-breadcrumbs" aria-label="Breadcrumb"><a href="{{ $backUrl }}">{{ $prefix === 'admin' ? 'Association Management' : 'Assigned Associations' }}</a><span aria-hidden="true">/</span><span>{{ $association->name }}</span></nav>
-    <header class="card association-heading"><div><p class="eyebrow">Association details</p><h1 tabindex="-1">{{ $association->name }}</h1><p>{{ $association->acronym ?? 'Association record' }}</p></div><div class="association-heading-actions"><x-status-badge :value="ucfirst($association->status)" />@if($association->archived_at)<span class="badge badge-neutral">Archived — Read Only</span>@endif @if($prefix === 'admin' && !$association->archived_at)<a class="button" href="{{ route('admin.associations.show', ['association' => $association->id] + $parameters + ['section' => $section, 'editor' => $association->id]) }}"><x-icon name="pencil" />Edit Association</a>@endif<a class="button button-primary" href="{{ route($prefix.'.association-officers.show', $association->id) }}">{{ $association->archived_at || $association->status !== 'active' ? 'View officers' : 'Manage officers' }}</a></div>
+    <nav class="association-breadcrumbs" aria-label="Breadcrumb"><a href="{{ $backUrl }}">{{ $workflowBack['label'] }}</a><span aria-hidden="true">/</span><span aria-current="page">{{ $association->name }}</span></nav>
+    <header class="card association-heading"><div><p class="eyebrow">Association details</p><h1 tabindex="-1">{{ $association->name }}</h1><p>{{ $association->acronym ?? 'Association record' }}</p></div><div class="association-heading-actions"><x-status-badge :value="ucfirst($association->status)" />@if($association->archived_at)<span class="badge badge-neutral">Archived — Read Only</span>@endif @if($prefix === 'admin' && !$association->archived_at)<a class="button" href="{{ route('admin.associations.show', ['association' => $association->id] + $parameters + ['section' => $section, 'editor' => $association->id]) }}"><x-icon name="pencil" />Edit Association</a>@endif<a class="button button-primary" href="{{ $workflow->to($prefix.'.association-officers.show', [$association->id], 'related-association-records') }}">{{ $association->archived_at || $association->status !== 'active' ? 'View officers' : 'Manage officers' }}</a></div>
         <x-contextual-report :prefix="$prefix" type="associations" :association="$association"
             :filters="['association_id' => $association->id]"
             :scope="'Selected association: '.$association->name.'. Current snapshot; no reporting period. Distribution and status only; members, officers, contacts and private documents are not included. Register filters do not apply.'" />
@@ -37,7 +45,7 @@
         @include('associations.partials.related')
         @include('associations.partials.pagination', ['paginator' => $related, 'label' => 'Related record pages'])
     </section>
-    <a class="back-link" href="{{ $backUrl }}"><x-icon name="back" />Back to Associations</a>
+    <a class="back-link" href="{{ $backUrl }}" data-workflow-back><x-icon name="back" />Back to {{ $workflowBack['label'] }}</a>
 </section>
 @if($prefix === 'admin' && isset($catalog['options']['area_records'])) @include('admin.associations.editor') @endif
 @endsection

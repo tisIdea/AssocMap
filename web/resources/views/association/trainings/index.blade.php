@@ -1,4 +1,5 @@
 @extends('layouts.association')
+@php $workflow = app(\App\View\WorkflowNavigation::class); @endphp
 
 @section('content')
 <section class="program-management" data-workspace-module="association-trainings" data-workspace-title="Trainings" data-association-trainings>
@@ -21,12 +22,12 @@
                     <thead><tr><th scope="col">Training</th><th scope="col">Dates</th><th scope="col">Venue</th><th scope="col">Status</th><th scope="col">Related project</th><th scope="col">Details</th></tr></thead>
                     <tbody>
                         @forelse($records as $training)
-                            <tr><th scope="row"><a href="{{ route('association.trainings.show', $training->id) }}">{{ $training->title }}</a><small>Program year: {{ $training->program_year }}</small></th>
+                            <tr><th scope="row"><a href="{{ $workflow->to('association.trainings.show', [$training->id]) }}">{{ $training->title }}</a><small>Program year: {{ $training->program_year }}</small></th>
                                 <td>{{ $training->start_date?->format('M j, Y') ?? 'Not recorded' }}<small>End: {{ $training->end_date?->format('M j, Y') ?? 'Not recorded' }}</small></td>
                                 <td>{{ filled($training->venue) ? $training->venue : 'Not recorded' }}</td>
                                 <td><x-status-badge :value="ucfirst($training->status)" />@if($training->archived_at)<span class="badge badge-neutral">Archived</span>@endif</td>
                                 <td>@if($training->relatedProject)<a href="{{ route('association.projects.show', $training->relatedProject->id) }}">{{ $training->relatedProject->title }}</a>@else{{ $training->related_project_id ? 'Not available within your association' : 'Not recorded' }}@endif</td>
-                                <td><a class="button" href="{{ route('association.trainings.show', $training->id) }}" aria-label="View details for {{ $training->title }}"><x-icon name="eye" />View Details</a></td>
+                                <td><a class="button" href="{{ $workflow->to('association.trainings.show', [$training->id]) }}" aria-label="View details for {{ $training->title }}"><x-icon name="eye" />View Details</a></td>
                             </tr>
                         @empty<tr><td colspan="6"><x-empty-state title="No trainings on this page" message="No trainings match this page and its filters. Reset the filters to view your association's saved trainings." /></td></tr>@endforelse
                     </tbody>

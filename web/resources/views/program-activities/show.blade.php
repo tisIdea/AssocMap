@@ -1,10 +1,16 @@
 @extends($prefix === 'admin' ? 'layouts.admin' : 'layouts.field-officer')
 @php
     $activityPrefix = $prefix.'.program-activities';
+    $workflow = app(\App\View\WorkflowNavigation::class);
+    $parents = [];
+    if ($record->association) $parents[] = ['name' => $prefix.'.associations.show', 'parameters' => ['association' => $record->association_id], 'label' => $record->association->name];
+    if ($canViewProject) $parents[] = ['name' => $prefix.'.projects.show', 'parameters' => ['project' => $record->related_project_id], 'label' => $row['related_project']];
+    $workflowBack = $workflow->back(request(), $activityPrefix.'.index', [], $parents);
+    $breadcrumbs = array_map(fn ($parent) => ['label' => $parent['label'], 'url' => $workflow->parent(request(), $parent['name'], $parent['parameters'])], $parents);
 @endphp
 @section('content')
 <section class="program-management activity-management" data-workspace-module="program-activities" data-workspace-title="Program Activity Details">
-    <a class="back-link" href="{{ route($activityPrefix.'.index') }}"><x-icon name="back" />Back to Program Activities</a>
+    <x-workflow-navigation :back="$workflowBack" :parents="$breadcrumbs" :current="$row['title']" />
     <header class="card program-heading">
         <div><p class="eyebrow">Program Operations</p><h1 tabindex="-1">Program Activity Details</h1><p>{{ $row['title'] }}</p></div>
         @if($canEdit)
@@ -31,17 +37,17 @@
             <div><dt>SAAD Activity</dt><dd>{{ $row['activity'] }}</dd></div>
             <div><dt>Scope</dt><dd>{{ $row['association_id'] ? 'Association-specific' : 'Program-wide' }}</dd></div>
             <div><dt>Association</dt><dd>
-                @if($row['association_id'])
-                    <a href="{{ route($prefix.'.associations.show', $row['association_id']) }}">{{ $row['association'] }}</a>
+                @if($record->association)
+                    <a href="{{ $workflow->parent(request(), $prefix.'.associations.show', ['association' => $record->association_id]) }}">{{ $row['association'] }}</a>
                 @else
-                    Program-wide
+                    {{ $record->association_id ? 'Association unavailable' : 'Program-wide' }}
                 @endif
             </dd></div>
             <div><dt>Barangay</dt><dd>{{ $row['barangay'] }}</dd></div>
             <div><dt>Municipality</dt><dd>{{ $row['municipality'] }}</dd></div>
             <div><dt>Related Project</dt><dd>
                 @if($canViewProject)
-                    <a href="{{ route($prefix.'.projects.show', $row['related_project_id']) }}">{{ $row['related_project'] }}</a>
+                    <a href="{{ $workflow->parent(request(), $prefix.'.projects.show', ['project' => $row['related_project_id']]) }}">{{ $row['related_project'] }}</a>
                 @else
                     {{ $row['related_project'] }}
                 @endif

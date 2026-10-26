@@ -1,5 +1,7 @@
 @extends('layouts.field-officer')
 @php
+    $workflow = app(\App\View\WorkflowNavigation::class);
+    $workflowPrefix = 'field-officer';
     $nameOf = fn ($member) => collect([$member->first_name, $member->middle_name, $member->last_name, $member->suffix])->filter(fn ($part) => filled($part))->implode(' ');
     $fields = ['first_name' => ['First Name', 'text', 120, true], 'middle_name' => ['Middle Name', 'text', 120, false], 'last_name' => ['Last Name', 'text', 120, true], 'suffix' => ['Suffix', 'text', 20, false], 'birth_date' => ['Birth Date', 'date', null, true], 'contact_number' => ['Contact Number', 'tel', 30, false], 'fishr_registration_number' => ['FishR Registration Number', 'text', 100, false]];
     $applicationRegister = false;
@@ -20,6 +22,7 @@
 @endphp
 @section('content')
 <section class="member-management" data-workspace-module="members" data-workspace-title="Member Management">
+    @include('members.partials.workflow-navigation')
     <header class="card member-heading"><div><p class="eyebrow">Field Officer</p><h1 tabindex="-1">Member Management</h1><p>Manage member profiles and membership records in your assigned associations.</p></div><a class="button button-primary" href="{{ route('field-officer.member-applications.index') }}"><x-icon name="clipboard-check" />Review Applications</a></header>
     @include('members.partials.summary')
     <section class="card member-register" aria-labelledby="member-list-title">

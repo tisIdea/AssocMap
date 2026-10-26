@@ -1,9 +1,17 @@
 @extends('layouts.association')
 @php $nameOf = fn ($participant) => collect([$participant->first_name, $participant->middle_name, $participant->last_name, $participant->suffix])->filter(fn ($part) => filled($part))->implode(' '); @endphp
+@php
+    $workflow = app(\App\View\WorkflowNavigation::class);
+    $participants->appends($workflow->carry(request()));
+    $parents = $training->relatedProject ? [['name' => 'association.projects.show', 'parameters' => ['project' => $training->relatedProject->id], 'label' => $training->relatedProject->title]] : [];
+    $workflowBack = $workflow->back(request(), 'association.trainings.index', [], $parents);
+    $breadcrumbs = [['label' => $association->name]];
+    foreach ($parents as $parent) $breadcrumbs[] = ['label' => $parent['label'], 'url' => $workflow->parent(request(), $parent['name'], $parent['parameters'])];
+@endphp
 
 @section('content')
 <section class="program-management" data-workspace-module="association-trainings" data-workspace-title="Training Details" data-association-trainings>
-    <a class="back-link" href="{{ route('association.trainings.index') }}"><x-icon name="back" />Back to Trainings</a>
+    <x-workflow-navigation :back="$workflowBack" :parents="$breadcrumbs" :current="$training->title" />
     <header class="card program-heading"><div><p class="eyebrow">{{ $association->name }}</p><h1 tabindex="-1">Training Details</h1><p>{{ $training->title }}</p></div></header>
     @if($errors->any())<div class="notice notice-error" role="alert">@foreach($errors->all() as $error)<p>{{ $error }}</p>@endforeach</div>@endif
     <section class="card program-information" aria-labelledby="training-information-title">

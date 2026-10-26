@@ -5,6 +5,7 @@
         + (int) ($filters['sort'] !== $defaultSort) + (int) ($filters['status'] !== $defaultStatus);
 @endphp
 <form method="GET" action="{{ route($indexRoute) }}" class="member-register-filters" aria-label="{{ $applicationRegister ? 'Search and filter applications' : 'Search and filter members' }}">
+    @if(!$applicationRegister && isset($workflow))@foreach($workflow->carry(request()) as $key => $value)<input type="hidden" name="{{ $key }}" value="{{ $value }}">@endforeach @endif
     <div class="member-search-bar">
         <div class="field member-search">
             <label for="member-register-search">{{ $applicationRegister ? 'Search applicants' : 'Search members' }}</label>

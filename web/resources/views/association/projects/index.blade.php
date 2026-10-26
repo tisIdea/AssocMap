@@ -1,4 +1,5 @@
 @extends('layouts.association')
+@php $workflow = app(\App\View\WorkflowNavigation::class); @endphp
 
 @section('content')
 <section class="program-management" data-workspace-module="association-projects" data-workspace-title="My Projects" data-association-projects>
@@ -28,11 +29,11 @@
                     <thead><tr><th scope="col">Project</th><th scope="col">Program year</th><th scope="col">Implementation</th><th scope="col">Current status</th><th scope="col">Details</th></tr></thead>
                     <tbody>
                         @forelse($projects as $project)
-                            <tr><th scope="row"><a href="{{ route('association.projects.show', $project->id) }}">{{ $project->title }}</a><small>{{ $project->fisheriesCategory?->name ?? 'Category not recorded' }}@if($project->commodity) · {{ $project->commodity->name }}@endif</small></th>
+                            <tr><th scope="row"><a href="{{ $workflow->to('association.projects.show', [$project->id]) }}">{{ $project->title }}</a><small>{{ $project->fisheriesCategory?->name ?? 'Category not recorded' }}@if($project->commodity) · {{ $project->commodity->name }}@endif</small></th>
                                 <td>{{ $project->program_year }}</td>
                                 <td>{{ $project->implementation_start_date?->format('M j, Y') ?? 'Not recorded' }}<small>End: {{ $project->implementation_end_date?->format('M j, Y') ?? 'Not recorded' }}</small></td>
                                 <td><x-status-badge :value="ucfirst($project->status)" />@if($project->archived_at)<span class="badge badge-neutral">Archived</span>@endif</td>
-                                <td><a class="button" href="{{ route('association.projects.show', $project->id) }}" aria-label="View details for {{ $project->title }}"><x-icon name="eye" />View Details</a></td>
+                                <td><a class="button" href="{{ $workflow->to('association.projects.show', [$project->id]) }}" aria-label="View details for {{ $project->title }}"><x-icon name="eye" />View Details</a></td>
                             </tr>
                         @empty<tr><td colspan="5"><x-empty-state title="No projects on this page" message="No projects match this page and its filters. Reset the filters to view all projects registered for your association." /></td></tr>@endforelse
                     </tbody>

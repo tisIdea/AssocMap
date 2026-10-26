@@ -1,9 +1,17 @@
 @extends($prefix === 'admin' ? 'layouts.admin' : 'layouts.field-officer')
+@php
+    $workflow = app(\App\View\WorkflowNavigation::class);
+    $workflowBack = $workflow->back(request(), $prefix.'.association-officers.index', [], [
+        ['name' => $prefix.'.associations.show', 'parameters' => ['association' => $association->id], 'label' => $association->name],
+        ['name' => $prefix.'.associations.index', 'parameters' => [], 'label' => $prefix === 'admin' ? 'Associations' : 'Assigned Associations'],
+    ]);
+    $associationUrl = $workflow->parent(request(), $prefix.'.associations.show', ['association' => $association->id]);
+@endphp
 
 @section('content')
 <section class="association-management association-officers" data-association-ui data-workspace-module="associations" data-workspace-title="Association Officers">
-    <a class="back-link" href="{{ route($prefix.'.association-officers.index') }}"><x-icon name="back" />Back to Association Officers</a>
-    <header class="card association-heading"><div><p class="eyebrow">Association Management</p><h1 tabindex="-1">Association Officers</h1><p>{{ $association->name }}</p></div><a class="button" href="{{ route($prefix.'.associations.show', $association->id) }}">View Association Details</a></header>
+    <x-workflow-navigation :back="$workflowBack" :parents="[['label' => $association->name, 'url' => $associationUrl]]" current="Association Officers" />
+    <header class="card association-heading"><div><p class="eyebrow">Association Management</p><h1 tabindex="-1">Association Officers</h1><p>{{ $association->name }}</p></div><a class="button" href="{{ $associationUrl }}">View Association Details</a></header>
     <p>President: {{ $association->currentPresident ? collect([$association->currentPresident->first_name, $association->currentPresident->middle_name, $association->currentPresident->last_name, $association->currentPresident->suffix])->filter(fn ($part) => filled($part))->implode(' ') : 'No active President assigned' }}</p>
     @php($officerErrors = $errors->getBag('officerPosition'))
     @if($officerErrors->any())<div class="notice notice-error" role="alert"><ul>@foreach($officerErrors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>@endif
@@ -17,7 +25,7 @@
             <tbody>@forelse($officers as $officer)
                 <tr><td>{{ $officer->first_name }} {{ $officer->last_name }}</td><td><span class="badge badge-blue">{{ $officer->position?->name ?? 'Position unavailable' }}</span>{{ $officer->position?->is_active ? '' : ' (inactive position)' }}</td>
                     <td>@if(!$association->archived_at && $association->status === 'active')
-                        @if($officer->position?->is_active)<a class="button" href="{{ route($prefix.'.association-officers.show', ['association' => $association, 'replace' => $officer->id]) }}">Replace</a>
+                        @if($officer->position?->is_active)<a class="button" href="{{ route($prefix.'.association-officers.show', ['association' => $association, 'replace' => $officer->id] + $workflow->carry(request())) }}">Replace</a>
                         @else<p>Inactive positions cannot be assigned to a replacement.</p>@endif
                         <form method="POST" action="{{ route($prefix.'.association-officers.update', $association) }}" @if($officerErrors->any() && old('member_id') === $officer->id) data-feedback-error-bag="officerPosition" @endif>
                             @csrf @method('PATCH')
@@ -35,7 +43,7 @@
     </section>
     @if(!$association->archived_at && $association->status === 'active')
         @if($former)
-            <div class="notice"><p>Replace {{ $former->first_name }} {{ $former->last_name }} as {{ $former->position?->name }}. The former holder will become Member when the new appointment succeeds.</p><a href="{{ route($prefix.'.association-officers.show', $association) }}">Cancel replacement</a></div>
+            <div class="notice"><p>Replace {{ $former->first_name }} {{ $former->last_name }} as {{ $former->position?->name }}. The former holder will become Member when the new appointment succeeds.</p><a href="{{ route($prefix.'.association-officers.show', ['association' => $association] + $workflow->carry(request())) }}">Cancel replacement</a></div>
         @endif
         <section class="card form-section">
             <h2>{{ $former ? 'Choose a replacement' : 'Choose a member to appoint' }}</h2>
@@ -46,7 +54,7 @@
                 <tbody>@forelse($members as $member)
                     <tr><td>{{ $member->first_name }} {{ $member->last_name }}</td><td>{{ $member->position?->name ?? 'Position unavailable' }}</td><td>
                         @if($former && ($former->id === $member->id || $former->position_id === $member->position_id))Already holds this position
-                        @else<a class="text-button" href="{{ route($prefix.'.association-officers.show', ['association' => $association, 'member' => $member->id, 'replace' => $former?->id]) }}#officer-appointment">Select member</a>@endif
+                        @else<a class="text-button" href="{{ route($prefix.'.association-officers.show', ['association' => $association, 'member' => $member->id, 'replace' => $former?->id] + $workflow->carry(request())) }}#officer-appointment">Select member</a>@endif
                     </td></tr>
                 @empty<tr><td colspan="3">No eligible members are available.</td></tr>@endforelse</tbody>
             </table></div>
@@ -80,7 +88,7 @@
                     @if($positions->isEmpty())<p class="notice" role="status">No active officer positions are available. Contact the administrator.</p>@endif
                 @endif
                 <p><label><input type="checkbox" name="confirm_change" value="1" required> I confirm this position change{{ $former ? ' and the former holderâ€™s return to Member' : '' }}.</label></p>
-                <div class="form-actions"><a class="button" href="{{ route($prefix.'.association-officers.show', $association) }}">Cancel</a><button class="button button-primary" type="submit">Save officer position</button></div>
+                <div class="form-actions"><a class="button" href="{{ route($prefix.'.association-officers.show', ['association' => $association] + $workflow->carry(request())) }}">Cancel</a><button class="button button-primary" type="submit">Save officer position</button></div>
             </form>
         @endif
     @endif

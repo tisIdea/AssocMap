@@ -78,7 +78,7 @@ class MonitoringManagementUiTest extends TestCase
             ->assertSee('Matching projects')->assertSee('monitoring-filter-panel" hidden', false);
         foreach (['overview', 'production', 'income', 'materials'] as $section) {
             $page = $this->get(route($prefix.'.monitoring.workspace', [self::RECORD, $section]))->assertOk()
-                ->assertSee('Synthetic Association')->assertSee('Synthetic Project')->assertSee('Back to Dashboard');
+                ->assertSee('Synthetic Association')->assertSee('Synthetic Project')->assertSee('Back to Monitoring Dashboard');
             $dom = new \DOMDocument();
             @$dom->loadHTML($page->getContent());
             $xpath = new \DOMXPath($dom);
@@ -98,6 +98,40 @@ class MonitoringManagementUiTest extends TestCase
                     ->assertSee('name="production_revision"', false)
                     ->assertSee('name="'.($section === 'production' ? 'production' : $section).'_revision"', false);
             }
+        }
+    }
+
+    #[DataProvider('roles')]
+    public function test_connected_monitoring_restores_filtered_dashboard_or_actual_project_across_sections(string $identity, string $prefix): void
+    {
+        $this->identity = $identity;
+        $origin = '/'.$prefix.'/monitoring?search=Synthetic&year=2026&sort=oldest&page=1';
+        $dashboard = $this->get($origin)->assertOk();
+        $dom = new \DOMDocument;
+        @$dom->loadHTML($dashboard->getContent());
+        $xpath = new \DOMXPath($dom);
+        $link = $xpath->query('//a[contains(@href, "/monitoring/'.self::RECORD.'") and contains(@href, "return_to=") and contains(., "View Overview")]')->item(0);
+        $this->assertNotNull($link);
+        $this->get($link->getAttribute('href'))->assertOk()->assertSee('href="'.e(url($origin)).'" data-workflow-back', false);
+        $parent = '/'.$prefix.'/projects/'.self::PROJECT.'?monitoring_page=2#project-monitoring';
+        foreach (['overview', 'production', 'income', 'materials', 'visits'] as $section) {
+            $route = $section === 'visits' ? route($prefix.'.monitoring.visits', self::RECORD) : route($prefix.'.monitoring.workspace', [self::RECORD, $section]);
+            $page = $this->get($route.'?'.http_build_query(['return_to' => $parent]))->assertOk();
+            $page->assertSee('href="'.e(url($parent)).'" data-workflow-back', false);
+            if ($prefix === 'association') $page->assertDontSee('/admin/')->assertDontSee('/field-officer/');
+        }
+        $foreign = '/'.$prefix.'/projects/'.$this->id(999);
+        $this->get(route($prefix.'.monitoring.workspace', [self::RECORD, 'overview']).'?'.http_build_query(['return_to' => $foreign]))
+            ->assertOk()->assertDontSee($foreign)->assertSee('Back to Monitoring Dashboard');
+    }
+
+    public function test_connected_monitoring_keeps_historical_account_access_without_linking_an_unavailable_project(): void
+    {
+        $this->identity = self::ACCOUNT;
+        foreach ([['status' => 'inactive'], ['status' => 'active', 'archived_at' => '2026-01-01']] as $changes) {
+            DB::table('associations')->where('id', self::ASSOCIATION)->update($changes);
+            $page = $this->get(route('association.monitoring.workspace', [self::RECORD, 'overview']).'?'.http_build_query(['return_to' => '/association/projects/'.self::PROJECT]))->assertOk();
+            $page->assertDontSee('href="'.route('association.projects.show', self::PROJECT), false)->assertSee('Back to Monitoring Dashboard');
         }
     }
 
