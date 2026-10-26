@@ -4,8 +4,16 @@ declare(strict_types=1);
 
 // Standalone synthetic PostgreSQL checks; never loads application environment files.
 use App\Models\MonitoringIncome;
+use App\Models\Association;
+use App\Models\MonitoringRecord;
+use App\Models\Project;
 use App\Models\UserProfile;
+use App\Services\Associations\AssociationGeographyService;
+use App\Services\Auth\ProfileAuthIdentityService;
+use App\Services\Auth\UserManagementQueryService;
+use App\Services\DashboardService;
 use App\Services\Audit\AuditLogService;
+use App\Services\Monitoring\MonitoringDirectoryQueryService;
 use App\Services\Programs\ProgramActorService;
 use App\Services\Reporting\ReportDataset;
 use App\Services\Reporting\ReportScope;
@@ -61,6 +69,27 @@ function deniedRoundTrip(callable $operation): void
     throw new RuntimeException('Expected authorization denial was absent.');
 }
 
+function measuredRoundTripRead(callable $read): array
+{
+    DB::enableQueryLog();
+    DB::flushQueryLog();
+    $started = hrtime(true);
+    try {
+        $value = $read();
+        $queries = DB::getQueryLog();
+
+        return [$value, ['queries' => count($queries), 'query_ms' => round(array_sum(array_column($queries, 'time')), 3),
+            'elapsed_ms' => round((hrtime(true) - $started) / 1e6, 3)]];
+    } finally { DB::disableQueryLog(); }
+}
+
+function canonicalRoundTrip(array $value): array
+{
+    if (! array_is_list($value)) ksort($value);
+
+    return array_map(fn ($item) => is_array($item) ? canonicalRoundTrip($item) : $item, $value);
+}
+
 function roundTripApplication(array $connection, string $directory): void
 {
     $app = new Application(dirname(__DIR__, 2));
@@ -88,6 +117,7 @@ function roundTripApplication(array $connection, string $directory): void
 $admin = null;
 $databaseCreated = false;
 $GLOBALS['checks'] = [];
+$GLOBALS['query_comparisons'] = [];
 try {
     date_default_timezone_set('UTC');
     $manifest = realpath($argv[1] ?? '');
@@ -133,7 +163,8 @@ try {
     foreach (['001_assocmap_schema.sql', '002_add_locality_type_to_municipalities.sql', '003_add_monitoring_visit_reports.sql',
         '005_add_monitoring_monthly_production_and_conductors.sql', '006_create_user_invitations.sql',
         '011_add_permanent_project_closure.sql', '012_allow_zero_production_activities.sql',
-        '013_add_permanent_project_finalization.sql', '014_protect_finalized_project_history.sql', '020_add_account_reactivation.sql'] as $migration) {
+        '013_add_permanent_project_finalization.sql', '014_protect_finalized_project_history.sql',
+        '017_expand_association_geography.sql', '020_add_account_reactivation.sql'] as $migration) {
         DB::unprepared(file_get_contents(dirname(__DIR__, 3).'/supabase/migrations/'.$migration));
     }
     DB::unprepared("CREATE TABLE roundtrip_values(id uuid PRIMARY KEY, label text NOT NULL, nullable_value text,
@@ -221,9 +252,34 @@ try {
             $outside = '40000000-0000-4000-8000-000000000002';
             foreach ([$own => $ids['officer'], $outside => $ids['other']] as $id => $officer) {
                 DB::table('associations')->insert(['id' => $id, 'name' => 'Synthetic '.$id, 'area_id' => $area,
-                    'primary_field_officer_id' => $officer, 'saad_phase2_join_date' => '2026-01-01']);
+                    'barangay_id' => $barangay, 'primary_field_officer_id' => $officer, 'saad_phase2_join_date' => '2026-01-01']);
             }
             DB::table('association_accounts')->insert(['user_id' => $ids['account'], 'association_id' => $own]);
+            $geography = app(AssociationGeographyService::class);
+            foreach ([false, true] as $direct) {
+                config(['associations.geography_schema_ready' => $direct]);
+                foreach ([false, true] as $status) {
+                    $relation = $geography->barangayRelation();
+                    $originalRelations = $status
+                        ? ['area:id,barangay_id,address,is_active', $relation.':id,municipality_id,name,is_active',
+                            $relation.'.municipality:id,name,province,region,is_active']
+                        : $geography->relations();
+                    [$expectedGeography, $beforeRead] = measuredRoundTripRead(fn () => Association::with($originalRelations)
+                        ->where('primary_field_officer_id', $ids['officer'])->orderBy('id')->get());
+                    [$actualGeography, $afterRead] = measuredRoundTripRead(fn () => Association::with($geography->displayRelations(withStatus: $status))
+                        ->where('primary_field_officer_id', $ids['officer'])->orderBy('id')->get());
+                    verifyRoundTrip($actualGeography->toArray() === $expectedGeography->toArray(), 'Native joined geography preserves selected attributes and casts');
+                    verifyRoundTrip($actualGeography->modelKeys() === [$own], 'Native display projection preserves association scope');
+                    verifyRoundTrip($beforeRead['queries'] - $afterRead['queries'] === ($direct ? 1 : 2), 'Native display geography reduces round trips');
+                    $GLOBALS['query_comparisons'][] = ['mode' => $mode, 'operation' => 'geography', 'direct' => $direct,
+                        'with_status' => $status, 'before' => $beforeRead, 'after' => $afterRead, 'equivalent' => true];
+                }
+            }
+            config(['associations.geography_schema_ready' => false]);
+            $users = (new UserManagementQueryService(new ProfileAuthIdentityService))->users()->getCollection();
+            $linkedUser = $users->firstWhere('id', $ids['account']);
+            verifyRoundTrip($linkedUser['association_relationship_status'] === 'Active relationship'
+                && $linkedUser['association_integrity_issue'] === false, 'Native consolidated user-link count preserves relationship hints');
             $officer = UserProfile::findWithRole($ids['officer'], useWritePdo: true);
             verifyRoundTrip($officer?->role?->code === 'field_officer' && $officer->canAccessApplication(), 'Joined profile, role and invitation eligibility');
             $request = new Request;
@@ -258,6 +314,28 @@ try {
             $income = MonitoringIncome::create(['monitoring_production_id' => $production, 'period_type' => 'monthly', 'month' => 1,
                 'gross_income' => '100.10', 'remarks' => null])->fresh();
             verifyRoundTrip($income->gross_income === '100.10' && $income->month === 1 && $income->remarks === null, 'Actual Monitoring model casts and persistence');
+            DB::table('monitoring_records')->where('id', $record)->update(['monitored_by' => $ids['officer']]);
+            DB::table('monitoring_records')->insert(['project_id' => $project, 'year' => 2026, 'quarter_id' => 2,
+                'monitoring_date' => '2026-04-01', 'project_status' => 'ongoing', 'monitored_by' => $ids['officer']]);
+            $expectedRecords = MonitoringRecord::with(['quarter', 'monitoredBy'])->where('project_id', $project)
+                ->where('year', 2026)->orderBy('created_at')->orderBy('id')->get();
+            $monitoring = (new MonitoringDirectoryQueryService)->records(Project::where('association_id', $own),
+                ['year' => 2026, 'quarter' => '1', 'validated' => '', 'search' => '', 'sort' => 'newest']);
+            $actualRecords = $monitoring['projects']->first()->monitoringRecords;
+            verifyRoundTrip(canonicalRoundTrip($actualRecords->toArray()) === canonicalRoundTrip($expectedRecords->toArray()),
+                'Native joined Monitoring quarters preserve the complete record graph');
+            verifyRoundTrip($monitoring['projects']->total() === 1 && $actualRecords->count() === 2,
+                'Native quarter filter qualifies projects without hiding other saved quarters');
+            foreach (['admin', 'officer', 'account'] as $role) {
+                $dashboardRequest = new Request;
+                $dashboardRequest->attributes->set('current_user', UserProfile::findWithRole($ids[$role]));
+                $dashboard = (new DashboardService(new ReportScope))->load($dashboardRequest);
+                $statusRows = collect($dashboard['charts'])->firstWhere('key', 'project_status')['rows'];
+                $componentRows = collect($dashboard['charts'])->firstWhere('key', 'components')['rows'];
+                verifyRoundTrip($statusRows === [['label' => 'Ongoing', 'value' => 1]]
+                    && count($componentRows) === 1 && $componentRows[0]['value'] === 1,
+                    'Native consolidated Dashboard charts preserve role-scoped counts');
+            }
             rejectedRoundTrip(fn () => MonitoringIncome::create(['monitoring_production_id' => $production,
                 'period_type' => 'monthly', 'month' => 13, 'gross_income' => '1.00']), 'P0001');
             rejectedRoundTrip(fn () => MonitoringIncome::create(['monitoring_production_id' => $production,
@@ -293,7 +371,8 @@ try {
     }
     $evidence = ['passed' => count($GLOBALS['checks']), 'failed' => 0, 'by_mode' => $results,
         'postgres' => $admin->query('SHOW server_version')->fetchColumn(), 'isolation' => 'task-owned loopback cluster'];
-    file_put_contents($directory.'/compatibility.json', json_encode($evidence + ['checks' => $GLOBALS['checks']], JSON_PRETTY_PRINT));
+    file_put_contents($directory.'/compatibility.json', json_encode($evidence + ['checks' => $GLOBALS['checks'],
+        'query_comparisons' => $GLOBALS['query_comparisons']], JSON_PRETTY_PRINT));
     echo json_encode($evidence).PHP_EOL;
 } catch (Throwable $error) {
     $testFrames = array_values(array_filter($error->getTrace(), fn (array $frame) => ($frame['file'] ?? '') === __FILE__));

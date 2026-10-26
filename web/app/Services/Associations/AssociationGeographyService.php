@@ -9,6 +9,7 @@ use App\Models\Municipality;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -37,6 +38,57 @@ class AssociationGeographyService
 
         return [($prefix === '' ? '' : $prefix.'.').'area:id,barangay_id,address',
             $barangay.':id,municipality_id,name', $barangay.'.municipality:id,name'];
+    }
+
+    public function displayRelations(string $prefix = '', bool $withStatus = false): array
+    {
+        $prefix = $prefix === '' ? '' : $prefix.'.';
+        if ($this->usesDirectGeography()) {
+            return [$prefix.'area:id,barangay_id,address'.($withStatus ? ',is_active' : ''),
+                $prefix.'barangay' => fn ($relation) => $this->joinDisplayGeography($relation->getQuery(), false, $withStatus)];
+        }
+
+        return [$prefix.'area' => fn ($relation) => $this->joinDisplayGeography($relation->getQuery(), true, $withStatus)];
+    }
+
+    private function joinDisplayGeography(Builder $query, bool $area, bool $withStatus): void
+    {
+        $table = $area ? 'areas' : 'barangays';
+        $columns = $area ? ['id', 'barangay_id', 'address'] : ['id', 'municipality_id', 'name'];
+        if ($withStatus) $columns[] = 'is_active';
+        $query->select(array_map(fn ($column) => $table.'.'.$column, $columns));
+        $barangay = $area ? 'display_barangay' : $table;
+        if ($area) $query->leftJoin('barangays as display_barangay', 'display_barangay.id', '=', 'areas.barangay_id');
+        $query->leftJoin('municipalities as display_municipality', 'display_municipality.id', '=', $barangay.'.municipality_id');
+        $joined = ['municipality' => $withStatus ? ['id', 'name', 'province', 'region', 'is_active'] : ['id', 'name']];
+        if ($area) $joined['barangay'] = $withStatus ? ['id', 'municipality_id', 'name', 'is_active'] : ['id', 'municipality_id', 'name'];
+        foreach ($joined as $relation => $fields) {
+            foreach ($fields as $field) $query->addSelect('display_'.$relation.'.'.$field.' as display_'.$relation.'_'.$field);
+        }
+
+        // Keep the existing selected attributes, casts and nested relationship shape.
+        $query->afterQuery(function (Collection $records) use ($area, $joined): Collection {
+            foreach ($records as $record) {
+                $attributes = $record->getAttributes();
+                $models = [];
+                foreach ($joined as $relation => $fields) {
+                    $values = [];
+                    foreach ($fields as $field) {
+                        $alias = 'display_'.$relation.'_'.$field;
+                        $values[$field] = $attributes[$alias];
+                        unset($attributes[$alias]);
+                    }
+                    $model = $relation === 'barangay' ? new Barangay : new Municipality;
+                    $models[$relation] = $values['id'] === null ? null : $model->newFromBuilder($values, $record->getConnectionName());
+                }
+                $record->setRawAttributes($attributes, true);
+                $barangay = $area ? $models['barangay'] : $record;
+                $barangay?->setRelation('municipality', $models['municipality']);
+                if ($area) $record->setRelation('barangay', $barangay);
+            }
+
+            return $records;
+        });
     }
 
     public function associationColumns(array $columns): array

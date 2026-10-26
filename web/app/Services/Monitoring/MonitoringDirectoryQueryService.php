@@ -4,6 +4,8 @@ namespace App\Services\Monitoring;
 
 use App\Models\MonitoringRecord;
 use App\Models\Project;
+use App\Models\Quarter;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -37,7 +39,20 @@ class MonitoringDirectoryQueryService
             ->with([
                 'association',
                 'monitoringRecords' => fn (HasMany $records) => $records->where('year', $selectedYear ?? 0)
-                    ->with(['quarter', 'monitoredBy'])->orderBy('created_at')->orderBy('id'),
+                    ->select('monitoring_records.*')->leftJoin('quarters as display_quarter', 'display_quarter.id', '=', 'monitoring_records.quarter_id')
+                    ->addSelect('display_quarter.id as display_quarter_id', 'display_quarter.quarter_number as display_quarter_number', 'display_quarter.name as display_quarter_name')
+                    ->with('monitoredBy')->orderBy('monitoring_records.created_at')->orderBy('monitoring_records.id')
+                    ->afterQuery(function (Collection $records): Collection {
+                        foreach ($records as $record) {
+                            $attributes = $record->getAttributes();
+                            $quarter = ['id' => $attributes['display_quarter_id'], 'quarter_number' => $attributes['display_quarter_number'], 'name' => $attributes['display_quarter_name']];
+                            unset($attributes['display_quarter_id'], $attributes['display_quarter_number'], $attributes['display_quarter_name']);
+                            $record->setRawAttributes($attributes, true)->setRelation('quarter', $quarter['id'] === null ? null
+                                : (new Quarter)->newFromBuilder($quarter, $record->getConnectionName()));
+                        }
+
+                        return $records;
+                    }),
             ]);
         $this->orderProjects($projects, $filters['sort']);
         $projects = $projects->paginate(25)->withQueryString();

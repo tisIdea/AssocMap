@@ -239,7 +239,7 @@ class DashboardServiceTest extends TestCase
         $queryCount = 0;
         DB::listen(static function () use (&$queryCount) { $queryCount++; });
         $dashboard = app(DashboardService::class)->load($request);
-        $this->assertSame(match ($roleId) { 2 => 18, 1 => 17, 3 => 20 }, $queryCount);
+        $this->assertSame(match ($roleId) { 2 => 17, 1 => 16, 3 => 19 }, $queryCount);
         $metrics = $this->metrics($dashboard);
         $admin = $roleId === 2;
         $this->assertSame($admin ? 4 : 1, $dashboard['scope_count']);
@@ -272,6 +272,68 @@ class DashboardServiceTest extends TestCase
         $this->assertSame(0, $dashboard['monitoring']['records']);
         $this->assertSame(0, $dashboard['monitoring']['periods']);
         $this->assertSame(['total' => 0, 'legacy_imports' => 0], $dashboard['monitoring']['visits']);
+    }
+
+    #[DataProvider('dashboardRoles')]
+    public function test_project_charts_match_separate_reads_in_one_query_for_each_role(string $role, string $prefix, int $roleId): void
+    {
+        $this->completeDashboardTables();
+        DB::table('user_profiles')->where('id', self::USER)->update(['role_id' => $roleId]);
+        if ($roleId === 3) DB::table('association_accounts')->insert(['id' => self::USER, 'user_id' => self::USER, 'association_id' => self::OWN, 'is_active' => true]);
+        $request = $this->request();
+        $scope = app(\App\Services\Reporting\ReportScope::class);
+        $ids = $scope->ids($scope->actor($request), []);
+        $projects = DB::table('projects as p')->whereIn('p.association_id', $ids)->whereNull('p.archived_at');
+        $expectedStatus = (clone $projects)->selectRaw('p.status AS label, COUNT(*) AS value')->groupBy('p.status')->orderBy('p.status')
+            ->get()->map(fn ($row) => ['label' => ucfirst($row->label), 'value' => (int) $row->value])->all();
+        $expectedComponents = (clone $projects)->join('saad_activities as sa', 'sa.id', '=', 'p.saad_activity_id')
+            ->join('saad_subcomponents as sc', 'sc.id', '=', 'sa.subcomponent_id')->join('saad_components as c', 'c.id', '=', 'sc.component_id')
+            ->selectRaw('c.name AS label, COUNT(*) AS value')->groupBy('c.id', 'c.name')->orderBy('c.name')->limit(12)
+            ->get()->map(fn ($row) => ['label' => $row->label, 'value' => (int) $row->value])->all();
+        DB::enableQueryLog();
+        DB::flushQueryLog();
+        try {
+            $dashboard = app(DashboardService::class)->load($request);
+            $chartReads = array_filter(DB::getQueryLog(), fn ($query) => str_contains($query['query'], 'project_charts'));
+        } finally { DB::disableQueryLog(); }
+
+        $this->assertCount(1, $chartReads);
+        $this->assertSame($expectedStatus, collect($dashboard['charts'])->firstWhere('key', 'project_status')['rows']);
+        $this->assertSame($expectedComponents, collect($dashboard['charts'])->firstWhere('key', 'components')['rows']);
+    }
+
+    public function test_missing_component_catalog_keeps_the_status_chart_available(): void
+    {
+        $this->completeDashboardTables();
+        $before = app(DashboardService::class)->load($this->request());
+        Schema::drop('saad_components');
+        $after = app(DashboardService::class)->load($this->request());
+
+        $this->assertSame(collect($before['charts'])->firstWhere('key', 'project_status'),
+            collect($after['charts'])->firstWhere('key', 'project_status'));
+        $this->assertContains(null, $after['charts']);
+    }
+
+    public function test_consolidated_charts_keep_the_component_limit_and_projects_without_catalog_links(): void
+    {
+        $this->completeDashboardTables();
+        foreach (range(2, 15) as $id) {
+            DB::table('saad_components')->insert(['id' => $id, 'name' => sprintf('Component %02d', $id)]);
+            DB::table('saad_subcomponents')->insert(['id' => $id, 'component_id' => $id]);
+            DB::table('saad_activities')->insert(['id' => $id, 'subcomponent_id' => $id]);
+            DB::table('projects')->insert(['id' => 100 + $id, 'association_id' => self::OWN, 'saad_activity_id' => $id,
+                'title' => 'Synthetic '.$id, 'status' => 'ongoing', 'program_year' => 2026]);
+        }
+        DB::table('projects')->insert(['id' => 999, 'association_id' => self::OWN, 'saad_activity_id' => 999,
+            'title' => 'Missing catalog link', 'status' => 'cancelled', 'program_year' => 2026]);
+        $dashboard = app(DashboardService::class)->load($this->request());
+        $components = collect($dashboard['charts'])->firstWhere('key', 'components')['rows'];
+        $statuses = collect($dashboard['charts'])->firstWhere('key', 'project_status')['rows'];
+
+        $this->assertCount(12, $components);
+        $this->assertSame(DB::table('saad_components')->orderBy('name')->limit(12)->pluck('name')->all(), array_column($components, 'label'));
+        $this->assertSame(1, collect($statuses)->firstWhere('label', 'Cancelled')['value']);
+        $this->assertSame(DB::table('projects')->where('association_id', self::OWN)->whereNull('archived_at')->count(), array_sum(array_column($statuses, 'value')));
     }
 
     public function test_optional_failure_is_unavailable_and_core_failure_is_not_zero(): void
