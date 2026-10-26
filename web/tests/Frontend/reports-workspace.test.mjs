@@ -4,7 +4,8 @@ import test from 'node:test';
 import { runInNewContext } from 'node:vm';
 
 const source = readFileSync(new URL('../../resources/js/pages/admin/reports.js', import.meta.url), 'utf8')
-    .replace(/^import .*\r?\n/gm, '').replace(/^export /gm, '');
+    .replace(/^import .*\r?\n/gm, '').replace(/^export /gm, '')
+    .replace("import('../../components/report-analytics.js')", 'loadReportAnalytics()');
 
 class Node {
     constructor(tag = 'div', text = '') {
@@ -22,6 +23,8 @@ class Node {
     replaceChildren(...nodes) { this.children = nodes; }
     setAttribute(name, value) { this.attributes.set(name, String(value)); }
     getAttribute(name) { return this.attributes.get(name); }
+    removeAttribute(name) { this.attributes.delete(name); }
+    contains(node) { return this === node || this.children.some(child => child.contains?.(node)); }
     addEventListener(name, callback) {
         this.listeners.set(name, [...(this.listeners.get(name) ?? []), callback]);
     }
@@ -36,7 +39,7 @@ class Node {
     }
 }
 
-function fixture({ account = false, result = undefined, script = source } = {}) {
+function fixture({ account = false, result = undefined, script = source, analyticsLoader = null, primaryMeasureMap = {}, resizeObserver = undefined } = {}) {
     const year = 2026;
     const filters = { report_type: 'production', year };
     const map = { production: ['municipality_id', 'association_id', 'year', 'quarter', 'month', 'project_id', 'product_id', 'program_year', 'component_id'],
@@ -78,7 +81,7 @@ function fixture({ account = false, result = undefined, script = source } = {}) 
         chart: { title: 'Observation counts', label_key: 'label', value_key: 'count', unit: 'observations' } };
     const initialResult = result === undefined ? { title: 'Production Performance', empty: false, notes: ['Recorded data only'], sections: [section],
         meta: { filters, generated_at: '2026-10-19T10:00:00+08:00', timezone: 'Asia/Manila', scope: ['Synthetic association'], scope_basis: 'Synthetic scope' } } : result;
-    const initial = { result: initialResult, filterMap: map, defaultYear: year };
+    const initial = { result: initialResult, filterMap: map, primaryMeasureMap, defaultYear: year };
     const nodes = { '[data-report-form]': form, '[data-report-result]': preview, '[data-report-status]': status, '[data-report-export]': exportForm,
         '[data-report-initial]': { textContent: JSON.stringify(initial) }, '[data-report-filter-toggle]': toggle,
         '#report-filter-panel': panel, '[data-report-filter-count]': count, '[data-report-filter-status]': indicator, '[data-report-export-menu]': menu };
@@ -90,9 +93,10 @@ function fixture({ account = false, result = undefined, script = source } = {}) 
     root.querySelectorAll = () => containers;
     const requests = [], history = [], errors = [], feedback = [];
     const context = { document: { querySelector: () => root, createElement: tag => new Node(tag) },
+        loadReportAnalytics: analyticsLoader || (async () => ({ renderReportAnalytics: (_result, target) => { target.removeAttribute('aria-busy'); target.append(new Node('p', 'Synthetic chart renderer')); } })),
         FormData: class { constructor() { return Object.values(fields).filter(field => !field.disabled).map(field => [field.name, field.value]); } },
         Option: class { constructor(name, id) { this.textContent = name; this.value = id; } },
-        URLSearchParams, AbortController,
+        URLSearchParams, AbortController, ResizeObserver: resizeObserver,
         initReportDownloads() {}, applyFormErrors: (form, fields) => errors.push(fields),
         errorFeedback: status => ({ message: `Safe report error ${status}` }), showFeedback: message => feedback.push(message), showOperationError() {},
         history: { replaceState: (...args) => history.push(args[2]) }, fetch: async (url, settings) => {
@@ -126,6 +130,40 @@ test('filter disclosure and export Escape preserve focus and issue no requests',
     assert.equal(f.panel.hidden, false);
 });
 
+test('curated browser KPIs use the shared map, show exact values immediately and retain every other measure', () => {
+    const base = fixture().initialResult;
+    base.sections[0].key = 'production';
+    base.sections[0].measures = [{ label: 'Production observations', value: 0 }, { label: 'Monitoring records without production', value: null }, { label: 'Exact canonical decimal', value: '1234567890.12' }];
+    const f = fixture({ result: base, primaryMeasureMap: { production: [['production', 'Production observations'], ['production', 'Monitoring records without production']] } });
+    assert.deepEqual(f.preview.querySelector('.report-primary-measures').querySelectorAll('span').map(node => node.textContent), ['0', 'Unobserved']);
+    const all = f.preview.querySelector('.report-all-measures');
+    assert.notEqual(all.open, true);
+    assert.deepEqual(all.querySelectorAll('span').map(node => node.textContent), ['0', 'Unobserved', '1,234,567,890.12']);
+    assert.ok(f.preview.querySelectorAll('span').every(node => !node.attributes.has('data-summary-counter')));
+});
+
+test('resizing redraws only the current charts without fetching data or reviving an invalidated report', async () => {
+    let resize, renders = 0;
+    const f = fixture({ resizeObserver: class { constructor(callback) { resize = callback; } observe() {} },
+        analyticsLoader: async () => ({ renderReportAnalytics: (_result, target) => {
+            renders++;
+            const first = new Node('details'), second = new Node('details');
+            first.append(new Node('summary', 'About this chart')); second.append(new Node('summary', 'About this chart'));
+            target.replaceChildren(first, second);
+        } }) });
+    await new Promise(setImmediate);
+    f.preview.querySelector('.report-analytics').children[0].open = true;
+    resize([{ contentRect: { width: 800 } }]);
+    resize([{ contentRect: { width: 300 } }]);
+    resize([{ contentRect: { width: 300 } }]);
+    assert.equal(renders, 2);
+    assert.equal(f.preview.querySelector('.report-analytics').children[0].open, true);
+    assert.equal(f.preview.querySelector('.report-analytics').children[1].open, false);
+    f.fields.quarter.value = '2'; await f.change('quarter');
+    resize([{ contentRect: { width: 400 } }]);
+    assert.equal(renders, 2); assert.equal(f.requests.length, 0);
+});
+
 test('active filters exclude the report type and default year, invalidate exports, and retain the applied query', async () => {
     const f = fixture();
     assert.equal(f.count.hidden, true);
@@ -150,7 +188,7 @@ test('active filters exclude the report type and default year, invalidate export
     assert.equal(f.exportForm.dataset.exportReady, 'true');
 });
 
-test('all bounded table pages preserve exact values, nulls and text while chart groups remain unchanged', async () => {
+test('all bounded table pages preserve exact values, nulls and text after analytics are separated', async () => {
     const f = fixture();
     const section = f.preview.querySelector('.report-section');
     const table = section.querySelector('table');
@@ -161,11 +199,9 @@ test('all bounded table pages preserve exact values, nulls and text while chart 
     assert.equal(body.children[0].children[2].textContent, '1234567890.12');
     assert.equal(body.children[1].children[2].textContent, 'Unobserved / N/A');
     assert.equal(body.children[0].children[2].className, 'report-numeric');
-    const bars = section.querySelector('.report-bars');
-    assert.equal(bars.children.length, 20);
-    assert.equal(bars.getAttribute('aria-hidden'), 'true');
-    assert.equal(bars.children[19].children[2].textContent, 19);
-    assert.equal(bars.children[19].children[1].children[0].style.width, '100%');
+    assert.equal(section.querySelector('.report-bars'), null);
+    assert.equal(f.preview.querySelector('.report-summary').querySelectorAll('dd').length, 2);
+    assert.ok(f.preview.querySelector('.report-analytics'));
     const pages = section.querySelector('.report-pagination');
     const [previous, context, next] = pages.children;
     assert.equal(pages.getAttribute('aria-label'), 'Recorded observations table pages');
@@ -209,5 +245,35 @@ test('association account initializes the same presentation without geographic o
 test('missing results remain empty with exports unavailable', () => {
     const f = fixture({ result: null });
     assert.equal(f.preview.children.length, 0);
+    assert.equal(f.requests.length, 0);
+});
+
+test('an analytics import completing after a filter change cannot display stale observations', async () => {
+    let complete, rendered = 0;
+    const waiting = new Promise(resolve => { complete = resolve; });
+    const f = fixture({ analyticsLoader: () => waiting });
+    f.fields.quarter.value = '2';
+    await f.change('quarter');
+    complete({ renderReportAnalytics: () => { rendered++; } });
+    await new Promise(setImmediate);
+    assert.equal(rendered, 0);
+    assert.equal(f.preview.children.length, 0);
+    assert.equal(f.exportForm.dataset.exportReady, 'false');
+});
+
+test('a chart loading failure retains exact tables, summaries and existing exports', async () => {
+    const f = fixture({ analyticsLoader: async () => { throw new Error('Synthetic chunk unavailable'); } });
+    await new Promise(setImmediate);
+    assert.equal(f.preview.querySelectorAll('table').length, 1);
+    assert.equal(f.preview.querySelector('.report-summary').querySelectorAll('dd').length, 2);
+    assert.equal(f.preview.querySelector('.report-analytics').getAttribute('aria-busy'), undefined);
+    assert.equal(f.exportForm.dataset.exportReady, 'true');
+    assert.equal(f.requests.length, 0);
+});
+
+test('an unavailable report never loads chart code or requests extra datasets', () => {
+    let loaded = 0;
+    const f = fixture({ result: null, analyticsLoader: () => { loaded++; } });
+    assert.equal(loaded, 0);
     assert.equal(f.requests.length, 0);
 });

@@ -8,6 +8,8 @@ function element(tag, text, className) {
     return node;
 }
 
+const measureValue = value => value === null || value === undefined ? 'Unobserved' : String(value).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+
 function initReportControls(root, form, readFilters, defaultYear) {
     const toggle = root.querySelector('[data-report-filter-toggle]');
     const panel = root.querySelector('#report-filter-panel');
@@ -55,11 +57,33 @@ export function initReports() {
     const exportForm = root.querySelector('[data-report-export]');
     initReportDownloads(exportForm);
     const initial = JSON.parse(root.querySelector('[data-report-initial]').textContent);
+    root.addEventListener('click', event => {
+        const link = event.target.closest?.('a[href^="#report-table-"]');
+        const target = link && preview.querySelector(link.hash);
+        if (!target) return;
+        for (let parent = target.parentElement; parent && parent !== preview; parent = parent.parentElement) {
+            if (parent.tagName === 'DETAILS') parent.open = true;
+        }
+        target.focus();
+    });
     root.dataset.reportsInitialized = 'true';
     const field = name => form.elements.namedItem(name);
     let request;
     let optionsRequest;
     let revision = 0;
+    let currentAnalytics;
+    let analyticsWidth;
+    if (typeof ResizeObserver === 'function') {
+        new ResizeObserver(([entry]) => {
+            const width = Math.round(entry.contentRect.width);
+            if (analyticsWidth && width !== analyticsWidth && currentAnalytics && preview.contains(currentAnalytics.node)) {
+                const open = [...currentAnalytics.node.querySelectorAll('details')].map(details => details.open);
+                currentAnalytics.render(currentAnalytics.result, currentAnalytics.node);
+                currentAnalytics.node.querySelectorAll('details').forEach((details, index) => { details.open = Boolean(open[index]); });
+            }
+            analyticsWidth = width;
+        }).observe(preview);
+    }
     const syncControls = initReportControls(root, form, filters, initial.defaultYear);
 
     function syncBusy() {
@@ -226,63 +250,92 @@ export function initReports() {
         container.append(scroll, controls);
     }
 
-    function chart(section, container) {
-        if (!section.chart.title || !section.rows.length) return;
-        container.append(element('h4', `${section.chart.title} (${section.chart.unit})`));
-        const plot = element('div', undefined, 'report-bars');
-        // Scaling affects presentation only; all values come from Python.
-        plot.setAttribute('aria-hidden', 'true');
-        const rows = section.rows.slice(0, 20);
-        const max = Math.max(0, ...rows.map(row => Number(row[section.chart.value_key])));
-        for (const row of rows) {
-            const bar = element('div', undefined, 'report-bar-row');
-            const value = row[section.chart.value_key];
-            const track = element('span', undefined, 'report-bar-track');
-            const fill = element('span', undefined, 'report-bar-fill');
-            fill.style.width = `${max > 0 ? Number(value) / max * 100 : 0}%`;
-            track.append(fill);
-            bar.append(element('span', row[section.chart.label_key]), track, element('span', value));
-            plot.append(bar);
-        }
-        container.append(plot, element('p', 'Chart shows up to 20 groups. The table below provides all recorded values.', 'field-help'));
-    }
-
-    function render(result, animateSummaries = false) {
-        preview.replaceChildren(element('h2', result.title), element('p', `Generated ${result.meta.generated_at} · ${result.meta.timezone}`),
-            element('p', result.meta.scope_basis), element('p', `Associations: ${result.meta.scope.join('; ') || 'None in this scope'}`));
+    function render(result) {
+        preview.replaceChildren(element('h2', result.title));
+        const scope = element('section', undefined, 'report-context-card');
+        scope.id = 'report-scope';
+        const applied = result.meta.filters;
+        const associationScope = result.meta.scope.length === 1 ? result.meta.scope[0] : `${result.meta.scope.length} authorized associations`;
+        const period = `${applied.year ? `Reporting year ${applied.year}` : 'Current snapshot'}${applied.quarter ? ` · Q${applied.quarter}` : ''}${applied.month ? ` · Month ${applied.month}` : ''}${applied.program_year ? ` · Program year ${applied.program_year}` : ''}`;
+        scope.append(element('h3', 'Reporting scope and period'), element('p', `${associationScope} · ${period}`, 'report-context-brief'));
+        const scopeDetails = element('details', undefined, 'report-scope-details');
+        scopeDetails.append(element('summary', 'Scope and applied filters'), element('p', result.meta.scope_basis),
+            element('p', `Associations: ${result.meta.scope.join('; ') || 'None in this scope'}`),
+            element('p', `Generated ${result.meta.generated_at} · ${result.meta.timezone}`, 'field-help'));
+        const snapshot = ['associations', 'members', 'projects'].includes(result.meta.filters.report_type);
+        scopeDetails.append(element('p', snapshot ? 'Current snapshot. Program year selects a cohort; reporting dates do not reconstruct historical counts.'
+            : 'Reporting year/quarter selects training start dates, activity dates and quarterly monitoring periods. Association/member counts and project statuses remain current snapshots.', 'field-help'));
         const context = Object.entries(result.meta.filters).map(([key, value]) => {
             const select = field(key);
             const label = select ? [...select.options].find(option => option.value === String(value))?.textContent : value;
             return `${key.replaceAll('_', ' ')}: ${label || value}`;
         }).join(' · ');
-        preview.append(element('p', context, 'field-help'));
+        scopeDetails.append(element('p', context, 'field-help')); scope.append(scopeDetails);
+        preview.append(scope);
         if (result.empty) preview.append(element('p', 'No recorded results match the selected report and filters.', 'notice'));
-        const quality = element('details');
-        quality.open = true;
-        quality.append(element('summary', 'Data quality and interpretation'));
+        const summary = element('section', undefined, 'report-summary');
+        summary.append(element('h3', 'Summary indicators'));
+        const primary = element('dl', undefined, 'report-measures report-primary-measures');
+        primary.setAttribute('data-report-kpis', '');
+        for (const [key, label] of initial.primaryMeasureMap?.[applied.report_type] || []) {
+            const measure = result.sections.find(section => section.key === key)?.measures.find(measure => measure.label === label);
+            if (!measure) continue;
+            const card = element('div'), definition = element('dd'), value = element('span', measureValue(measure.value));
+            definition.append(value); card.append(element('dt', measure.label), definition); primary.append(card);
+        }
+        summary.append(primary);
+        const allMeasures = element('details', undefined, 'report-all-measures');
+        allMeasures.append(element('summary', 'All report measures'), element('p', 'Recorded values within the applied scope. Unobserved values are not zero.', 'field-help'));
+        for (const section of result.sections.filter(section => section.measures.length)) {
+            allMeasures.append(element('h4', section.title));
+            const measures = element('dl', undefined, 'report-secondary-measures');
+            for (const measure of section.measures) {
+                const card = element('div');
+                const value = element('span', measureValue(measure.value));
+                const definition = element('dd'); definition.append(value);
+                card.append(element('dt', measure.label), definition); measures.append(card);
+            }
+            allMeasures.append(measures);
+        }
+        summary.append(allMeasures);
+        preview.append(summary);
+        const analytics = element('section', undefined, 'report-analytics');
+        analytics.setAttribute('aria-busy', 'true');
+        analytics.append(element('h3', 'Visual analytics'), element('p', 'Loading charts. Summary indicators and detailed data remain available.', 'field-help'));
+        preview.append(analytics);
+        // Load presentation code only on report pages; never request a dataset per chart.
+        import('../../components/report-analytics.js').then(({ renderReportAnalytics }) => {
+            if (!preview.contains(analytics)) return;
+            currentAnalytics = { result, node: analytics, render: renderReportAnalytics };
+            renderReportAnalytics(result, analytics);
+        }).catch(() => {
+            if (!preview.contains(analytics)) return;
+            analytics.removeAttribute('aria-busy');
+            analytics.replaceChildren(element('h3', 'Visual analytics'), element('p', 'Charts are unavailable. Summary indicators and detailed data tables remain available.', 'report-empty'));
+        });
+        const quality = element('details', undefined, 'report-quality');
+        quality.append(element('summary', 'Data interpretation and quality'));
         const notes = element('ul');
         for (const note of result.notes) notes.append(element('li', note));
         quality.append(notes);
-        preview.append(quality);
-        for (const section of result.sections) {
-            const container = element('section', undefined, 'report-section');
-            container.append(element('h3', section.title));
-            const measures = element('dl', undefined, 'report-measures');
-            for (const measure of section.measures) {
-                const card = element('div');
-                const value = element('span', measure.value ?? 'Unobserved');
-                if (animateSummaries) value.setAttribute('data-summary-counter', '');
-                const definition = element('dd');
-                definition.append(value);
-                card.append(element('dt', measure.label), definition);
-                measures.append(card);
-            }
-            container.append(measures);
-            for (const note of section.notes) container.append(element('p', note, 'field-help'));
-            chart(section, container);
-            table(section, container);
-            preview.append(container);
+        for (const section of result.sections.filter(section => section.notes.length)) {
+            quality.append(element('h4', section.title));
+            const sectionNotes = element('ul');
+            for (const note of section.notes) sectionNotes.append(element('li', note));
+            quality.append(sectionNotes);
         }
+        preview.append(quality);
+        const detailed = element('details', undefined, 'report-detailed-data');
+        detailed.append(element('summary', `Detailed data tables (${result.sections.length})`));
+        result.sections.forEach((section, index) => {
+            const container = element('section', undefined, 'report-section report-data-section');
+            container.id = `report-table-${section.key || index}`;
+            container.tabIndex = -1;
+            container.append(element('h4', section.title));
+            table(section, container);
+            detailed.append(container);
+        });
+        preview.append(detailed);
         const hidden = exportForm?.querySelector('[data-export-filters]');
         if (hidden) {
             hidden.replaceChildren();
@@ -360,7 +413,7 @@ export function initReports() {
         const selected = Object.fromEntries(filters());
         const applied = initial.result.meta.filters;
         const keys = new Set([...Object.keys(selected), ...Object.keys(applied)]);
-        if ([...keys].every(key => String(selected[key] ?? '') === String(applied[key] ?? ''))) render(initial.result, true);
+        if ([...keys].every(key => String(selected[key] ?? '') === String(applied[key] ?? ''))) render(initial.result);
         else {
             preview.replaceChildren();
             exportsEnabled(false);

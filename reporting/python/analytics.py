@@ -32,6 +32,7 @@ def calculate(payload):
     report = meta["report_type"]
     all_reports = report == "comprehensive"
     sections = []
+    geography_section = None
     notes = [
         "Association/member counts and project statuses are current snapshots, not reconstructed historical states.",
         "Archived records are retained within the current authorized association scope. Counts describe recorded data only.",
@@ -69,6 +70,18 @@ def calculate(payload):
                 [("label", level.title(), "text"), ("count", "Distinct associations", "integer")], rows,
                 chart={"title": "Associations by " + level, "label_key": "label", "value_key": "count", "unit": "associations"}))
         sections.append(distribution("association_status", "Current association statuses", data["associations"], "status", "Status"))
+        geography = Counter((r["municipality_id"], r["barangay_id"]) for r in data["associations"])
+        municipality_counts = Counter(r["municipality_id"] for r in data["associations"])
+        names = {(r["municipality_id"], r["barangay_id"]): (r["municipality"], r["barangay"]) for r in data["associations"]}
+        rows = [{"municipality_id": municipality, "municipality": names[(municipality, barangay)][0],
+                 "barangay_id": barangay, "barangay": names[(municipality, barangay)][1], "count": count,
+                 "municipality_total": municipality_counts[municipality]}
+                for (municipality, barangay), count in sorted(geography.items(), key=lambda item: (names[item[0]][0], item[0][0], names[item[0]][1], item[0][1]))]
+        geography_section = section("association_geography", "Association Distribution by Municipality and Barangay",
+            [("municipality_id", "Municipality ID", "text"), ("municipality", "Municipality", "text"),
+             ("barangay_id", "Barangay ID", "text"), ("barangay", "Barangay", "text"),
+             ("count", "Association count", "integer"), ("municipality_total", "Municipality subtotal", "integer")], rows,
+            notes=["Counts use geographic IDs and retained authorized associations, including archived associations. Municipality subtotals repeat for their barangays; do not sum that column."])
 
     if all_reports or report == "members":
         members = data["members"]
@@ -213,4 +226,6 @@ def calculate(payload):
     empty = not any(meaningful.values()) if all_reports else not meaningful[report]
     if report == "income" and meta["filters"].get("month"):
         empty = not incomes
+    if geography_section is not None:
+        sections.append(geography_section)
     return {"version": VERSION, "title": TITLES[report], "meta": meta, "empty": empty, "notes": notes, "sections": sections}
