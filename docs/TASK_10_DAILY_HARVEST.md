@@ -11,7 +11,7 @@ Added:
 - `supabase/migrations/019_add_daily_harvest_production.sql`
 - `supabase/tests/local/daily-harvest.php`
 - `web/app/Models/MonitoringHarvestEntry.php`
-- `web/app/Services/DailyHarvestMonitoringService.php`
+- `web/app/Services/Monitoring/DailyHarvestMonitoringService.php`
 - `web/resources/views/monitoring/harvest.blade.php`
 - `web/tests/Support/DailyHarvestFixture.php`
 - `web/tests/Feature/DailyHarvestMonitoringTest.php`
@@ -20,9 +20,9 @@ Added:
 Modified:
 
 - `web/app/Models/MonitoringProduction.php`: source metadata, version cast and harvest relationship.
-- `web/app/Services/ProductionMonitoringService.php`: shared exact decimal sum, daily-mode editor exclusion, revision metadata and exact goal percentage.
-- `web/app/Services/MonitoringService.php`: reuse its existing transaction-bound authorization/parent locking; protect daily rows in the common legacy production writer.
-- `web/app/Services/AuditLogService.php`: permitted harvest, initialization and goal snapshots for the existing audit viewer.
+- `web/app/Services/Monitoring/ProductionMonitoringService.php`: shared exact decimal sum, daily-mode editor exclusion, revision metadata and exact goal percentage.
+- `web/app/Services/Monitoring/MonitoringService.php`: reuse its existing transaction-bound authorization/parent locking; protect daily rows in the common legacy production writer.
+- `web/app/Services/Audit/AuditLogService.php`: permitted harvest, initialization and goal snapshots for the existing audit viewer.
 - `web/app/Services/Reporting/ReportDataset.php`: preserve missing daily observations and avoid fabricated monthly zero observations.
 - `web/app/Http/Controllers/MonitoringWorkspaceController.php`: scoped workspace forms, history and mutation handlers.
 - `web/app/Http/Controllers/Admin/MonitoringController.php`: source metadata in the shared editor payload.
@@ -125,7 +125,7 @@ The runner needs existing locked PHP dependencies, PDO PostgreSQL and a trusted 
 Optional PHP syntax review from the repository root:
 
 ```powershell
-php -l .\web\app\Services\DailyHarvestMonitoringService.php
+php -l .\web\app\Services\Monitoring\DailyHarvestMonitoringService.php
 php -l .\web\app\Http\Controllers\MonitoringWorkspaceController.php
 php -l .\supabase\tests\local\daily-harvest.php
 ```

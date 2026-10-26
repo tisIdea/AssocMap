@@ -4,9 +4,9 @@ declare(strict_types=1);
 require __DIR__.'/bootstrap-application.php';
 require __DIR__.'/LocalTestRun.php';
 use App\Models\Project;
-use App\Services\GisAddressResolver;
-use App\Services\GisFeatureSerializer;
-use App\Services\GisQueryService;
+use App\Services\GIS\GisAddressResolver;
+use App\Services\GIS\GisFeatureSerializer;
+use App\Services\GIS\GisQueryService;
 use App\Models\UserProfile;
 use Illuminate\Support\Facades\DB;
 

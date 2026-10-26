@@ -7,8 +7,8 @@ require __DIR__.'/bootstrap-application.php';
 use App\Exceptions\MonitoringIncomeConflictException;
 use App\Models\MonitoringRecord;
 use App\Models\UserProfile;
-use App\Services\IncomeMonitoringService;
-use App\Services\MonitoringService;
+use App\Services\Monitoring\IncomeMonitoringService;
+use App\Services\Monitoring\MonitoringService;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\Process\Process;
 

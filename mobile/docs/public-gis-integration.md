@@ -25,9 +25,9 @@ Read-only source references:
 - [Public controller](../../web/app/Http/Controllers/PublicGisController.php):
   calls features(null, ...), explicitly choosing anonymous publication scope.
 - [Request rules](../../web/app/Http/Requests/GisQueryRequest.php): mode, bbox, search/filter rules.
-- [GIS query and serialization](../../web/app/Services/GisQueryService.php):
+- [GIS query and serialization](../../web/app/Services/GIS/GisQueryService.php):
   public projection, overview extent, map limits and readable published geometry.
-- [Feature serializer](../../web/app/Services/GisFeatureSerializer.php):
+- [Feature serializer](../../web/app/Services/GIS/GisFeatureSerializer.php):
   exact anonymous public fields.
 
 These describe the available reference copy, not proof of Desktop 1 deployment.
