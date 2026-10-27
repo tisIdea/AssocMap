@@ -199,11 +199,19 @@ final class AccountEmailChangeService
             $actor->setRelation('role', $adminRole);
         }
         abort_unless($actor?->canAccessApplication(throwOnDatabaseError: true), 403);
+        $preview = UserProfile::whereKey($targetId)->firstOrFail(['role_id']);
+        $targetRole = Role::whereKey($preview->role_id)->sharedLock()->first();
+        // Staff writes lock their profile first; account replacement locks its association first.
+        $target = in_array($targetRole?->code, ['system_admin', 'field_officer'], true)
+            ? UserProfile::whereKey($targetId)->lockForUpdate()->firstOrFail() : null;
         $associationIds = AssociationAccount::where('user_id', $targetId)->pluck('association_id')
             ->merge(Association::where('primary_field_officer_id', $targetId)->pluck('id'))->unique()->sort()->values()->all();
         $associations = Association::whereIn('id', $associationIds)->orderBy('id')->lockForUpdate()->get();
-        $target = UserProfile::whereKey($targetId)->lockForUpdate()->firstOrFail();
-        $target->setRelation('role', Role::whereKey($target->role_id)->sharedLock()->first());
+        $target ??= UserProfile::whereKey($targetId)->lockForUpdate()->firstOrFail();
+        if ((string) $target->role_id !== (string) $preview->role_id) {
+            $this->deny();
+        }
+        $target->setRelation('role', $targetRole);
         if (! array_key_exists('email_change_hold_id', $target->getAttributes()) || ! $target->is_active || ! $target->activated_at
             || ! $target->role?->is_active || ! in_array($target->role->code, ['system_admin', 'field_officer', 'association_account'], true)
             || ($target->email_change_hold_id !== null && $target->email_change_hold_id !== $row?->id)) {

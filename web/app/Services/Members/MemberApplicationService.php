@@ -7,6 +7,7 @@ use App\Models\AssociationAccount;
 use App\Models\AssociationPosition;
 use App\Models\Member;
 use App\Models\MemberApplication;
+use App\Models\Role;
 use App\Models\UserProfile;
 use App\Services\Associations\AssociationLifecycleService;
 use Illuminate\Support\Facades\DB;
@@ -50,8 +51,14 @@ class MemberApplicationService
         try {
             return DB::transaction(function () use ($data, $currentUser, $associationAccount,
                 $position, $applicationId, &$photoPath, &$callbackCompleted) {
+                // Match account replacement: role, association, account-holder profile, then link.
+                $role = Role::whereKey($currentUser->role_id)->where('code', 'association_account')->sharedLock()->first();
+                abort_unless($role, 403);
                 $this->lifecycle->lockOperational([$associationAccount->association_id]);
-                $actor = UserProfile::query()->with('role')->whereKey($currentUser->id)->lockForUpdate()->first();
+                $actor = UserProfile::whereKey($currentUser->id)->lockForUpdate()->first();
+                abort_unless($actor && (string) $actor->role_id === (string) $role->id
+                    && $actor->getRawOriginal('auth_sessions_valid_after') === $currentUser->getRawOriginal('auth_sessions_valid_after'), 403);
+                $actor->setRelation('role', $role);
                 $this->ensureAssociationAccountCanSubmit($actor);
                 $link = AssociationAccount::query()
                     ->whereKey($associationAccount->id)
@@ -118,7 +125,7 @@ class MemberApplicationService
 
     private function ensureAssociationAccountCanSubmit(?UserProfile $actor): void
     {
-        if (! $actor || ! $actor->canAccessApplication() || $actor->role?->code !== 'association_account') {
+        if (! $actor || ! $actor->canAccessApplication(throwOnDatabaseError: true) || $actor->role?->code !== 'association_account') {
             abort(403, 'Only an active authorized Association Account may submit applications.');
         }
     }
@@ -244,7 +251,7 @@ class MemberApplicationService
         MemberApplication $application,
         UserProfile $fieldOfficer
     ): array {
-        // Use the same actor/role -> association -> child order as officer management.
+        // Use the same role -> profile -> association -> child order as officer management.
         $fieldOfficer = $this->positions->lockActor($fieldOfficer, 'field_officer');
         $association = Association::whereKey($application->association_id)->lockForUpdate()->firstOrFail();
         $application = MemberApplication::whereKey($application->id)->lockForUpdate()->firstOrFail();

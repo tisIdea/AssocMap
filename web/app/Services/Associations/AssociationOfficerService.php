@@ -6,10 +6,10 @@ use App\Models\Association;
 use App\Models\AssociationPosition;
 use App\Models\Member;
 use App\Models\MemberApplication;
-use App\Models\Role;
 use App\Models\UserProfile;
 use App\Services\Audit\AuditLogService;
 use App\Services\Members\MemberExecutivePositionService;
+use App\Services\Programs\ProgramActorService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -21,6 +21,7 @@ class AssociationOfficerService
         private MemberExecutivePositionService $executives,
         private AuditLogService $audit,
         private AssociationLifecycleService $lifecycle,
+        private ProgramActorService $actors,
     ) {
     }
 
@@ -51,11 +52,13 @@ class AssociationOfficerService
     public function change(Request $request, Association $association, array $data): void
     {
         DB::transaction(function () use ($request, $association, $data) {
-            $actor = UserProfile::whereKey($request->attributes->get('current_user')?->id)->sharedLock()->first();
-            abort_unless($actor, 403);
-            $actor->setRelation('role', Role::whereKey($actor->role_id)->sharedLock()->first());
+            $previous = $request->attributes->get('current_user');
+            abort_unless($previous instanceof UserProfile, 403);
+            $actor = $this->actors->lock($previous);
             $association = Association::whereKey($association->id)->lockForUpdate()->firstOrFail();
-            $this->authorize($actor, $association);
+            if ($actor->role->code === 'field_officer') {
+                abort_unless($association->primary_field_officer_id === $actor->id, 403);
+            }
             $request->attributes->set('current_user', $actor);
             $this->lifecycle->assertOperational($association, 'association');
 

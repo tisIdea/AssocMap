@@ -586,6 +586,34 @@ class AccountEmailChangeTest extends TestCase
         $this->assertSame(0, $this->recoveryEmails);
     }
 
+    #[DataProvider('targetLockOrders')]
+    public function test_review_locks_staff_profiles_before_associations_and_account_profiles_after_associations(bool $account): void
+    {
+        if ($account) {
+            DB::table('user_profiles')->where('id', self::USER)->update(['role_id' => 3]);
+            DB::table('associations')->update(['primary_field_officer_id' => null]);
+            DB::table('association_accounts')->insert(['id' => self::SESSION, 'association_id' => self::ASSOCIATION,
+                'user_id' => self::USER, 'is_active' => true]);
+        }
+        $order = [];
+        DB::listen(function ($query) use (&$order) {
+            if (str_starts_with($query->sql, 'select * from "user_profiles"') && in_array(self::USER, $query->bindings, true)) {
+                $order[] = 'target';
+            }
+            if (str_starts_with($query->sql, 'select * from "associations"')) {
+                $order[] = 'associations';
+            }
+        });
+        app(AccountEmailChangeService::class)->review(UserProfile::with('role')->findOrFail(self::ADMIN),
+            (new UserProfile)->forceFill(['id' => self::USER]), self::DESTINATION);
+        $this->assertSame($account ? ['associations', 'target'] : ['target', 'associations'], $order);
+    }
+
+    public static function targetLockOrders(): array
+    {
+        return ['staff' => [false], 'association account' => [true]];
+    }
+
     public function test_client_identity_and_destination_substitution_are_prohibited(): void
     {
         $this->issue();

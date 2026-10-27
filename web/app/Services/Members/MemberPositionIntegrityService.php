@@ -5,9 +5,9 @@ namespace App\Services\Members;
 use App\Models\AssociationPosition;
 use App\Models\Member;
 use App\Models\MemberApplication;
-use App\Models\Role;
 use App\Models\UserProfile;
 use App\Services\Audit\AuditLogService;
+use App\Services\Programs\ProgramActorService;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
 
@@ -15,18 +15,15 @@ class MemberPositionIntegrityService
 {
     private const AUDIT_FIELDS = ['association_id', 'position_id', 'member_status', 'archived_at'];
 
-    public function __construct(private AuditLogService $audit)
+    public function __construct(private AuditLogService $audit, private ProgramActorService $actors)
     {
     }
 
     public function lockActor(UserProfile $actor, string $roleCode): UserProfile
     {
-        $actor = UserProfile::whereKey($actor->id)->sharedLock()->first();
-        abort_unless($actor, 403);
-        $actor->setRelation('role', Role::whereKey($actor->role_id)->sharedLock()->first());
-        abort_unless($actor->canAccessApplication() && $actor->role?->code === $roleCode, 403);
+        abort_unless($actor->role?->code === $roleCode, 403);
 
-        return $actor;
+        return $this->actors->lock($actor);
     }
 
     public function activePosition(int|string $positionId, ?string $otherText): AssociationPosition
