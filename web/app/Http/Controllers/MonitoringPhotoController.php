@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Exceptions\MediaLifecycleException;
+use App\Http\PrivatePhotoResponse;
 use App\Models\MonitoringRecord;
 use App\Services\Media\PhotoLifecycleService;
 use App\Services\Monitoring\MonitoringPhotoService;
@@ -18,8 +19,7 @@ use Throwable;
 
 final class MonitoringPhotoController extends Controller
 {
-    private const HEADERS = ['Cache-Control' => 'private, no-store, max-age=0',
-        'X-Content-Type-Options' => 'nosniff', 'Referrer-Policy' => 'no-referrer'];
+    private const HEADERS = PrivatePhotoResponse::HEADERS;
 
     public function __construct(private MonitoringPhotoService $monitoring, private PhotoLifecycleService $photos) {}
 
@@ -93,16 +93,7 @@ final class MonitoringPhotoController extends Controller
             $image = $this->photos->open($photoId, $variant,
                 $this->monitoring->authorize($request, $monitoringRecord, $parent, false));
 
-            return response()->stream(static function () use ($image): void {
-                try {
-                    fpassthru($image['stream']);
-                } finally {
-                    fclose($image['stream']);
-                }
-            }, 200, self::HEADERS + [
-                'Content-Type' => $image['mime_type'], 'Content-Length' => (string) $image['bytes'],
-                'Content-Disposition' => 'inline; filename="monitoring-photo.'.$image['extension'].'"',
-            ]);
+            return PrivatePhotoResponse::stream($image, 'monitoring-photo');
         });
     }
 

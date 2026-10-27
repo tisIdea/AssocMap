@@ -182,3 +182,5 @@ Route::middleware([
 require __DIR__.'/shared/gis.php';
 
 require __DIR__.'/shared/monitoring.php';
+
+require __DIR__.'/shared/project-cover.php';

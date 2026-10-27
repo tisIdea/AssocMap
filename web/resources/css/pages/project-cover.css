@@ -1,0 +1,20 @@
+.project-cover { display: grid; gap: 14px; min-width: 0; }
+.project-cover-image img { display: block; max-width: 100%; max-height: 480px; object-fit: contain; border-radius: var(--radius-sm); }
+.project-cover-empty { display: grid; align-items: center; justify-items: center; min-height: 110px; padding: 16px; background: #f3f7fb; border: 1px dashed var(--border-color); border-radius: var(--radius-sm); color: var(--text-secondary); text-align: center; }
+.project-cover form { display: grid; gap: 12px; justify-items: start; min-width: 0; }
+.project-cover input { width: 100%; max-width: 100%; }
+.project-cover-preview { max-width: 240px; max-height: 180px; object-fit: contain; }
+.project-cover-pending { display: grid; gap: 12px; padding-left: 20px; overflow-wrap: anywhere; }
+.project-cover-pending:empty { display: none; }
+.project-cover-pending button { margin: 6px; }
+.project-cover-dialog { width: min(480px, calc(100vw - 32px)); padding: 22px; border: 1px solid var(--border-color); border-radius: var(--radius-md); }
+.project-cover-dialog p { margin-block: 16px; }
+.project-cover-dialog::backdrop { background: rgb(0 0 0 / 60%); }
+.project-cover-thumbnail { display: inline-grid; width: 80px; min-height: 60px; margin: 0 12px 8px 0; vertical-align: middle; }
+.project-cover-thumbnail img { width: 80px; height: 60px; object-fit: cover; border-radius: var(--radius-sm); }
+.project-cover-thumbnail .project-cover-empty { min-height: 60px; padding: 5px; font-size: 11px; font-weight: 400; }
+.project-cover [hidden], .project-cover-thumbnail [hidden] { display: none; }
+
+.program-management .project-cover > h2 { margin-bottom: 0; }
+.program-management .project-cover > p, .program-management .project-cover form p { margin-block: 0; }
+.project-cover > button { justify-self: start; }

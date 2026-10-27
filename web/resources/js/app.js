@@ -50,3 +50,7 @@ if (gisRoot) {
 if (document.querySelector('[data-monitoring-photos]')) {
     import('./pages/monitoring-photos.js').then(({ initMonitoringPhotos }) => initMonitoringPhotos());
 }
+
+if (document.querySelector('[data-project-cover], [data-project-cover-thumbnail]')) {
+    import('./pages/project-cover.js').then(({ initProjectCovers }) => initProjectCovers());
+}
