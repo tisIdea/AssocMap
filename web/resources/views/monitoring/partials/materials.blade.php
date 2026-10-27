@@ -10,5 +10,6 @@
         <details class="monitoring-resource-details"><summary>Registered project material</summary><p class="field-hint">Current project inventory values are shown for reference.</p>
             @include('monitoring.partials.details', ['details' => ['Planned Quantity' => $material->projectMaterial?->quantity_planned, 'Delivered Quantity' => $material->projectMaterial?->quantity_delivered, 'Unit' => $material->projectMaterial?->unit]])
         </details>
+        @include('monitoring.partials.photos', ['photoKind' => 'materials', 'photoParent' => $material])
     </article>
 @empty<p class="monitoring-empty">No Materials observations.</p>@endforelse

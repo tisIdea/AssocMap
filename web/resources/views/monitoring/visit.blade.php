@@ -43,6 +43,11 @@
         <p role="status" data-visit-submit-status></p>
     </form>
 <div class="monitoring-actions"><a class="button" href="{{ route($monitoringPrefix.'.visits', $record) }}">Back to Visit Reports</a></div>
+@if($report)
+    @include('monitoring.partials.photos', ['photoKind' => 'visits', 'photoParent' => $report])
+@else
+    <p class="field-hint">Save this Visit Report, then open its Photos gallery to add evidence.</p>
+@endif
 </section>
 </div>
 @include('monitoring.partials.visit-script')
