@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class MonitoringMaterial extends Model
 {
@@ -47,5 +48,10 @@ class MonitoringMaterial extends Model
             ProjectMaterial::class,
             'project_material_id'
         );
+    }
+
+    public function photos(): HasMany
+    {
+        return $this->hasMany(MediaPhoto::class, 'monitoring_material_id')->where('state', 'ready')->orderBy('display_order')->orderBy('id');
     }
 }

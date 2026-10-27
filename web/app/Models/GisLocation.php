@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class GisLocation extends Model
 {
@@ -35,5 +36,10 @@ class GisLocation extends Model
     public function project(): BelongsTo
     {
         return $this->belongsTo(Project::class);
+    }
+
+    public function photos(): HasMany
+    {
+        return $this->hasMany(MediaPhoto::class, 'gis_location_id')->where('state', 'ready')->orderBy('display_order')->orderBy('id');
     }
 }
