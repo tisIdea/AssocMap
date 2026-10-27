@@ -1,6 +1,6 @@
 @if(in_array($monitoringPrefix, ['admin.monitoring', 'field-officer.monitoring'], true))
 @php($photoEndpoint = route($monitoringPrefix.'.photos.index', [$record, $photoKind, $photoParent->id]))
-<details class="monitoring-photos" data-monitoring-photos data-endpoint="{{ $photoEndpoint }}" data-manage="{{ $canManage ? 'true' : 'false' }}">
+<details class="monitoring-photos" data-monitoring-photos data-csrf="{{ csrf_token() }}" data-endpoint="{{ $photoEndpoint }}" data-manage="{{ $canManage ? 'true' : 'false' }}">
     <summary>Photos <span data-photo-count>up to 5</span></summary>
     <div class="monitoring-photo-body">
         <p class="field-hint">Private Monitoring evidence. JPEG or PNG, at most 5 MiB each (8192 pixels per edge; 12 million pixels). Pending uploads also reserve a slot.</p>

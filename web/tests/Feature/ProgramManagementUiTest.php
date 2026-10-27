@@ -81,6 +81,10 @@ class ProgramManagementUiTest extends TestCase
             CREATE TABLE program_activity_records (id TEXT PRIMARY KEY, related_project_id TEXT, association_id TEXT, saad_activity_id INTEGER, title TEXT, description TEXT, program_year INTEGER, activity_date TEXT, venue TEXT, status TEXT, conducted_by TEXT, conducted_by_user_id TEXT, remarks TEXT, archived_at TEXT, archived_by TEXT, created_by TEXT, updated_by TEXT, created_at TEXT, updated_at TEXT);
             CREATE TABLE audit_logs (id TEXT PRIMARY KEY, entity_type TEXT, entity_id TEXT, action_type TEXT, performed_at TEXT);
             SQL);
+        foreach (['gis_locations', 'monitoring_visit_reports', 'monitoring_materials'] as $table) {
+            DB::statement('CREATE TABLE '.$table.' (id TEXT PRIMARY KEY)');
+        }
+        (require database_path('migrations/2026_10_27_000000_add_media_photos.php'))->up();
     }
 
     private function fixtures(): void
@@ -426,6 +430,29 @@ class ProgramManagementUiTest extends TestCase
         $this->get($url.'/edit')->assertForbidden();
         $this->patchJson($url, $this->trainingPayload() + ['related_project_id' => ''])->assertUnprocessable()->assertJsonValidationErrors('training');
         $this->assertDatabaseHas('trainings', ['id' => $this->id(201), 'related_project_id' => $this->id(101)]);
+    }
+
+    public function test_project_covers_render_private_thumbnails_and_independent_staff_controls(): void
+    {
+        $this->project(101);
+        $photo = $this->id(900);
+        DB::table('media_photos')->insert(['id' => $photo, 'project_id' => $this->id(101), 'uploaded_by' => $this->id(1),
+            'request_id' => $this->id(901), 'object_prefix' => 'media/'.$this->id(902), 'input_sha256' => str_repeat('a', 64),
+            'state' => 'ready', 'image_format' => 'png', 'display_width' => 64, 'display_height' => 32,
+            'display_bytes' => 100, 'display_sha256' => str_repeat('b', 64), 'thumbnail_width' => 64,
+            'thumbnail_height' => 32, 'thumbnail_bytes' => 100, 'thumbnail_sha256' => str_repeat('c', 64)]);
+        foreach (['admin' => 1, 'field-officer' => 2] as $prefix => $actor) {
+            $this->identity = $this->id($actor);
+            $this->get('/'.$prefix.'/projects')->assertOk()->assertSee('data-project-cover-thumbnail', false)
+                ->assertSee(route($prefix.'.projects.cover.image', [$this->id(101), $photo, 'thumbnail']))
+                ->assertDontSee('/display')->assertDontSee('media/'.$this->id(902));
+            $this->get('/'.$prefix.'/projects/'.$this->id(101))->assertOk()->assertSee('data-cover-upload', false);
+            $this->get('/'.$prefix.'/projects/'.$this->id(101).'/edit')->assertOk()->assertSee('data-cover-upload', false)
+                ->assertSee('id="project-form"', false);
+        }
+        DB::table('projects')->update(['status' => 'completed']);
+        $this->get('/field-officer/projects/'.$this->id(101))->assertOk()->assertSee('data-project-cover', false)
+            ->assertDontSee('data-cover-upload', false);
     }
 
     public function test_project_register_filters_paginates_and_preserves_distinct_statuses(): void

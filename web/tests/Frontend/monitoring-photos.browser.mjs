@@ -23,6 +23,9 @@ const server = createServer(async (req, res) => {
         } else if (pathname === '/gallery.js') {
             res.setHeader('Content-Type', 'application/javascript');
             res.end(await readFile(path.join(web, 'resources/js/pages/monitoring-photos.js')));
+        } else if (pathname === '/components/photo-input.js') {
+            res.setHeader('Content-Type', 'application/javascript');
+            res.end(await readFile(path.join(web, 'resources/js/components/photo-input.js')));
         } else if (pathname === '/' + 'build/' + css) {
             res.setHeader('Content-Type', 'text/css');
             res.end(await readFile(path.join(web, 'public', 'build', css)));
@@ -68,6 +71,7 @@ try {
                 const token = request.postData()?.match(/name="request_id"\r\n\r\n([^\r]+)/)?.[1];
                 requestIds.push(token);
                 check(Boolean(token), kind + ': upload includes an idempotency UUID');
+                check(Boolean(request.headers()['x-csrf-token']), kind + ': component supplies the CSRF token');
                 check(!request.postData().includes('materials_revision') && !request.postData().includes('monitoring_date'), kind + ': upload excludes Monitoring drafts');
                 if (holdUpload) await new Promise(resolve => { release = resolve; });
                 if (failUpload) return route.fulfill({ status: 503, json: { message: 'Synthetic storage timeout. Refresh before retrying.' } });

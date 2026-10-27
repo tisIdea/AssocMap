@@ -1,14 +1,5 @@
-const MAX_BYTES = 5 * 1024 * 1024;
-
-export function photoInputError(file) {
-    if (!file) return 'Choose a JPEG or PNG photo.';
-    if (file.size > MAX_BYTES) return 'Each photo must be at most 5 MiB.';
-    if (!(/\.jpe?g$/i.test(file.name) && file.type === 'image/jpeg')
-        && !(/\.png$/i.test(file.name) && file.type === 'image/png')) {
-        return 'Choose a JPEG or PNG with a matching file extension.';
-    }
-    return '';
-}
+import { photoInputError } from '../components/photo-input.js';
+export { photoInputError } from '../components/photo-input.js';
 
 export function initMonitoringPhotos(scope = document) {
     scope.querySelectorAll('[data-monitoring-photos]').forEach(root => {
@@ -41,7 +32,7 @@ export function initMonitoringPhotos(scope = document) {
         const request = async (url, method = 'GET', body = undefined) => {
             const response = await fetch(url, {
                 method, body, credentials: 'same-origin', cache: 'no-store',
-                headers: { Accept: 'application/json', 'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]')?.content || '' },
+                headers: { Accept: 'application/json', 'X-CSRF-TOKEN': root.dataset.csrf || document.querySelector('meta[name=csrf-token]')?.content || '' },
             });
             if (response.redirected) throw new Error('Your session changed. Sign in again and refresh this page.');
             const result = await response.json().catch(() => ({}));

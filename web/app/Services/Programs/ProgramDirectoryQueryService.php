@@ -2,6 +2,7 @@
 
 namespace App\Services\Programs;
 
+use App\Models\MediaPhoto;
 use App\Models\Project;
 use App\Models\ProgramActivityRecord;
 use App\Models\Training;
@@ -91,6 +92,8 @@ class ProgramDirectoryQueryService
         if ($module === 'projects') {
             $query->select(['id', 'association_id', 'title', 'program_year', 'implementation_start_date', 'implementation_end_date',
                 'fisheries_category_id', 'commodity_id', 'status', 'archived_at', 'closed_at'])
+                ->addSelect(['cover_photo_id' => MediaPhoto::select('id')->whereColumn('project_id', 'projects.id')
+                    ->where('state', 'ready')->limit(1)])
                 ->with([...$relations, 'fisheriesCategory:id,name', 'commodity:id,name']);
         } elseif ($module === 'trainings') {
             $query->select(['id', 'association_id', 'related_project_id', 'saad_activity_id', 'title', 'program_year',

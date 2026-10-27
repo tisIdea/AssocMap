@@ -19,6 +19,7 @@
             :filters="['association_id' => $project->association_id, 'project_id' => $project->id, 'program_year' => (int) $project->program_year]"
             :scope="'Selected project: '.$project->title.'. Program year '.$project->program_year.'. Current portfolio snapshot; no event reporting period. Materials, deliveries, monitoring and private documents are not included. Register filters do not apply.'" />
     </header>
+    @include('projects.partials.cover', ['canManage' => $canEdit])
     @php($closureErrors = $errors->getBag('projectClosure'))
     @php($terminationErrors = $errors->getBag('projectTermination'))
     @if(!$canClose && $closureErrors->any())<div class="notice notice-error" role="alert"><ul>@foreach($closureErrors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>@endif
