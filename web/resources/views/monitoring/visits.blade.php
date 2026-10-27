@@ -17,6 +17,7 @@
                     <dl class="monitoring-visit-notes">
                         @foreach(['issues_encountered' => 'Issues Encountered', 'actions_taken' => 'Actions Taken', 'overall_remarks' => 'Overall Remarks'] as $field => $label)<div><dt>{{ $label }}</dt><dd>{{ filled($report->$field) ? $report->$field : 'Not recorded' }}</dd></div>@endforeach
                     </dl>
+                    @include('monitoring.partials.photos', ['photoKind' => 'visits', 'photoParent' => $report])
                     @if($report->is_legacy_import)<p class="field-hint">Retained historical visit report.</p>@endif
                 </article>
             @empty<p class="monitoring-empty">{{ $filters['search'] !== '' || $filters['validated'] !== '' ? 'No Visit Reports match these filters.' : 'No Visit Reports recorded.' }}</p>@endforelse

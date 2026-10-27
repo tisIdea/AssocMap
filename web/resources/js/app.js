@@ -46,3 +46,7 @@ if (gisRoot) {
         status.dataset.feedbackFallback = '';
     });
 }
+
+if (document.querySelector('[data-monitoring-photos]')) {
+    import('./pages/monitoring-photos.js').then(({ initMonitoringPhotos }) => initMonitoringPhotos());
+}

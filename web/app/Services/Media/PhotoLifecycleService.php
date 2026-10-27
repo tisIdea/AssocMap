@@ -150,6 +150,76 @@ final class PhotoLifecycleService
             ->get()->map(fn ($photo) => $this->metadata($photo))->all());
     }
 
+    /** Stage and verify one variant before sending headers; storage I/O holds no DB locks. */
+    public function open(string $id, string $variant, Closure $authorize): array
+    {
+        $this->outsideTransaction();
+        if (! in_array($variant, ['thumbnail', 'display'], true)) {
+            throw new MediaLifecycleException('invalid_photo');
+        }
+        $row = $this->find($id);
+        $parent = $this->parentOf($row);
+        $ready = function () use ($id): MediaPhoto {
+            $row = $this->find($id, true);
+            if ($row->state !== 'ready') {
+                throw new MediaLifecycleException('photo_not_ready');
+            }
+
+            return $row;
+        };
+        $row = $this->withParent($parent, 'read', $authorize, $ready);
+        if ($row->{$variant.'_bytes'} < 1 || $row->{$variant.'_bytes'} > PhotoRules::MAX_BYTES) {
+            throw new MediaLifecycleException('photo_unavailable');
+        }
+        $source = null;
+        $output = null;
+        set_error_handler(static fn () => throw new MediaLifecycleException('photo_unavailable'));
+        try {
+            $source = Storage::disk('media_private')->readStream($this->keys($row)[$variant]);
+            $output = tmpfile();
+            if (! is_resource($source) || ! is_resource($output)) {
+                throw new MediaLifecycleException('photo_unavailable');
+            }
+            $hash = hash_init('sha256');
+            $bytes = 0;
+            while (! feof($source)) {
+                $chunk = fread($source, 65536);
+                if ($chunk === false || ($chunk === '' && ! feof($source))) {
+                    throw new MediaLifecycleException('photo_unavailable');
+                }
+                $bytes += strlen($chunk);
+                if ($bytes > $row->{$variant.'_bytes'} || fwrite($output, $chunk) !== strlen($chunk)) {
+                    throw new MediaLifecycleException('photo_unavailable');
+                }
+                hash_update($hash, $chunk);
+            }
+            if ($bytes !== $row->{$variant.'_bytes'} || ! hash_equals($row->{$variant.'_sha256'}, hash_final($hash))) {
+                throw new MediaLifecycleException('photo_unavailable');
+            }
+            rewind($output);
+        } catch (Throwable) {
+            if (is_resource($output)) {
+                fclose($output);
+            }
+            throw new MediaLifecycleException('photo_unavailable');
+        } finally {
+            if (is_resource($source)) {
+                fclose($source);
+            }
+            restore_error_handler();
+        }
+        try {
+            // Reassignment, revocation or withdrawal during a slow read must deny delivery.
+            $this->withParent($parent, 'read', $authorize, $ready);
+        } catch (Throwable $exception) {
+            fclose($output);
+            throw $exception;
+        }
+
+        return ['stream' => $output, 'bytes' => $bytes, 'extension' => $row->image_format,
+            'mime_type' => $row->image_format === 'jpg' ? 'image/jpeg' : 'image/png'];
+    }
+
     public function reorder(Model $parent, array $ids, Request $request, Closure $authorize): void
     {
         foreach ($ids as $id) {

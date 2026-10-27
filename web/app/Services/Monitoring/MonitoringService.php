@@ -1081,6 +1081,10 @@ class MonitoringService
             throw ValidationException::withMessages(['materials' => 'Each project material may have only one observation, including retained observations.']);
         }
 
+        if ($removedIds && \App\Models\MediaPhoto::whereIn('monitoring_material_id', $removedIds)->exists()) {
+            throw ValidationException::withMessages(['deleted_material_ids' =>
+                'An observation with photo history must be retained. Edit its condition or remarks instead.']);
+        }
         foreach ($removedIds as $id) $saved->get($id)->delete();
         foreach ($materials as $material) {
             $payload = [

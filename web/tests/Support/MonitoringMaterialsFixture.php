@@ -20,6 +20,9 @@ trait MonitoringMaterialsFixture
     private function schema(bool $withVersion = true): void
     {
         $this->incomeSchema();
+        Schema::create('gis_locations', function (Blueprint $table) { $table->uuid('id')->primary(); });
+        (require database_path('migrations/2026_10_27_000000_add_media_photos.php'))->up();
+
         Schema::table('monitoring_records', function (Blueprint $table) use ($withVersion) {
             if ($withVersion) $table->bigInteger('materials_version')->default(0);
             $table->uuid('created_by')->nullable();

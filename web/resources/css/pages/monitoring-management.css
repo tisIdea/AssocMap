@@ -143,3 +143,23 @@
     .monitoring-management .monitoring-context .detail-grid { grid-template-columns: minmax(0, 1fr); }
     .monitoring-management .monitoring-pagination { flex-direction: column; align-items: flex-start; }
 }
+
+.monitoring-photos { margin-top: 18px; border-top: 1px solid var(--border-color); padding-top: 14px; }
+.monitoring-photos summary { cursor: pointer; font-weight: 600; padding-block: 10px; }
+.monitoring-photos summary span { margin-left: 8px; color: var(--text-secondary); font-size: 12px; }
+.monitoring-photo-body { display: grid; gap: 14px; min-width: 0; }
+.monitoring-photo-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr)); gap: 12px; }
+.monitoring-photo-grid figure { margin: 0; display: grid; gap: 8px; align-content: start; max-width: 320px; min-width: 0; }
+.monitoring-photo-grid figure > button:first-child { display: grid; gap: 8px; width: 100%; white-space: normal; }
+.monitoring-photo-grid img { width: 100%; height: 120px; object-fit: cover; border-radius: var(--radius-sm); }
+.monitoring-photo-pending { display: grid; gap: 12px; padding-left: 20px; overflow-wrap: anywhere; }
+.monitoring-photo-pending:empty { display: none; }
+.monitoring-photo-pending button { margin: 6px; }
+.monitoring-photo-body form { display: grid; justify-items: start; gap: 10px; min-width: 0; }
+.monitoring-photo-body input { width: 100%; max-width: 100%; }
+.monitoring-photo-preview { max-width: 240px; max-height: 180px; object-fit: contain; }
+.monitoring-photo-dialog { padding: 22px; width: min(960px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow: auto; border: 1px solid var(--border-color); border-radius: var(--radius-md); }
+.monitoring-photo-dialog::backdrop { background: rgb(0 0 0 / 60%); }
+.monitoring-photo-dialog img { display: block; max-width: 100%; max-height: 75dvh; margin: 12px auto; object-fit: contain; }
+.monitoring-photo-dialog p { margin-block: 14px; }
+.monitoring-photos [hidden] { display: none; }

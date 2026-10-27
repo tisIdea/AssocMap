@@ -12,6 +12,19 @@ foreach (['admin' => 'system_admin', 'field-officer' => 'field_officer', 'associ
                 Route::get('/', [$controller, 'index'])->name('index');
             }
             if ($role !== 'association_account') {
+                $photos = \App\Http\Controllers\MonitoringPhotoController::class;
+                Route::prefix('/{monitoringRecord}/photos/{kind}/{parentId}')
+                    ->whereUuid(['monitoringRecord', 'parentId'])->whereIn('kind', ['visits', 'materials'])
+                    ->name('photos.')->group(function () use ($photos) {
+                        Route::get('/', [$photos, 'index'])->name('index');
+                        Route::post('/', [$photos, 'store'])->middleware('throttle:30,1')->name('store');
+                        Route::delete('/{photoId}', [$photos, 'destroy'])->whereUuid('photoId')->name('destroy');
+                        Route::post('/{photoId}/reconcile', [$photos, 'reconcile'])->whereUuid('photoId')
+                            ->middleware('throttle:30,1')->name('reconcile');
+                        Route::get('/{photoId}/{variant}', [$photos, 'image'])->whereUuid('photoId')
+                            ->whereIn('variant', ['thumbnail', 'display'])->name('image');
+                    });
+
                 Route::get('/create', [$controller, 'createPage'])->name('create');
                 Route::post('/{monitoringRecord}/daily-production', [$controller, 'initializeHarvest'])->whereUuid('monitoringRecord')->name('harvest.initialize');
                 Route::post('/{monitoringRecord}/production/{productionId}/harvests', [$controller, 'saveHarvest'])->whereUuid(['monitoringRecord', 'productionId'])->name('harvest.store');
