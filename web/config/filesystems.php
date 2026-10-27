@@ -70,6 +70,22 @@ return [
             'report' => false,
         ],
 
+        'media_private' => [
+            'driver' => 'media_private_s3',
+            'key' => env('MEDIA_PRIVATE_ACCESS_KEY_ID'),
+            'secret' => env('MEDIA_PRIVATE_SECRET_ACCESS_KEY'),
+            'region' => env('MEDIA_PRIVATE_REGION'),
+            'bucket' => env('MEDIA_PRIVATE_BUCKET'),
+            'endpoint' => env('MEDIA_PRIVATE_ENDPOINT'),
+            'use_path_style_endpoint' => env('MEDIA_PRIVATE_USE_PATH_STYLE_ENDPOINT', false),
+            'connect_timeout' => env('MEDIA_PRIVATE_CONNECT_TIMEOUT', 5),
+            'timeout' => env('MEDIA_PRIVATE_TIMEOUT', 30),
+            'visibility' => 'private',
+            'directory_visibility' => 'private',
+            'throw' => true,
+            'report' => false,
+        ],
+
     ],
 
     /*
