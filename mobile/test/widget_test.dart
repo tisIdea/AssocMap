@@ -1,3 +1,4 @@
+import 'support/test_tile_provider.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -35,13 +36,12 @@ void main() {
   }) async {
     await tester.pumpWidget(
       AssocMapApp(
+        tileProviderFactory: TestTileProvider.new,
         config: AppConfig(mode: mode),
         publicProjects: repository ?? _Repository(() async => projects),
       ),
     );
     await tester.ensureVisible(find.text('Explore map'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Explore map'));
     await tester.pumpAndSettle();
   }
 
@@ -51,7 +51,8 @@ void main() {
       await openMap(tester);
       expect(find.byType(FlutterMap), findsOneWidget);
       expect(find.text('No login required'), findsOneWidget);
-      expect(find.text('Demo mode · Synthetic data only'), findsOneWidget);
+      expect(find.text('Demo mode · Synthetic data only'), findsNothing);
+      expect(find.byType(TileLayer), findsOneWidget);
       expect(
         tester.widget<MarkerLayer>(find.byType(MarkerLayer)).markers,
         hasLength(3),
@@ -168,6 +169,7 @@ void main() {
     final completer = Completer<List<PublicProject>>();
     await tester.pumpWidget(
       AssocMapApp(
+        tileProviderFactory: TestTileProvider.new,
         config: const AppConfig(),
         publicProjects: _Repository(() => completer.future),
       ),
@@ -206,25 +208,23 @@ void main() {
     },
   );
 
-  testWidgets('Live GIS without a URL fails closed and never shows mock records', (
-    tester,
-  ) async {
-    const config = AppConfig(mode: DataMode.api);
-    await openMap(
-      tester,
-      mode: DataMode.api,
-      repository: RepositoryFactory.publicProjects(config),
-    );
-    expect(
-      find.textContaining('Live GIS is not configured'),
-      findsOneWidget,
-    );
-    expect(find.byType(FlutterMap), findsNothing);
-    expect(find.text('Demo Coastal Grow-Out'), findsNothing);
-    await tester.tap(find.text('Retry'));
-    await tester.pumpAndSettle();
-    expect(find.byType(FlutterMap), findsNothing);
-  });
+  testWidgets(
+    'Live GIS without a URL fails closed and never shows mock records',
+    (tester) async {
+      const config = AppConfig(mode: DataMode.api);
+      await openMap(
+        tester,
+        mode: DataMode.api,
+        repository: RepositoryFactory.publicProjects(config),
+      );
+      expect(find.textContaining('Live GIS is not configured'), findsOneWidget);
+      expect(find.byType(FlutterMap), findsNothing);
+      expect(find.text('Demo Coastal Grow-Out'), findsNothing);
+      await tester.tap(find.text('Retry'));
+      await tester.pumpAndSettle();
+      expect(find.byType(FlutterMap), findsNothing);
+    },
+  );
 
   testWidgets('Invalid configuration fails closed', (tester) async {
     const config = AppConfig(mode: DataMode.invalid);
@@ -233,7 +233,10 @@ void main() {
       mode: DataMode.invalid,
       repository: RepositoryFactory.publicProjects(config),
     );
-    expect(find.textContaining('Invalid GIS mode'), findsOneWidget);
+    expect(
+      find.textContaining('The public map is currently unavailable'),
+      findsOneWidget,
+    );
     expect(find.byType(FlutterMap), findsNothing);
   });
 
@@ -242,6 +245,7 @@ void main() {
   ) async {
     await tester.pumpWidget(
       AssocMapApp(
+        tileProviderFactory: TestTileProvider.new,
         config: const AppConfig(),
         publicProjects: _Repository(() async => projects),
       ),
@@ -256,7 +260,7 @@ void main() {
     await tester.tap(find.text('Open public map'));
     await tester.pumpAndSettle();
     expect(find.byType(FlutterMap), findsOneWidget);
-    await tester.pageBack();
+    await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
     expect(find.text('Explore map'), findsOneWidget);
   });

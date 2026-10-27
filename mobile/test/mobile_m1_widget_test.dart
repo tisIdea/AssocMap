@@ -1,3 +1,4 @@
+import 'support/test_tile_provider.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -9,11 +10,17 @@ import 'package:mobile/app/app.dart';
 import 'package:mobile/app/routing/app_routes.dart';
 import 'package:mobile/core/networking/laravel_api_client.dart';
 import 'package:mobile/data/remote/api_auth_repository.dart';
-import 'package:mobile/data/mock/mock_public_projects_repository.dart';
+import 'package:mobile/data/models/public_project.dart';
+import 'package:mobile/data/repositories/public_projects_repository.dart';
 import 'package:mobile/features/account/association_home_screen.dart';
 
 import 'mobile_m1_auth_test.dart' show config, me, json, providerSession;
 import 'association_dashboard_test.dart' show dashboard;
+
+class _EmptyPublicRepository implements PublicProjectsRepository {
+  @override
+  Future<List<PublicProject>> getPublicProjects() async => [];
+}
 
 void main() {
   late GoTrueClient provider;
@@ -49,8 +56,9 @@ void main() {
   Future<void> open(WidgetTester tester) async {
     await tester.pumpWidget(
       AssocMapApp(
+        tileProviderFactory: TestTileProvider.new,
         config: config,
-        publicProjects: MockPublicProjectsRepository(),
+        publicProjects: _EmptyPublicRepository(),
         authentication: repository,
       ),
     );
@@ -86,7 +94,13 @@ void main() {
       expect(find.byType(AssociationHomeScreen), findsOneWidget);
       expect(find.text('Official members'), findsOneWidget);
       expect(find.text('Synthetic association'), findsWidgets);
-      await tester.tap(find.byTooltip('Sign out'));
+      await tester.tap(find.byKey(const ValueKey('workspace-tab-4')));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(
+        find.widgetWithText(OutlinedButton, 'Sign out'),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(OutlinedButton, 'Sign out'));
       await tester.pumpAndSettle();
       await tester.tap(find.widgetWithText(FilledButton, 'Sign out').last);
       await tester.pumpAndSettle();

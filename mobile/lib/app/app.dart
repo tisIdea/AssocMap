@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'dart:async';
 
 import '../core/widgets/feedback_panel.dart';
@@ -13,7 +14,6 @@ import '../data/remote/api_auth_repository.dart';
 import '../data/remote/api_dashboard_repository.dart';
 import '../data/remote/api_analytics_repository.dart';
 import '../features/public_map/public_map_screen.dart';
-import '../features/welcome/welcome_screen.dart';
 import 'configuration/app_config.dart';
 import 'routing/app_routes.dart';
 import 'theme/app_theme.dart';
@@ -26,6 +26,7 @@ class AssocMapApp extends StatefulWidget {
     this.authentication,
     this.analytics,
     this.dashboard,
+    this.tileProviderFactory,
   });
 
   final AppConfig config;
@@ -33,6 +34,7 @@ class AssocMapApp extends StatefulWidget {
   final AuthRepository? authentication;
   final AnalyticsRepository? analytics;
   final DashboardRepository? dashboard;
+  final TileProvider Function()? tileProviderFactory;
 
   @override
   State<AssocMapApp> createState() => _AssocMapAppState();
@@ -92,10 +94,15 @@ class _AssocMapAppState extends State<AssocMapApp> with WidgetsBindingObserver {
     theme: AppTheme.light,
     initialRoute: AppRoutes.home,
     routes: {
-      AppRoutes.home: (_) => WelcomeScreen(config: widget.config),
+      AppRoutes.home: (_) => PublicMapScreen(
+        config: widget.config,
+        repository: widget.publicProjects,
+        tileProvider: widget.tileProviderFactory?.call(),
+      ),
       AppRoutes.publicMap: (_) => PublicMapScreen(
         config: widget.config,
         repository: widget.publicProjects,
+        tileProvider: widget.tileProviderFactory?.call(),
       ),
       AppRoutes.associationAccess: (_) => AssociationGuard(
         config: widget.config,
@@ -117,7 +124,7 @@ class _AssocMapAppState extends State<AssocMapApp> with WidgetsBindingObserver {
           icon: Icons.lock_outline,
           title: 'This page is unavailable',
           message:
-              'Association workflows will be added after the next phase is reviewed.',
+              'This page could not be found. Return to the public map to continue.',
           actionLabel: 'Return home',
           onAction: () => Navigator.of(
             context,

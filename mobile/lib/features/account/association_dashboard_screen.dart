@@ -1,11 +1,19 @@
 import 'package:flutter/material.dart';
-
-import '../../core/widgets/feedback_panel.dart';
-import '../../data/models/association_dashboard.dart';
+import '../../app/theme/app_theme.dart';
+import '../../core/widgets/assocmap_widgets.dart';
 import '../../data/models/auth_session.dart';
+import '../../data/models/association_dashboard.dart';
 import '../../data/repositories/dashboard_repository.dart';
+import 'association_data_view.dart';
 
-class AssociationDashboardScreen extends StatefulWidget {
+int? dashboardCount(AssociationDashboard data, String key) {
+  for (final metric in data.metrics) {
+    if (metric.key == key) return metric.value;
+  }
+  return null;
+}
+
+class AssociationDashboardScreen extends StatelessWidget {
   const AssociationDashboardScreen({
     super.key,
     required this.repository,
@@ -13,365 +21,232 @@ class AssociationDashboardScreen extends StatefulWidget {
     required this.onSessionExpired,
     required this.onOpenReports,
     required this.onOpenMap,
+    this.onOpenSection,
   });
   final DashboardRepository repository;
   final AuthSession session;
   final VoidCallback onSessionExpired;
   final VoidCallback onOpenReports;
   final VoidCallback onOpenMap;
-
+  final ValueChanged<String>? onOpenSection;
   @override
-  State<AssociationDashboardScreen> createState() =>
-      _AssociationDashboardScreenState();
-}
-
-class _AssociationDashboardScreenState
-    extends State<AssociationDashboardScreen> {
-  AssociationDashboard? _data;
-  DashboardFailure? _failure;
-  bool _loading = true;
-  int _operation = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  @override
-  void didUpdateWidget(covariant AssociationDashboardScreen oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.repository != widget.repository ||
-        oldWidget.session != widget.session) {
-      _load();
-    }
-  }
-
-  Future<void> _load() async {
-    final operation = ++_operation;
-    setState(() {
-      _loading = true;
-      _data = null;
-      _failure = null;
-    });
-    try {
-      if (widget.session.isDemo) {
-        throw const DashboardFailure(DashboardFailureKind.integration);
-      }
-      if (widget.session.association?.isValid != true) {
-        throw const DashboardFailure(DashboardFailureKind.denied);
-      }
-      final data = await widget.repository.load();
-      if (!mounted || operation != _operation) return;
-      if (data.associationId != widget.session.association?.id) {
-        throw const DashboardFailure(DashboardFailureKind.denied);
-      }
-      setState(() => _data = data);
-    } on DashboardFailure catch (error) {
-      if (!mounted || operation != _operation) return;
-      setState(() => _failure = error);
-      if (error.kind == DashboardFailureKind.expired) widget.onSessionExpired();
-    } catch (_) {
-      if (mounted && operation == _operation) {
-        setState(
-          () => _failure = const DashboardFailure(
-            DashboardFailureKind.unavailable,
-          ),
-        );
-      }
-    } finally {
-      if (mounted && operation == _operation) setState(() => _loading = false);
-    }
-  }
-
-  Widget _panel(String title, List<Widget> children) => Card(
-    child: Padding(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(title, style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 12),
-          ...children,
-        ],
-      ),
-    ),
-  );
-
-  Widget _line(String label, Object? value) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 6),
-    child: Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(child: Text(label)),
-        const SizedBox(width: 16),
-        Flexible(
-          child: Text(
-            value?.toString() ?? 'Unavailable',
-            textAlign: TextAlign.end,
-            style: const TextStyle(fontWeight: FontWeight.w600),
-          ),
-        ),
-      ],
-    ),
-  );
-
-  @override
-  Widget build(BuildContext context) {
-    if (_loading) {
-      return const Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            CircularProgressIndicator(),
-            SizedBox(height: 16),
-            Text('Loading association dashboard…'),
-          ],
-        ),
-      );
-    }
-    final failure = _failure;
-    if (failure != null) {
-      return FeedbackPanel(
-        icon: failure.kind == DashboardFailureKind.denied
-            ? Icons.lock_outline
-            : Icons.cloud_off_outlined,
-        title: failure.kind == DashboardFailureKind.integration
-            ? 'Dashboard connection unavailable'
-            : 'Dashboard unavailable',
-        message: failure.message,
-        actionLabel: failure.kind == DashboardFailureKind.integration
-            ? 'Explore public map'
-            : 'Retry',
-        onAction: failure.kind == DashboardFailureKind.integration
-            ? widget.onOpenMap
-            : _load,
-      );
-    }
-    final data = _data;
-    if (data == null) {
-      return const FeedbackPanel(
-        icon: Icons.info_outline,
-        title: 'No dashboard records',
-        message: 'Refresh after your association access has been confirmed.',
-      );
-    }
-    final manila = data.generatedAt
-        .toUtc()
-        .add(const Duration(hours: 8))
-        .toIso8601String()
-        .substring(0, 16)
-        .replaceFirst('T', ' ');
-    return RefreshIndicator(
-      onRefresh: _load,
-      child: ListView(
+  Widget build(BuildContext context) => AssociationDataView(
+    repository: repository,
+    session: session,
+    onSessionExpired: onSessionExpired,
+    builder: (data, refresh) => RefreshIndicator(
+      onRefresh: refresh,
+      child: SingleChildScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.all(16),
-        children: [
-          Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 900),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _panel(data.name, [
-                    Text('${data.municipality} · ${data.status}'),
-                    const SizedBox(height: 8),
-                    Text('Updated $manila · Asia/Manila'),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'Only your authorized association records. Pull down to refresh.',
-                    ),
-                  ]),
-                  LayoutBuilder(
-                    builder: (context, constraints) {
-                      final columns = constraints.maxWidth >= 650
-                          ? 3
-                          : (constraints.maxWidth >= 440 ? 2 : 1);
-                      final width =
-                          (constraints.maxWidth - (columns - 1) * 12) / columns;
-                      return Wrap(
-                        spacing: 12,
-                        runSpacing: 12,
-                        children: [
-                          for (final metric in data.metrics)
-                            SizedBox(
-                              width: width,
-                              child: Card(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 760),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Maayong adlaw!',
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Your association at a glance',
+                  style: TextStyle(color: AppTheme.muted),
+                ),
+                const SizedBox(height: 18),
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: AppTheme.blue,
+                    borderRadius: BorderRadius.circular(20),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppTheme.blue.withValues(alpha: .15),
+                        blurRadius: 14,
+                        offset: const Offset(0, 6),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Text(
+                        'YOUR ASSOCIATION',
+                        style: TextStyle(fontSize: 11, color: Colors.white),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        data.name,
+                        style: const TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        data.municipality,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 13,
+                        ),
+                      ),
+                      const Divider(color: Colors.white24),
+                      MetricStrip(
+                        inverse: true,
+                        values: {
+                          'Members': dashboardCount(data, 'members_total'),
+                          'Pending': data.applications?['pending'],
+                          'Projects': dashboardCount(data, 'projects_total'),
+                          'Trainings': data.training?.records,
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+                const ReadOnlyNotice(
+                  message:
+                      'Member records are read-only. Registrations are subject to Field Officer review.',
+                  icon: Icons.info_outline,
+                ),
+                const SectionHeading('Quick access'),
+                LayoutBuilder(
+                  builder: (context, box) {
+                    final columns = box.maxWidth >= 600 ? 3 : 2;
+                    final entries = <(String, String, IconData, VoidCallback)>[
+                      (
+                        'Association',
+                        'Official profile',
+                        Icons.apartment,
+                        () => onOpenSection?.call('association'),
+                      ),
+                      (
+                        'Members',
+                        'Members & registrations',
+                        Icons.groups_outlined,
+                        () => onOpenSection?.call('members'),
+                      ),
+                      (
+                        'Programs',
+                        'Project summaries',
+                        Icons.map_outlined,
+                        () => onOpenSection?.call('projects'),
+                      ),
+                      (
+                        'Trainings',
+                        'Learning activities',
+                        Icons.school_outlined,
+                        () => onOpenSection?.call('trainings'),
+                      ),
+                      (
+                        'Production',
+                        'Read-only monitoring',
+                        Icons.bar_chart,
+                        () => onOpenSection?.call('production'),
+                      ),
+                      (
+                        'Reports',
+                        'Reports & Analytics',
+                        Icons.analytics_outlined,
+                        onOpenReports,
+                      ),
+                    ];
+                    return Wrap(
+                      spacing: 12,
+                      runSpacing: 12,
+                      children: [
+                        for (final item in entries)
+                          SizedBox(
+                            width:
+                                (box.maxWidth - 12 * (columns - 1)) / columns,
+                            child: Card(
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(16),
+                                onTap: item.$4,
                                 child: Padding(
-                                  padding: const EdgeInsets.all(20),
+                                  padding: const EdgeInsets.all(16),
                                   child: Column(
                                     crossAxisAlignment:
                                         CrossAxisAlignment.start,
                                     children: [
-                                      Text(
-                                        metric.label,
-                                        style: Theme.of(
-                                          context,
-                                        ).textTheme.titleSmall,
-                                      ),
+                                      Icon(item.$3, color: AppTheme.blue),
                                       const SizedBox(height: 12),
                                       Text(
-                                        metric.value?.toString() ??
-                                            'Unavailable',
+                                        item.$1,
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 3),
+                                      Text(
+                                        item.$2,
                                         style: Theme.of(
                                           context,
-                                        ).textTheme.headlineMedium,
+                                        ).textTheme.bodySmall,
                                       ),
-                                      const SizedBox(height: 8),
-                                      Text(metric.note),
                                     ],
                                   ),
                                 ),
                               ),
                             ),
-                        ],
-                      );
-                    },
+                          ),
+                      ],
+                    );
+                  },
+                ),
+                const SectionHeading('Association summary'),
+                InformationCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      for (final metric in data.metrics)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                metric.label,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              Text(
+                                metric.value?.toString() ?? 'Unavailable',
+                                style: const TextStyle(
+                                  color: AppTheme.blue,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              Text(
+                                metric.note,
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                            ],
+                          ),
+                        ),
+                      Text(
+                        'Updated ${data.generatedAt.toIso8601String()}',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 12),
-                  _panel('Quick actions', [
-                    Wrap(
-                      spacing: 12,
-                      runSpacing: 12,
-                      children: [
-                        FilledButton.icon(
-                          onPressed: widget.onOpenReports,
-                          icon: const Icon(Icons.analytics_outlined),
-                          label: const Text('Reports & Analytics'),
-                        ),
-                        OutlinedButton.icon(
-                          onPressed: widget.onOpenMap,
-                          icon: const Icon(Icons.map_outlined),
-                          label: const Text('Public GIS map'),
-                        ),
-                      ],
-                    ),
-                  ]),
-                  _panel('Member application status', [
-                    if (data.applications == null)
-                      const Text(
-                        'Application counts are temporarily unavailable.',
-                      )
-                    else ...[
-                      for (final entry in data.applications!.entries)
-                        _line(entry.key, entry.value),
-                    ],
-                    const SizedBox(height: 8),
-                    const Text(
-                      'Application review belongs to the Field Officer. These totals are separate from official membership.',
-                    ),
-                  ]),
-                  for (final chart in data.charts)
-                    _panel(chart?.title ?? 'Chart unavailable', [
-                      if (chart == null)
-                        const Text('This summary could not be read.')
-                      else ...[
-                        Text(chart.note),
-                        if (chart.rows.isEmpty)
-                          const Text('No matching records.'),
-                        for (final row in chart.rows)
-                          _line(row.label, row.value),
-                      ],
-                    ]),
-                  _panel('Training history', [
-                    if (data.training == null)
-                      const Text(
-                        'Training summaries are temporarily unavailable.',
-                      )
-                    else ...[
-                      _line('Recorded activities', data.training!.records),
-                      _line('Completed activities', data.training!.completed),
-                      _line(
-                        'Distinct members marked present',
-                        data.training!.distinctPresentMembers,
-                      ),
-                    ],
-                    const SizedBox(height: 8),
-                    const Text(
-                      'All dates, including archived training/member history. People are counted once across present attendance records.',
-                    ),
-                  ]),
-                  _panel('Monitoring overview', [
-                    if (data.monitoring == null)
-                      const Text(
-                        'Monitoring summaries are temporarily unavailable.',
-                      )
-                    else ...[
-                      _line('Quarterly records', data.monitoring!.records),
-                      _line('Year / quarter periods', data.monitoring!.periods),
-                      _line('Visit reports', data.monitoring!.visits),
-                      _line(
-                        'Legacy imported visits',
-                        data.monitoring!.legacyVisits,
-                      ),
-                    ],
-                    const SizedBox(height: 8),
-                    const Text(
-                      'All years for unarchived projects. Missing records are not completion failures.',
-                    ),
-                  ]),
-                  _panel('Recently registered projects', [
-                    if (data.projects == null)
-                      const Text('Project records are temporarily unavailable.')
-                    else if (data.projects!.isEmpty)
-                      const Text('No unarchived projects in this association.')
-                    else ...[
-                      for (final project in data.projects!)
-                        ListTile(
-                          contentPadding: EdgeInsets.zero,
-                          title: Text(project.title),
-                          subtitle: Text(
-                            'Program year ${project.programYear} · ${project.status}',
-                          ),
-                        ),
-                    ],
-                    const Text(
-                      'Up to six unarchived projects ordered by registration timestamp.',
-                    ),
-                  ]),
-                  _panel('Latest dated activities', [
-                    if (data.activities == null)
-                      const Text(
-                        'Activity records are temporarily unavailable.',
-                      )
-                    else if (data.activities!.isEmpty)
-                      const Text('No recorded activities.')
-                    else ...[
-                      for (final activity in data.activities!)
-                        ListTile(
-                          contentPadding: EdgeInsets.zero,
-                          title: Text(activity.title),
-                          subtitle: Text(
-                            '${activity.date} · ${activity.status}',
-                          ),
-                        ),
-                    ],
-                  ]),
-                  _panel('Latest dated monitoring records', [
-                    if (data.monitoring == null)
-                      const Text(
-                        'Monitoring records are temporarily unavailable.',
-                      )
-                    else if (data.monitoring!.recent.isEmpty)
-                      const Text('No quarterly monitoring records.')
-                    else ...[
-                      for (final record in data.monitoring!.recent)
-                        ListTile(
-                          contentPadding: EdgeInsets.zero,
-                          title: Text(record.title),
-                          subtitle: Text(
-                            '${record.year} · Q${record.quarter} · ${record.date}\nHistorical status: ${record.status}',
-                          ),
-                        ),
-                    ],
-                  ]),
-                ],
-              ),
+                ),
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  onPressed: onOpenMap,
+                  icon: const Icon(Icons.public),
+                  label: const Text('Open public map'),
+                ),
+              ],
             ),
           ),
-        ],
+        ),
       ),
-    );
-  }
+    ),
+  );
 }

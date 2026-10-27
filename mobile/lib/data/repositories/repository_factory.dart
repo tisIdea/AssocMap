@@ -1,4 +1,5 @@
 import '../../app/configuration/app_config.dart';
+import 'package:flutter/foundation.dart';
 import '../../core/errors/app_failure.dart';
 import '../../core/networking/public_gis_client.dart';
 import '../mock/demo_auth_repository.dart';
@@ -18,13 +19,15 @@ abstract final class RepositoryFactory {
       };
 
   static PublicProjectsRepository publicProjects(AppConfig config) =>
-      switch (config.gisMode) {
-        GisDataMode.mock => MockPublicProjectsRepository(),
-        GisDataMode.live => ApiPublicProjectsRepository(
-          PublicGisClient(baseUri: () => config.backendBaseUri),
-        ),
-        GisDataMode.invalid => const _InvalidConfigurationRepository(),
-      };
+      kReleaseMode && config.gisMode == GisDataMode.mock
+      ? const _InvalidConfigurationRepository()
+      : switch (config.gisMode) {
+          GisDataMode.mock => MockPublicProjectsRepository(),
+          GisDataMode.live => ApiPublicProjectsRepository(
+            PublicGisClient(baseUri: () => config.backendBaseUri),
+          ),
+          GisDataMode.invalid => const _InvalidConfigurationRepository(),
+        };
 }
 
 class _InvalidConfigurationRepository implements PublicProjectsRepository {
@@ -34,7 +37,7 @@ class _InvalidConfigurationRepository implements PublicProjectsRepository {
   Future<List<PublicProject>> getPublicProjects() async {
     throw const AppFailure(
       FailureKind.invalidConfiguration,
-      'Invalid GIS mode. Configure ASSOCMAP_GIS_MODE as mock or live.',
+      'The public map is currently unavailable. Please try again later.',
     );
   }
 }

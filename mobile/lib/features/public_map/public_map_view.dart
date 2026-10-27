@@ -3,6 +3,8 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../../app/configuration/app_config.dart';
+import '../../app/configuration/satellite_basemap.dart';
+import '../../core/networking/bounded_http_client.dart';
 import '../../data/models/public_gis_feature.dart';
 import '../../data/models/geo_boundary.dart';
 import '../../data/models/public_project.dart';
@@ -13,7 +15,7 @@ Color projectColor(String? category) => switch (category) {
   'Aquaculture' => const Color(0xFF2477A4),
   'Agriculture' => const Color(0xFF267247),
   'Processing' => const Color(0xFF8E5D29),
-  _ => const Color(0xFF176B66),
+  _ => const Color(0xFF0B4C8C),
 };
 
 class PublicMapView extends StatefulWidget {
@@ -28,6 +30,7 @@ class PublicMapView extends StatefulWidget {
     this.bounds,
     this.fitPadding = 64,
     this.onReady,
+    this.tileProvider,
   });
 
   final List<PublicProject> projects;
@@ -40,12 +43,24 @@ class PublicMapView extends StatefulWidget {
   final GisBounds? bounds;
   final double fitPadding;
   final VoidCallback? onReady;
+  final TileProvider? tileProvider;
 
   @override
   State<PublicMapView> createState() => _PublicMapViewState();
 }
 
 class _PublicMapViewState extends State<PublicMapView> {
+  final _tileClient = BoundedHttpClient(
+    timeout: const Duration(seconds: 15),
+    maxBytes: 1024 * 1024,
+  );
+  late final TileProvider _tiles =
+      widget.tileProvider ??
+      NetworkTileProvider(
+        httpClient: _tileClient,
+        attemptDecodeOfHttpErrorResponses: false,
+      );
+  bool _imageryUnavailable = false;
   final LayerHitNotifier<Object> _polygonHits = ValueNotifier(null);
   List<PublicProject> get projects => widget.projects;
   MapController get controller => widget.controller;
@@ -57,6 +72,7 @@ class _PublicMapViewState extends State<PublicMapView> {
   @override
   void dispose() {
     _polygonHits.dispose();
+    _tileClient.close();
     super.dispose();
   }
 
@@ -102,6 +118,8 @@ class _PublicMapViewState extends State<PublicMapView> {
         FlutterMap(
           mapController: controller,
           options: MapOptions(
+            initialCenter: _initialBounds.center,
+            initialZoom: 7,
             initialCameraFit: CameraFit.bounds(
               bounds: _initialBounds,
               padding: EdgeInsets.all(widget.fitPadding),
@@ -116,29 +134,19 @@ class _PublicMapViewState extends State<PublicMapView> {
             ),
           ),
           children: [
-            if (_mock)
-              PolylineLayer(
-                polylines: [
-                  for (var i = 0; i <= 30; i++) ...[
-                    Polyline(
-                      points: [
-                        LatLng(10.95 + i * .01, 124.8),
-                        LatLng(10.95 + i * .01, 125.1),
-                      ],
-                      color: const Color(0xFFC7D8D1),
-                      strokeWidth: 1,
-                    ),
-                    Polyline(
-                      points: [
-                        LatLng(10.95, 124.8 + i * .01),
-                        LatLng(11.25, 124.8 + i * .01),
-                      ],
-                      color: const Color(0xFFC7D8D1),
-                      strokeWidth: 1,
-                    ),
-                  ],
-                ],
-              ),
+            TileLayer(
+              urlTemplate: SatelliteBasemap.urlTemplate,
+              userAgentPackageName: 'com.assocmap.mobile',
+              tileProvider: _tiles,
+              errorTileCallback: (_, _, _) {
+                if (_imageryUnavailable) return;
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (mounted && !_imageryUnavailable) {
+                    setState(() => _imageryUnavailable = true);
+                  }
+                });
+              },
+            ),
             if (showBoundaries)
               GestureDetector(
                 onTap: () {
@@ -231,9 +239,9 @@ class _PublicMapViewState extends State<PublicMapView> {
               child: Padding(
                 padding: const EdgeInsets.all(10),
                 child: Text(
-                  _mock
-                      ? 'Offline demo grid · No street basemap'
-                      : 'Public GIS geometry · No street basemap configured',
+                  _imageryUnavailable
+                      ? 'Satellite imagery unavailable. Check your connection.'
+                      : 'Satellite map',
                   style: const TextStyle(fontSize: 12),
                 ),
               ),
@@ -281,9 +289,7 @@ class _PublicMapViewState extends State<PublicMapView> {
               child: Padding(
                 padding: const EdgeInsets.all(10),
                 child: Text(
-                  _mock
-                      ? 'Synthetic markers and boundaries · Not authoritative geography'
-                      : 'Published public locations · Select a marker, boundary, or list item',
+                  SatelliteBasemap.attribution,
                   style: const TextStyle(fontSize: 11),
                 ),
               ),
