@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import '../../app/configuration/app_config.dart';
 import '../../core/authentication/auth_failure.dart';
-import '../../core/widgets/data_mode_banner.dart';
 import '../../core/widgets/feedback_panel.dart';
 
 class AssociationDeniedScreen extends StatelessWidget {
@@ -24,7 +23,6 @@ class AssociationDeniedScreen extends StatelessWidget {
     body: SafeArea(
       child: Column(
         children: [
-          DataModeBanner(mode: config.mode),
           Expanded(
             child: FeedbackPanel(
               icon: Icons.lock_outline,

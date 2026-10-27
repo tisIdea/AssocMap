@@ -31,15 +31,15 @@ class AuthFailure implements Exception {
     AuthFailureCode.sessionExpired =>
       'Your session has expired. Please sign in again.',
     AuthFailureCode.integrationUnavailable =>
-      'Real mobile sign-in is not connected yet. Use the AssocMap web application while mobile integration is being completed.',
+      'Mobile sign-in is currently unavailable. Use the AssocMap web application.',
     AuthFailureCode.invalidConfiguration =>
-      'Mobile sign-in configuration is incomplete. Ask the administrator for a configured app build.',
+      'Mobile sign-in is currently unavailable. Please contact the system administrator.',
     AuthFailureCode.rateLimited =>
       'Too many requests. Please wait a minute before trying again.',
     AuthFailureCode.storageUnavailable =>
       'Secure session storage is unavailable. Please restart the app and try again.',
     AuthFailureCode.demoDisabled =>
-      'Demo authentication is disabled in release builds. Real mobile authentication must be verified before production use.',
+      'Mobile sign-in is unavailable with this configuration. Please contact the system administrator.',
     AuthFailureCode.unexpectedResponse =>
       'Unable to verify mobile access. Please try again or contact the system administrator.',
   };

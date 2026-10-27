@@ -7,7 +7,7 @@ and Field Officer accounts use the web application.
 
 ## Staging build
 
-From `C:\dev\AssocMap\mobile`:
+From this checkout's `mobile` directory:
 
 ```powershell
 flutter pub get
@@ -50,8 +50,24 @@ The Supabase URL must be the HTTPS project origin, without `/rest/v1`.
   retry after SDK refresh; a repeated 401 or 403 removes protected access.
   Outages retain their error state instead of becoming empty or synthetic data.
 
-The default unconfigured debug run remains the existing synthetic demo. Use
-the staging configuration explicitly for the evaluation APK.
+The default unconfigured run selects API mode and fails closed when required
+configuration is absent. Release mode also rejects an explicitly selected mock
+GIS repository. Synthetic identities and organizational records are not a live
+data fallback. Use the staging configuration explicitly for an evaluation APK.
+
+## Proposed mobile UI
+
+The public satellite map is the entry screen. The authenticated workspace follows
+the five destinations Home, Members, Programs, Register and Profile. See the
+[ten-page design comparison and missing backend contracts](../docs/mobile-proposed-ui-comparison.md).
+
+Satellite imagery is independent of Laravel business data. The default public
+Esri World Imagery URL and visible attribution can be replaced using
+`ASSOCMAP_SATELLITE_TILE_URL` and `ASSOCMAP_SATELLITE_ATTRIBUTION` at build time.
+Use an HTTPS tile service, retain the provider's required attribution, and confirm
+deployment usage terms and quotas. Tile requests carry no Laravel bearer token;
+they have separate 15-second / 1 MiB limits and no automatic transport retries.
+An imagery outage is displayed explicitly and does not substitute a street map.
 
 ## Verification
 

@@ -1,3 +1,4 @@
+import 'support/test_tile_provider.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -66,6 +67,7 @@ void main() {
   }) async {
     await tester.pumpWidget(
       AssocMapApp(
+        tileProviderFactory: TestTileProvider.new,
         config: AppConfig(mode: mode),
         publicProjects: _PublicRepository(publicProjects),
         authentication: authentication,
@@ -106,14 +108,14 @@ void main() {
     'Valid demo sign-in opens a minimal protected association shell',
     (tester) async {
       await openLogin(tester);
-      await tapVisible(tester, find.text('Fill demo credentials'));
+      await fill(tester);
       await tapVisible(tester, find.byKey(const ValueKey('sign-in-button')));
       expect(find.byType(AssociationHomeScreen), findsOneWidget);
       expect(find.text('Dashboard connection unavailable'), findsOneWidget);
-      await tester.tap(find.text('Account').last);
+      await tester.tap(find.byKey(const ValueKey('workspace-tab-4')));
       await tester.pumpAndSettle();
       expect(find.text('Demo Harbor Livelihood Association'), findsOneWidget);
-      expect(find.text('DEMO session'), findsOneWidget);
+      expect(find.text('DEMO session'), findsNothing);
     },
   );
 
@@ -245,7 +247,7 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('sign-in-button')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
-    expect(find.text('Signing in…'), findsOneWidget);
+    expect(find.text('Signing in...'), findsOneWidget);
     expect(
       tester
           .widget<FilledButton>(find.byKey(const ValueKey('sign-in-button')))
@@ -301,7 +303,7 @@ void main() {
     controller.expireSession();
     await tester.pumpAndSettle();
     expect(find.byType(FlutterMap), findsOneWidget);
-    await tester.pageBack();
+    await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
     expect(find.byType(AssociationHomeScreen), findsNothing);
     expect(
@@ -348,7 +350,7 @@ void main() {
         addTearDown(tester.view.resetPhysicalSize);
         addTearDown(tester.view.resetDevicePixelRatio);
         await openLogin(tester);
-        await tapVisible(tester, find.text('Fill demo credentials'));
+        await fill(tester);
         await tapVisible(tester, find.byKey(const ValueKey('sign-in-button')));
         expect(find.byType(AssociationHomeScreen), findsOneWidget);
         expect(tester.takeException(), isNull);

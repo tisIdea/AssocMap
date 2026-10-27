@@ -15,7 +15,7 @@ class AnalyticsFailure implements Exception {
 
   String get message => switch (kind) {
     AnalyticsFailureKind.integration =>
-      'Reports are unavailable until secure account sign-in is connected. Use your association web workspace.',
+      'Reports are currently unavailable. Use your association web workspace.',
     AnalyticsFailureKind.offline =>
       'Unable to connect. Check your internet connection and retry. Reports are not available offline.',
     AnalyticsFailureKind.expired => 'Your session expired. Sign in again.',

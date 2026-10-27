@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
-
 import '../../app/configuration/app_config.dart';
 import '../../app/routing/app_routes.dart';
+import '../../app/theme/app_theme.dart';
 import '../../core/authentication/auth_controller.dart';
 import '../../core/authentication/auth_failure.dart';
-import '../../core/widgets/data_mode_banner.dart';
+import '../../core/widgets/assocmap_widgets.dart';
 import 'association_denied_screen.dart';
 
 class AssociationAccessScreen extends StatefulWidget {
@@ -15,7 +15,6 @@ class AssociationAccessScreen extends StatefulWidget {
   });
   final AppConfig config;
   final AuthController controller;
-
   @override
   State<AssociationAccessScreen> createState() =>
       _AssociationAccessScreenState();
@@ -26,16 +25,7 @@ class _AssociationAccessScreenState extends State<AssociationAccessScreen> {
   final _email = TextEditingController();
   final _password = TextEditingController();
   final _passwordFocus = FocusNode();
-  String? _demoEmail;
   bool _obscure = true;
-
-  @override
-  void initState() {
-    super.initState();
-    final accounts = widget.controller.repository.demoAccounts;
-    if (accounts.isNotEmpty) _demoEmail = accounts.first.email;
-  }
-
   @override
   void dispose() {
     _password.clear();
@@ -61,19 +51,8 @@ class _AssociationAccessScreenState extends State<AssociationAccessScreen> {
   }
 
   void _publicMap() {
-    final navigator = Navigator.of(context);
     widget.controller.cancelSignIn();
-    navigator.pushReplacementNamed(AppRoutes.publicMap);
-  }
-
-  void _fillDemo() {
-    final repository = widget.controller.repository;
-    if (_demoEmail == null || repository.demoPasswordHint == null) return;
-    widget.controller.clearFailure();
-    setState(() {
-      _email.text = _demoEmail!;
-      _password.text = repository.demoPasswordHint!;
-    });
+    Navigator.of(context).pushReplacementNamed(AppRoutes.publicMap);
   }
 
   @override
@@ -93,93 +72,77 @@ class _AssociationAccessScreenState extends State<AssociationAccessScreen> {
         );
       }
       final enabled = repository.canAttemptSignIn && !controller.busy;
-      final accounts = repository.demoAccounts;
-      final hint = repository.demoPasswordHint;
       return Scaffold(
-        appBar: AppBar(title: const Text('Association sign-in')),
+        appBar: AppBar(
+          toolbarHeight: MediaQuery.textScalerOf(
+            context,
+          ).scale(56).clamp(56, 112),
+          backgroundColor: AppTheme.blue,
+          foregroundColor: Colors.white,
+          leading: IconButton(
+            tooltip: 'Back to public map',
+            onPressed: _publicMap,
+            icon: const Icon(Icons.arrow_back),
+          ),
+          title: const Text(
+            'Association login',
+            style: TextStyle(color: Colors.white),
+          ),
+        ),
         body: SafeArea(
-          child: Column(
-            children: [
-              DataModeBanner(mode: widget.config.mode),
-              Expanded(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(24),
-                  child: Center(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 520),
+          child: SingleChildScrollView(
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 520),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Container(
+                      color: AppTheme.blue,
+                      padding: const EdgeInsets.fromLTRB(24, 24, 24, 30),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const AssocMapMark(size: 48),
+                          const SizedBox(height: 18),
+                          const Text(
+                            'Welcome to AssocMap',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 26,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          Text(
+                            "Sign in to access your association's projects, activities and production data.",
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: .9),
+                              height: 1.5,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.all(20),
+                      decoration: const BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.vertical(
+                          top: Radius.circular(24),
+                        ),
+                      ),
                       child: Form(
                         key: _form,
                         child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            const Icon(Icons.groups_outlined, size: 40),
-                            const SizedBox(height: 16),
-                            Text(
-                              'Association Account',
-                              style: Theme.of(context).textTheme.headlineSmall,
-                            ),
-                            const SizedBox(height: 10),
-                            const Text(
-                              'Sign in with your association-linked account. The public GIS map remains available without login.',
-                              style: TextStyle(height: 1.5),
-                            ),
-                            const SizedBox(height: 20),
                             if (repository.signInBlocker != null) ...[
-                              _Notice(
+                              ReadOnlyNotice(
                                 message: repository.signInBlocker!,
-                                error: true,
-                              ),
-                              const SizedBox(height: 20),
-                            ],
-                            if (accounts.isNotEmpty) ...[
-                              const _Notice(
-                                message:
-                                    'DEMO authentication only. Use the synthetic identities below. '
-                                    'Do not enter genuine credentials. This demonstration does not provide real account security.',
+                                icon: Icons.info_outline,
                               ),
                               const SizedBox(height: 16),
-                              DropdownButtonFormField<String>(
-                                key: const ValueKey('demo-account-picker'),
-                                initialValue: _demoEmail,
-                                isExpanded: true,
-                                decoration: const InputDecoration(
-                                  labelText: 'Synthetic demo scenario',
-                                ),
-                                items: accounts
-                                    .map(
-                                      (account) => DropdownMenuItem(
-                                        value: account.email,
-                                        child: Text(
-                                          account.label,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ),
-                                    )
-                                    .toList(),
-                                onChanged: enabled
-                                    ? (value) {
-                                        controller.clearFailure();
-                                        setState(() {
-                                          _demoEmail = value;
-                                          _email.clear();
-                                          _password.clear();
-                                        });
-                                      }
-                                    : null,
-                              ),
-                              const SizedBox(height: 10),
-                              if (hint != null)
-                                Text(
-                                  'Synthetic demo password: $hint',
-                                  style: Theme.of(context).textTheme.bodySmall,
-                                ),
-                              const SizedBox(height: 10),
-                              OutlinedButton(
-                                onPressed: enabled ? _fillDemo : null,
-                                child: const Text('Fill demo credentials'),
-                              ),
-                              const SizedBox(height: 20),
                             ],
                             TextFormField(
                               key: const ValueKey('login-email'),
@@ -191,7 +154,7 @@ class _AssociationAccessScreenState extends State<AssociationAccessScreen> {
                               enableSuggestions: false,
                               maxLength: 255,
                               decoration: const InputDecoration(
-                                labelText: 'Email',
+                                labelText: 'Email address',
                                 prefixIcon: Icon(Icons.mail_outline),
                               ),
                               validator: (value) {
@@ -208,7 +171,7 @@ class _AssociationAccessScreenState extends State<AssociationAccessScreen> {
                                 return null;
                               },
                             ),
-                            const SizedBox(height: 12),
+                            const SizedBox(height: 10),
                             TextFormField(
                               key: const ValueKey('login-password'),
                               controller: _password,
@@ -229,9 +192,8 @@ class _AssociationAccessScreenState extends State<AssociationAccessScreen> {
                                       ? 'Show password'
                                       : 'Hide password',
                                   onPressed: enabled
-                                      ? () => setState(() {
-                                          _obscure = !_obscure;
-                                        })
+                                      ? () =>
+                                            setState(() => _obscure = !_obscure)
                                       : null,
                                   icon: Icon(
                                     _obscure
@@ -245,9 +207,15 @@ class _AssociationAccessScreenState extends State<AssociationAccessScreen> {
                                   ? 'Enter your password.'
                                   : null,
                             ),
-                            const SizedBox(height: 16),
+                            const SizedBox(height: 18),
                             if (failure != null) ...[
-                              _Notice(message: failure.message, error: true),
+                              Semantics(
+                                liveRegion: true,
+                                child: ReadOnlyNotice(
+                                  message: failure.message,
+                                  icon: Icons.error_outline,
+                                ),
+                              ),
                               if (failure.code ==
                                   AuthFailureCode.connectionUnavailable)
                                 TextButton(
@@ -259,72 +227,58 @@ class _AssociationAccessScreenState extends State<AssociationAccessScreen> {
                                 ),
                               const SizedBox(height: 16),
                             ],
-                            SizedBox(
-                              width: double.infinity,
-                              child: FilledButton(
-                                key: const ValueKey('sign-in-button'),
-                                onPressed: enabled ? _submit : null,
-                                child: controller.busy
-                                    ? const Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          SizedBox(
-                                            width: 18,
-                                            height: 18,
-                                            child: CircularProgressIndicator(
-                                              strokeWidth: 2,
-                                            ),
+                            FilledButton(
+                              key: const ValueKey('sign-in-button'),
+                              onPressed: enabled ? _submit : null,
+                              child: controller.busy
+                                  ? const Wrap(
+                                      spacing: 12,
+                                      crossAxisAlignment:
+                                          WrapCrossAlignment.center,
+                                      children: [
+                                        SizedBox(
+                                          width: 18,
+                                          height: 18,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            color: Colors.white,
                                           ),
-                                          SizedBox(width: 12),
-                                          Text('Signing in…'),
-                                        ],
-                                      )
-                                    : const Text('Sign in'),
-                              ),
+                                        ),
+                                        Text('Signing in...'),
+                                      ],
+                                    )
+                                  : const Text('Log in'),
                             ),
                             const SizedBox(height: 12),
-                            SizedBox(
-                              width: double.infinity,
-                              child: OutlinedButton.icon(
-                                onPressed: _publicMap,
-                                icon: const Icon(Icons.map_outlined),
-                                label: const Text('Open public map'),
+                            OutlinedButton.icon(
+                              onPressed: _publicMap,
+                              icon: const Icon(Icons.map_outlined),
+                              label: const Text('Open public map'),
+                            ),
+                            const SizedBox(height: 16),
+                            const ReadOnlyNotice(
+                              message:
+                                  'Accounts are provisioned by the system administrator. Account self-registration is not available.',
+                              icon: Icons.info_outline,
+                            ),
+                            const SizedBox(height: 24),
+                            const Center(
+                              child: Text(
+                                'AssocMap',
+                                style: TextStyle(color: AppTheme.muted),
                               ),
                             ),
-                            const SizedBox(height: 12),
                           ],
                         ),
                       ),
                     ),
-                  ),
+                  ],
                 ),
               ),
-            ],
+            ),
           ),
         ),
       );
     },
-  );
-}
-
-class _Notice extends StatelessWidget {
-  const _Notice({required this.message, this.error = false});
-  final String message;
-  final bool error;
-
-  @override
-  Widget build(BuildContext context) => Semantics(
-    liveRegion: error,
-    child: Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: error
-            ? Theme.of(context).colorScheme.errorContainer
-            : const Color(0xFFFDF0D4),
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: Text(message, style: const TextStyle(height: 1.5)),
-    ),
   );
 }

@@ -15,7 +15,7 @@ class DashboardFailure implements Exception {
 
   String get message => switch (kind) {
     DashboardFailureKind.integration =>
-      'Live dashboard records are unavailable until secure mobile sign-in is connected. Use your association web dashboard.',
+      'Dashboard records are currently unavailable. Use your association web workspace.',
     DashboardFailureKind.offline =>
       'Unable to connect. Check your connection and retry. Dashboard records are not stored offline.',
     DashboardFailureKind.expired => 'Your session expired. Sign in again.',

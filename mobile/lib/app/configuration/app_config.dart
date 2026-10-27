@@ -19,7 +19,7 @@ class AppConfig {
   const AppConfig.fromEnvironment()
     : _modeName = const String.fromEnvironment(
         'ASSOCMAP_DATA_MODE',
-        defaultValue: 'mock',
+        defaultValue: 'api',
       ),
       _explicitMode = null,
       _backendBaseUrl = const String.fromEnvironment(
