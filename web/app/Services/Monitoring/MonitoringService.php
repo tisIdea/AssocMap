@@ -11,9 +11,9 @@ use App\Models\Project;
 use App\Models\ProjectMaterial;
 use App\Models\ProjectProduct;
 use App\Models\Quarter;
-use App\Models\Role;
 use App\Models\UserProfile;
 use App\Services\Associations\AssociationLifecycleService;
+use App\Services\Programs\ProgramActorService;
 use App\Services\Projects\ProjectLifecycleService;
 use App\Services\Projects\ProjectService;
 use Illuminate\Support\Facades\DB;
@@ -28,14 +28,13 @@ class MonitoringService
 {
     public function __construct(private AssociationLifecycleService $lifecycle, private ProjectLifecycleService $projects,
         private ProductionMonitoringService $production, private IncomeMonitoringService $income,
-        private MaterialsMonitoringService $materials) {}
+        private MaterialsMonitoringService $materials, private ProgramActorService $actors) {}
 
     public function updateOverview(MonitoringRecord $record, array $data, UserProfile $currentUser): void
     {
         DB::transaction(function () use ($record, $data, $currentUser) {
             $record = $this->lockRecordForMutation($record, $currentUser);
-            $this->ensureUserCanManageMonitoring($record, $currentUser);
-            $project = $this->resolveProjectForUser($record->project_id, $currentUser);
+            $project = $record->project;
             $userId = $data['monitored_by'] ?? null;
             if ($userId !== $record->monitored_by) {
                 $user = UserProfile::with('role')->whereKey($userId)->sharedLock()->first();
@@ -56,8 +55,7 @@ class MonitoringService
         try {
             DB::transaction(function () use ($record, $section, $data, $currentUser) {
                 $record = $this->lockRecordForMutation($record, $currentUser);
-                $this->ensureUserCanManageMonitoring($record, $currentUser);
-                $project = $this->resolveProjectForUser($record->project_id, $currentUser);
+                $project = $record->project;
                 if ($section === 'production') {
                     $this->production->assertRevision($record, $data);
                     $rows = $data['production'] ?? [];
@@ -170,7 +168,7 @@ class MonitoringService
                     $currentUser->id,
             ]);
 
-            $this->createVisitReport($record, $data, $currentUser);
+            $this->persistVisitReport($record, $data, $currentUser);
 
             $this->createProduction(
                 $record,
@@ -213,17 +211,21 @@ class MonitoringService
     ): MonitoringVisitReport {
         return DB::transaction(function () use ($record, $data, $currentUser) {
             $record = $this->lockRecordForMutation($record, $currentUser);
-            $this->ensureUserCanManageMonitoring($record, $currentUser);
-            $this->resolveProjectForUser($record->project_id, $currentUser);
 
-            $this->validateVisitDetails($record, $data);
-            return $record->visitReports()->create($this->visitReportPayload($data) + [
-                'monitored_by' => $currentUser->id,
-                'created_by' => $currentUser->id,
-                'updated_by' => $currentUser->id,
-                'is_legacy_import' => false,
-            ]);
+            return $this->persistVisitReport($record, $data, $currentUser);
         }, 3);
+    }
+
+    private function persistVisitReport(MonitoringRecord $record, array $data, UserProfile $currentUser): MonitoringVisitReport
+    {
+        $this->validateVisitDetails($record, $data);
+
+        return $record->visitReports()->create($this->visitReportPayload($data) + [
+            'monitored_by' => $currentUser->id,
+            'created_by' => $currentUser->id,
+            'updated_by' => $currentUser->id,
+            'is_legacy_import' => false,
+        ]);
     }
 
     public function updateVisitReport(
@@ -234,8 +236,6 @@ class MonitoringService
     ): MonitoringVisitReport {
         return DB::transaction(function () use ($record, $reportId, $data, $currentUser) {
             $record = $this->lockRecordForMutation($record, $currentUser);
-            $this->ensureUserCanManageMonitoring($record, $currentUser);
-            $this->resolveProjectForUser($record->project_id, $currentUser);
 
             $report = $record->visitReports()->whereKey($reportId)->lockForUpdate()->firstOrFail();
             $this->validateVisitDetails($record, $data, $report);
@@ -446,12 +446,10 @@ class MonitoringService
             return DB::transaction(function () use (
                 $record,
                 $data,
-                $currentUser,
-                $project
+                $currentUser
             ) {
                 $record = $this->lockRecordForMutation($record, $currentUser);
-                $this->ensureUserCanManageMonitoring($record, $currentUser);
-                $this->resolveProjectForUser($record->project_id, $currentUser);
+                $project = $record->project;
                 $changesMaterials = $this->materials->includesEdits($data);
                 if ($changesMaterials) $this->materials->assertRevision($record, $data);
                 $changesIncome = $this->income->includesEdits($data['production'] ?? []);
@@ -528,11 +526,7 @@ class MonitoringService
 
     private function lockProjectForWrite(Project $project, UserProfile $actor): Project
     {
-        $fresh = UserProfile::whereKey($actor->id)->sharedLock()->first();
-        $role = $fresh ? Role::whereKey($fresh->role_id)->sharedLock()->first() : null;
-        abort_unless($fresh?->is_active && $role?->is_active
-            && $role->code === $actor->role?->code, 403);
-        $fresh->setRelation('role', $role);
+        $fresh = $this->actors->lock($actor);
         $this->lifecycle->lockOperational([$project->association_id]);
         $locked = Project::whereKey($project->id)->lockForUpdate()->firstOrFail();
         if ($locked->association_id !== $project->association_id) {
@@ -546,13 +540,13 @@ class MonitoringService
     public function lockRecordForMutation(MonitoringRecord $record, UserProfile $actor): MonitoringRecord
     {
         $project = Project::whereKey($record->project_id)->firstOrFail();
-        $this->lockProjectForWrite($project, $actor);
+        $project = $this->lockProjectForWrite($project, $actor);
         $locked = MonitoringRecord::whereKey($record->id)->lockForUpdate()->firstOrFail();
         if ($locked->project_id !== $record->project_id) {
             throw ValidationException::withMessages(['monitoring' => 'The monitoring project changed. Refresh before saving.'])->status(409);
         }
 
-        return $locked;
+        return $locked->setRelation('project', $project);
     }
 
     private function resolveProjectForUser(

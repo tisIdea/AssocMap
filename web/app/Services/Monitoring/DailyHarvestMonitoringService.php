@@ -174,7 +174,7 @@ class DailyHarvestMonitoringService
         abort_unless($actor instanceof UserProfile && in_array($actor->role?->code, ['system_admin', 'field_officer'], true), 403);
         try {
             return DB::transaction(function () use ($record, $request, $actor, $operation) {
-                // Shared order: actor/role -> association -> project -> record -> production -> entry.
+                // Shared order: role -> profile -> association -> project -> record -> production -> entry.
                 $locked = $this->monitoring->lockRecordForMutation($record, $actor);
                 $locked->setRelation('quarter', $locked->quarter()->sharedLock()->firstOrFail());
                 $this->production->assertRevision($locked, $request->all());

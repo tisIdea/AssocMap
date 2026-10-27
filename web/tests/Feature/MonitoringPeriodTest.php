@@ -72,6 +72,15 @@ class MonitoringPeriodTest extends TestCase
             $table->uuid('id')->primary(); $table->unsignedBigInteger('role_id');
             $table->string('display_name'); $table->boolean('is_active'); $table->timestamps();
         });
+        Schema::create('user_invitations', function (Blueprint $table) {
+            $table->uuid('id')->primary();
+            $table->uuid('auth_user_id')->nullable();
+            $table->string('status');
+            $table->string('last_error_code')->nullable();
+            $table->timestamp('accepted_at')->nullable();
+            $table->timestamp('last_attempt_at')->nullable();
+            $table->timestamps();
+        });
         Schema::create('associations', function (Blueprint $table) {
             $table->uuid('id')->primary(); $table->string('name'); $table->string('status');
             $table->uuid('primary_field_officer_id')->nullable(); $table->timestamp('archived_at')->nullable();
