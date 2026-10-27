@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\GisWorkspaceController;
+use App\Http\Controllers\GisPhotoController;
 use App\Http\Middleware\GisRequestGuard;
 use Illuminate\Support\Facades\Route;
 
@@ -17,6 +18,15 @@ foreach (['admin' => 'system_admin', 'field-officer' => 'field_officer', 'associ
                     ->middleware('throttle:gis-write')->name('coordinates.update');
             }
             if ($role !== 'association_account') {
+                Route::prefix('/{location}/photos')->whereUuid('location')->name('photos.')->group(function () {
+                    Route::get('/', [GisPhotoController::class, 'index'])->name('index');
+                    Route::post('/', [GisPhotoController::class, 'store'])->middleware('throttle:gis-write')->name('store');
+                    Route::patch('/order', [GisPhotoController::class, 'reorder'])->middleware('throttle:gis-write')->name('order');
+                    Route::patch('/{photo}/approval', [GisPhotoController::class, 'approval'])->whereUuid('photo')->middleware('throttle:gis-write')->name('approval');
+                    Route::delete('/{photo}', [GisPhotoController::class, 'destroy'])->whereUuid('photo')->middleware('throttle:gis-write')->name('destroy');
+                    Route::post('/{photo}/reconcile', [GisPhotoController::class, 'reconcile'])->whereUuid('photo')->middleware('throttle:gis-write')->name('reconcile');
+                    Route::get('/{photo}/{variant}', [GisPhotoController::class, 'image'])->whereUuid('photo')->whereIn('variant', ['thumbnail', 'display'])->name('image');
+                });
                 Route::get('/create', [$controller, 'create'])->name('create');
                 Route::get('/{location}/edit', [$controller, 'edit'])->whereUuid('location')->name('edit');
                 Route::post('/', [$controller, 'store'])->middleware('throttle:gis-write')->name('store');
