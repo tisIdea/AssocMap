@@ -27,6 +27,12 @@ class LaravelApiClient {
   final AppConfig config;
   final http.Client _client;
 
+  // Includes auth, extraction, Python (45s), scope recheck and response transfer.
+  // Laravel can expand Python's 8 MiB UTF-8 JSON up to 3x when escaping Unicode.
+  // Reserve another 1 KiB for the HTTP JSON envelope. See README transport policy.
+  static const reportTimeout = Duration(seconds: 120);
+  static const reportMaxBytes = 3 * 8 * 1024 * 1024 + 1024;
+
   Future<Map<String, dynamic>> get(Uri uri, String token) async {
     final base = config.backendBaseUri;
     final prefix = base?.path.replaceFirst(RegExp(r'/+$'), '') ?? '';
@@ -48,7 +54,16 @@ class LaravelApiClient {
         'Accept': 'application/json',
         'Authorization': 'Bearer $token',
       });
-      final response = await _client.send(request);
+      final client = _client;
+      final response =
+          client is BoundedHttpClient &&
+              uri.path == '$prefix/api/v1/association/reports'
+          ? await client.sendWithBudget(
+              request,
+              timeout: reportTimeout,
+              maxBytes: reportMaxBytes,
+            )
+          : await client.send(request);
       switch (response.statusCode) {
         case 401:
           throw const ApiFailure(ApiFailureKind.unauthenticated);
@@ -84,6 +99,11 @@ class LaravelApiClient {
     } catch (_) {
       throw const ApiFailure(ApiFailureKind.offline);
     }
+  }
+
+  void cancelActive() {
+    final client = _client;
+    if (client is BoundedHttpClient) client.cancelActive();
   }
 
   void close() => _client.close();
