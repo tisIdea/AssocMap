@@ -84,7 +84,7 @@ class GisFinalizedProjectMaintenanceTest extends TestCase
         };
         $geometry = Mockery::mock(GisGeometry::class)->makePartial();
         $geometry->shouldReceive('validateSpatial')->andReturnNull();
-        $this->gis = new GisLocationService($geometry, $this->queries, app(ProjectLifecycleService::class));
+        $this->gis = new GisLocationService($geometry, $this->queries, app(ProjectLifecycleService::class), app(\App\Services\GIS\GisAccessService::class));
     }
 
     private function schema(): void

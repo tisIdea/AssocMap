@@ -16,7 +16,9 @@ class GisRequestGuard
     public function handle(Request $request, Closure $next): Response
     {
         if (! $request->isMethod('GET') && ! $request->isMethod('HEAD')) {
-            abort_if((int) $request->server('CONTENT_LENGTH', 0) > 196608 || strlen($request->getContent()) > 196608, 413);
+            $upload = $request->isMethod('POST') && preg_match('~^(admin|field-officer)/gis/[0-9a-fA-F-]{36}/photos$~D', $request->path());
+            $limit = $upload ? 6 * 1024 * 1024 : 196608;
+            abort_if((int) $request->server('CONTENT_LENGTH', 0) > $limit || strlen($request->getContent()) > $limit, 413);
         }
         $response = $next($request);
         $response->headers->set('Cache-Control', 'no-store, private, max-age=0');

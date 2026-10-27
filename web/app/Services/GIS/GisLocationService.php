@@ -2,10 +2,7 @@
 
 namespace App\Services\GIS;
 
-use App\Models\Association;
 use App\Models\GisLocation;
-use App\Models\Project;
-use App\Models\Role;
 use App\Models\UserProfile;
 use App\Services\Projects\ProjectLifecycleService;
 use Illuminate\Database\QueryException;
@@ -17,16 +14,17 @@ use Illuminate\Validation\ValidationException;
 class GisLocationService
 {
     public function __construct(private GisGeometry $geometry, private GisQueryService $queries,
-        private ProjectLifecycleService $projects) {}
+        private ProjectLifecycleService $projects, private GisAccessService $access) {}
 
     public function store(array $data, UserProfile $user, Request $request): array
     {
         $data = $this->payload($data);
 
         return DB::transaction(function () use ($data, $user, $request) {
-            $this->lockIdentity($data['idempotency_key']);
-            $actor = $this->actor($user);
-            $this->lockParent($data, $actor);
+            $actor = $this->access->actor($user);
+            $this->access->identity($data['idempotency_key']);
+            $existing = GisLocation::find($data['idempotency_key']);
+            $this->access->parents($existing ? [$data, $existing->getAttributes()] : [$data], $actor);
             abort_if(DB::table('audit_logs')->where('entity_type', 'gis_location')
                 ->where('entity_id', $data['idempotency_key'])->where('action_type', 'DELETE GIS')->exists(), 409);
             $this->geometry->validateSpatial($data['geometry']);
@@ -40,7 +38,6 @@ class GisLocationService
                 $data['public_title'], $data['public_description'], $data['public_address'], $actor->id, $actor->id,
             ]) === 1;
             $location = $this->locked($data['idempotency_key']);
-            $this->lockParent($location->getAttributes(), $actor);
             if (! $created) {
                 abort_if($location->archived_at !== null, 409, 'This request has already been used. Refresh the register.');
                 foreach (['association_id', 'project_id', 'location_type', 'location_name', 'address', 'public_title', 'public_description', 'public_address'] as $field) {
@@ -63,13 +60,16 @@ class GisLocationService
         $data = $this->payload($data);
 
         return DB::transaction(function () use ($id, $data, $user, $request) {
-            $this->lockIdentity($id);
-            $actor = $this->actor($user);
+            $actor = $this->access->actor($user);
+            $this->access->identity($id);
+            $snapshot = GisLocation::findOrFail($id);
+            $parents = $this->access->parents([$snapshot->getAttributes(), $data], $actor);
             $location = $this->locked($id);
-            $source = $this->lockParent($location->getAttributes(), $actor);
+            $this->access->unchangedOwner($snapshot, $location);
+            $source = $parents[$location->project_id];
             $this->assertVersion($location, $data['version']);
             abort_if($location->archived_at !== null, 409, 'Archived locations cannot be edited.');
-            $destination = $this->lockParent($data, $actor);
+            $destination = $parents[$data['project_id']];
             if (($source->isFinalized() || $destination->isFinalized())
                 && ($location->project_id !== $data['project_id'] || $location->association_id !== $data['association_id'])) {
                 throw ValidationException::withMessages(['project_id' => 'A finalized project location must retain its existing project and association ownership.']);
@@ -98,17 +98,14 @@ class GisLocationService
         }
 
         return DB::transaction(function () use ($id, $data, $user, $request) {
-            $this->lockIdentity($id);
-            $actor = $this->actor($user);
+            $actor = $this->access->actor($user);
             abort_unless($actor->role->code === 'system_admin', 403);
+            $parent = $this->access->location($id, $actor, true);
             $location = $this->locked($id);
             abort_unless($location->association_id === null && $location->project_id !== null
                 && in_array($location->location_type, GisLocation::TYPES, true), 404);
-            $project = Project::whereKey($location->project_id)->firstOrFail();
-            $association = Association::whereKey($project->association_id)->lockForUpdate()->firstOrFail();
-            abort_unless($association->status === 'active' || $association->archived_at !== null, 404);
-            $lockedProject = Project::whereKey($project->id)->lockForUpdate()->firstOrFail();
-            abort_unless($lockedProject->association_id === $association->id, 409, 'The project association changed. Reload before correcting geometry.');
+            $lockedProject = $parent->project;
+            $association = $lockedProject->association;
             abort_unless($association->archived_at !== null || $lockedProject->archived_at !== null
                 || $location->archived_at !== null, 409, 'Use the regular editor for an operational GIS location.');
             $this->assertVersion($location, $data['version']);
@@ -136,10 +133,9 @@ class GisLocationService
         abort_unless(in_array($action, ['publish', 'unpublish', 'archive'], true), 404);
 
         return DB::transaction(function () use ($id, $action, $version, $user, $request) {
-            $this->lockIdentity($id);
-            $actor = $this->actor($user);
+            $actor = $this->access->actor($user);
+            $this->access->location($id, $actor);
             $location = $this->locked($id);
-            $this->lockParent($location->getAttributes(), $actor);
             $this->assertVersion($location, $version);
             if ($location->archived_at !== null) {
                 abort_unless($action === 'archive', 409, 'Archived locations cannot be published or edited.');
@@ -176,12 +172,12 @@ class GisLocationService
     {
         try {
             DB::transaction(function () use ($id, $version, $user) {
-                $this->lockIdentity($id);
-                $actor = $this->actor($user);
+                $actor = $this->access->actor($user);
+                $parent = $this->access->location($id, $actor);
                 $location = GisLocation::whereKey($id)->select(['id', 'association_id', 'project_id', 'location_type'])
                     ->selectRaw('updated_at::text AS version')->lockForUpdate()->first();
                 abort_unless($location, 404);
-                $project = $this->lockParent($location->getAttributes(), $actor);
+                $project = $parent->project;
                 $this->projects->assertNotFinalized($project, 'deletion');
                 $this->assertVersion($location, $version);
                 $this->assertDeletionSchema();
@@ -211,12 +207,6 @@ class GisLocationService
             }
             throw $exception;
         }
-    }
-
-    private function lockIdentity(string $id): void
-    {
-        // Serialize creation and deletion so a delayed create retry cannot restore a deleted ID.
-        DB::select('SELECT pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(?, 0))', [strtolower($id)]);
     }
 
     private function assertDeletionSchema(): void
@@ -276,37 +266,6 @@ class GisLocationService
             && in_array($trigger->prosecdef, [true, 1, '1', 't', 'true'], true)
             && in_array($trigger->trusted_owner, [true, 1, '1', 't', 'true'], true)
             && $trigger->function_config === '{"search_path=pg_catalog, public, pg_temp",row_security=off}';
-    }
-
-    private function actor(UserProfile $user): UserProfile
-    {
-        $actor = UserProfile::whereKey($user->id)->lockForUpdate()->first();
-        $role = $actor ? Role::whereKey($actor->role_id)->sharedLock()->first() : null;
-        abort_unless($actor && $role && $role->code === $user->role?->code, 403);
-        $actor->setRelation('role', $role);
-        abort_unless($this->queries->manager($actor), 403);
-
-        return $actor;
-    }
-
-    private function lockParent(array $data, UserProfile $user): Project
-    {
-        abort_unless(in_array($data['location_type'], GisLocation::TYPES, true), 404);
-        $projectId = $data['project_id'] ?? null;
-        abort_unless($projectId !== null && ($data['association_id'] ?? null) === null, 422, 'Select a valid project parent.');
-        $project = Project::whereKey($projectId)->first();
-        abort_unless($project && $project->archived_at === null, 404);
-        $association = Association::whereKey($project->association_id)->lockForUpdate()->first();
-        abort_unless($association && $association->status === 'active' && $association->archived_at === null, 404);
-        abort_unless($user->role->code === 'system_admin' || $association->primary_field_officer_id === $user->id, 404);
-        $project = Project::whereKey($projectId)->lockForUpdate()->first();
-        abort_unless($project && $project->association_id === $association->id, 409, 'The project association changed. Reload before saving.');
-        abort_unless($project->archived_at === null, 404);
-        if (isset($data['parent_association_id'])) {
-            abort_unless($project->association_id === $data['parent_association_id'], 422, 'The project must belong to the selected association.');
-        }
-
-        return $project;
     }
 
     private function locked(string $id): GisLocation

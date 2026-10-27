@@ -1,5 +1,5 @@
 <section class="gis-module" data-gis-workspace data-workspace-module="gis" data-workspace-title="GIS Mapping"
-    data-gis-base="{{ $gisBaseUrl }}" data-gis-public="{{ $gisPublic ? 'true' : 'false' }}" data-gis-manager="{{ $gisManager ? 'true' : 'false' }}">
+    data-gis-base="{{ $gisBaseUrl }}" data-gis-photos="true" data-gis-public="{{ $gisPublic ? 'true' : 'false' }}" data-gis-manager="{{ $gisManager ? 'true' : 'false' }}">
     <header class="card gis-heading">
         <div><div class="eyebrow">{{ $gisPublic ? 'Explore AssocMap' : 'Geographic information' }}</div><h1 tabindex="-1">{{ $gisTitle }}</h1><p>{{ $gisDescription }}</p></div>
         @if($gisManager)<a href="{{ $gisBaseUrl }}/create" class="button button-primary"><x-icon name="plus" />Add GIS location</a>@endif
@@ -63,6 +63,7 @@
                 <dl data-gis-details></dl>
                 @if($gisManager)<details class="gis-history" data-gis-history hidden><summary>Record history and public details</summary><dl data-gis-history-details></dl></details>@endif
                 <div class="gis-record-actions" data-gis-record-actions></div>
+                @include('components.gis-photos')
             </div>
         </aside>
     </div>

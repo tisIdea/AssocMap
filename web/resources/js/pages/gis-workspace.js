@@ -1,6 +1,7 @@
 import { L, createGisMap, featureLayer, fitLayer, locationLabels } from './gis-map.js';
 import { addDetail, debounce, fillOptions, gisRequest, queryUrl, showStatus } from '../core/gis-api.js';
 import { showFeedback, showOperationError } from '../core/feedback.js';
+import { createGisPhotos } from './gis-photos.js';
 
 export async function initGis(root) {
     if (root.dataset.gisInitialized === 'true') return;
@@ -8,6 +9,9 @@ export async function initGis(root) {
     const base = root.dataset.gisBase.replace(/\/$/, '');
     const publicView = root.dataset.gisPublic === 'true';
     const manager = root.dataset.gisManager === 'true';
+    const gallery = root.dataset.gisPhotos === 'true' ? createGisPhotos(root.querySelector('[data-gis-photos]'), {
+        base: manager ? base : '/map', manager, csrf: root.querySelector('[data-gis-csrf]')?.value || '',
+    }) : null;
     const status = root.querySelector('[data-gis-status]');
     const form = root.querySelector('[data-gis-filters]');
     const map = createGisMap(root.querySelector('[data-gis-map]'), root.querySelector('[data-gis-tile-notice]'));
@@ -26,6 +30,7 @@ export async function initGis(root) {
     }
 
     function clearSelection() {
+        gallery?.clear();
         selected = null; selection.clearLayers();
         map.closePopup();
         root.querySelector('[data-gis-details]').replaceChildren();
@@ -38,6 +43,7 @@ export async function initGis(root) {
     }
 
     function selectFeature(feature) {
+        gallery?.select(feature.id, feature.properties.version);
         selected = feature;
         const details = root.querySelector('[data-gis-details]');
         const actions = root.querySelector('[data-gis-record-actions]');
