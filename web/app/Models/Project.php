@@ -136,4 +136,9 @@ class Project extends Model
             'project_id'
         );
     }
+
+    public function photos(): HasMany
+    {
+        return $this->hasMany(MediaPhoto::class, 'project_id')->where('state', 'ready')->orderBy('display_order')->orderBy('id');
+    }
 }
