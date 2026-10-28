@@ -9,13 +9,14 @@ use RuntimeException;
 final class GisSqliteConnection extends SQLiteConnection
 {
     public array $deleteTriggers = [];
+    public array $incomingForeignKeys = [];
     public bool $rejectAudit = false;
 
     public function select($query, $bindings = [], $useReadPdo = true)
     {
         if (str_contains($query, 'pg_advisory_xact_lock')) return [];
         if (str_contains($query, 'has_table_privilege')) return [(object) ['can_delete' => true, 'can_audit' => true]];
-        if (str_contains($query, 'pg_catalog.pg_constraint')) return [];
+        if (str_contains($query, 'pg_catalog.pg_constraint')) return $this->incomingForeignKeys;
         if (str_contains($query, 'pg_catalog.pg_trigger')) return $this->deleteTriggers;
         if (str_contains($query, 'extensions.ST_Equals')) {
             $row = $this->table('gis_locations')->where('id', $bindings[1])->first();
