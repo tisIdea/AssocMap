@@ -87,12 +87,14 @@ class GisManagementUiTest extends TestCase
         $this->assertSame($manager ? 1 : 0, $xpath->query($content.'/details[@data-gis-history]/dl[@data-gis-history-details]')->length);
         if ($manager) $page->assertSee('/'.$prefix.'/gis/create', false)->assertSee('Record history and public details');
         else $page->assertSee('Read-only viewer')->assertDontSee('Add GIS location')->assertDontSee('data-gis-csrf', false);
-        $page->assertHeader('Cache-Control', 'max-age=0, no-store, private');
+        $page->assertHeader('Cache-Control', 'max-age=0, no-store, private')
+            ->assertHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
     }
 
     public function test_public_workspace_retains_its_approved_filter_projection(): void
     {
         $this->get('/map')->assertOk()->assertSee('Read-only viewer')->assertSee('association_location_id', false)
+            ->assertHeader('Referrer-Policy', 'strict-origin-when-cross-origin')
             ->assertSee('class="gis-location-content" role="region" aria-labelledby="gis-details-title" tabindex="0"', false)
             ->assertDontSee('name="municipality_id"', false)->assertDontSee('name="publication"', false)
             ->assertDontSee('Add GIS location')->assertDontSee('data-gis-history', false);

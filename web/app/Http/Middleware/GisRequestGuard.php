@@ -23,7 +23,9 @@ class GisRequestGuard
         $response = $next($request);
         $response->headers->set('Cache-Control', 'no-store, private, max-age=0');
         $response->headers->set('X-Content-Type-Options', 'nosniff');
-        $response->headers->set('Referrer-Policy', 'strict-origin-when-cross-origin');
+        if (! $response->headers->has('Referrer-Policy')) {
+            $response->headers->set('Referrer-Policy', 'strict-origin-when-cross-origin');
+        }
 
         return $response;
     }

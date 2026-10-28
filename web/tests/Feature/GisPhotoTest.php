@@ -102,23 +102,30 @@ class GisPhotoTest extends TestCase
         $id = $this->upload($file, $token)->assertOk()->assertJsonPath('photo.status', 'ready')->json('photo.id');
         $this->upload($file, $token)->assertOk()->assertJsonPath('photo.id', $id);
         $this->assertCount(2, Storage::disk('media_private')->allFiles());
-        $gallery = $this->getJson($this->url())->assertOk()->assertJsonPath('photos.0.approved', false)->assertJsonPath('used_slots', 1);
+        $gallery = $this->getJson($this->url())->assertOk()->assertJsonPath('photos.0.approved', false)->assertJsonPath('used_slots', 1)
+            ->assertHeader('Referrer-Policy', 'no-referrer');
         $this->getJson($this->url(prefix: 'map'))->assertNotFound();
         $this->publish();
         $this->getJson($this->url(prefix: 'map'))->assertOk()->assertJsonCount(0, 'photos');
         $this->get($this->url($id, 'thumbnail', 'map'))->assertNotFound();
         $this->approve($id)->assertOk();
         $public = $this->getJson($this->url(prefix: 'map'))->assertOk()->assertJsonCount(1, 'photos')
-            ->assertHeader('Cache-Control', 'max-age=0, no-store, private');
+            ->assertHeader('Cache-Control', 'max-age=0, no-store, private')->assertHeader('Referrer-Policy', 'no-referrer');
         foreach (['object_prefix', 'media/', 'uploaded_by', 'approved_by', 'lease_until', 'operation_token', 'input_sha256', 'disk', 'pending', 'created_at'] as $secret) {
             $this->assertStringNotContainsString($secret, $public->getContent());
         }
         foreach (['thumbnail', 'display'] as $variant) {
             foreach ([$gallery, $public] as $metadata) {
                 $response = $this->get($metadata->json('photos.0.'.$variant.'_url'))->assertOk()->assertHeader('Content-Type', 'image/png')
-                    ->assertHeader('Cache-Control', 'max-age=0, no-store, private')->assertHeader('X-Content-Type-Options', 'nosniff');
+                    ->assertHeader('Cache-Control', 'max-age=0, no-store, private')->assertHeader('X-Content-Type-Options', 'nosniff')
+                    ->assertHeader('Referrer-Policy', 'no-referrer');
                 $this->assertSame(MediaPhoto::find($id)->{$variant.'_sha256'}, hash('sha256', $response->streamedContent()));
             }
+            $this->identity = self::OFFICER;
+            $officerImage = $this->get($this->url($id, $variant, 'field-officer'))->assertOk()
+                ->assertHeader('Referrer-Policy', 'no-referrer');
+            $this->assertSame(MediaPhoto::find($id)->{$variant.'_sha256'}, hash('sha256', $officerImage->streamedContent()));
+            $this->identity = self::ADMIN;
         }
         $this->approve($id, false)->assertOk();
         $this->get($public->json('photos.0.thumbnail_url'))->assertNotFound();
