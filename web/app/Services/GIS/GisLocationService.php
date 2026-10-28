@@ -184,7 +184,7 @@ class GisLocationService
                 $project = $parent->project;
                 $this->projects->assertNotFinalized($project, 'deletion');
                 $this->assertVersion($location, $version);
-                $this->assertDeletionSchema();
+                $this->assertDeletionSchema($location->id);
                 $deleted = DB::table('gis_locations')->where('id', $location->id)->delete();
                 if ($deleted !== 1) {
                     throw ValidationException::withMessages(['deletion' => 'The database did not permit deletion. Refresh the record and verify server permissions.']);
@@ -213,7 +213,7 @@ class GisLocationService
         }
     }
 
-    private function assertDeletionSchema(): void
+    private function assertDeletionSchema(string $locationId): void
     {
         $privileges = DB::selectOne("SELECT
             pg_catalog.has_table_privilege(current_user, 'public.gis_locations', 'DELETE') AS can_delete,
@@ -224,15 +224,34 @@ class GisLocationService
             }
         }
         DB::statement('LOCK TABLE public.gis_locations IN ROW EXCLUSIVE MODE');
-        $foreignKey = DB::selectOne("SELECT c.conname, n.nspname, t.relname
+        $foreignKeys = DB::select("SELECT c.conname, n.nspname, t.relname,
+                (c.conrelid = pg_catalog.to_regclass('public.media_photos')
+                 AND c.conname = 'media_photos_gis_location_id_fkey'
+                 AND c.confdeltype = 'r' AND c.confupdtype = 'a' AND c.confmatchtype = 's'
+                 AND c.convalidated AND NOT c.condeferrable AND NOT c.condeferred
+                 AND c.conkey = ARRAY[(SELECT a.attnum FROM pg_catalog.pg_attribute a
+                     WHERE a.attrelid = c.conrelid AND a.attname = 'gis_location_id')]::smallint[]
+                 AND c.confkey = ARRAY[(SELECT a.attnum FROM pg_catalog.pg_attribute a
+                     WHERE a.attrelid = c.confrelid AND a.attname = 'id')]::smallint[]
+                ) AS approved_media_fk
             FROM pg_catalog.pg_constraint AS c
             JOIN pg_catalog.pg_class AS t ON t.oid = c.conrelid
             JOIN pg_catalog.pg_namespace AS n ON n.oid = t.relnamespace
             WHERE c.contype = 'f' AND c.confrelid = pg_catalog.to_regclass('public.gis_locations')
-            ORDER BY n.nspname, t.relname, c.conname LIMIT 1");
-        if ($foreignKey) {
+            ORDER BY n.nspname, t.relname, c.conname");
+        $hasMediaForeignKey = false;
+        foreach ($foreignKeys as $foreignKey) {
+            if (in_array($foreignKey->approved_media_fk, [true, 1, '1', 't', 'true'], true)) {
+                $hasMediaForeignKey = true;
+
+                continue;
+            }
             throw ValidationException::withMessages(['deletion' => 'Deletion requires schema review: incoming foreign key '
                 .$foreignKey->conname.' on '.$foreignKey->nspname.'.'.$foreignKey->relname.'. No dependent records were changed.']);
+        }
+        if ($hasMediaForeignKey && DB::table('media_photos')->where('gis_location_id', $locationId)->exists()) {
+            throw ValidationException::withMessages(['deletion' => 'This location has photo history and cannot be permanently deleted. '
+                .'Archive it instead. No photo records were changed.']);
         }
         $triggers = DB::select("SELECT t.tgname, t.tgtype, t.tgenabled, t.tgnargs, t.tgconstraint,
                 t.tgattr::text AS columns, t.tgqual::text AS condition, t.tgoldtable, t.tgnewtable,
