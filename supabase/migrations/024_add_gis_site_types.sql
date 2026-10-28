@@ -16,6 +16,8 @@ CREATE INDEX idx_gis_locations_site_type ON public.gis_locations(site_type_id);
 -- POSTGRES SECURITY
 ALTER TABLE public.gis_site_types ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON public.gis_site_types FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON SEQUENCE public.gis_site_types_id_seq
+FROM PUBLIC, anon, authenticated;
 -- Catalog reads and location assignments go through the existing Laravel boundary.
 
 

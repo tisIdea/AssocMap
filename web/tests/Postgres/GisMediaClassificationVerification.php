@@ -120,7 +120,8 @@ function rejectedSql(Closure $work, string $state, ?string $constraint = null): 
         $work();
         throw new RuntimeException('Expected SQL rejection '.$state);
     } catch (QueryException $error) {
-        verify(($error->errorInfo[0] ?? null) === $state, 'SQLSTATE '.$state.' '.($constraint ?? 'permission/integrity'));
+        verify(($error->errorInfo[0] ?? null) === $state, 'SQLSTATE '.$state.' '.($constraint ?? 'permission/integrity')
+            .'; actual '.($error->errorInfo[0] ?? 'missing').' for '.$error->getSql());
         if ($constraint !== null) {
             verify(str_contains($error->errorInfo[2] ?? '', '"'.$constraint.'"'), 'constraint '.$constraint);
         }
@@ -223,6 +224,30 @@ foreach ($parents as $column => $parentId) {
     $photos[$column] = $row;
 }
 $before024 = snapshot([...$baseTables, 'media_photos']);
+// Reproduce hosted sequence defaults, including effective privileges inherited by client members.
+DB::unprepared('CREATE ROLE gisclass_anon_member NOLOGIN INHERIT;
+    CREATE ROLE gisclass_authenticated_member NOLOGIN INHERIT;
+    GRANT anon TO gisclass_anon_member;
+    GRANT authenticated TO gisclass_authenticated_member;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO anon, authenticated;
+    CREATE SEQUENCE public.gisclass_sequence_control');
+$sequenceClients = ['anon', 'authenticated', 'gisclass_anon_member', 'gisclass_authenticated_member'];
+foreach ($sequenceClients as $role) {
+    $attributes = DB::selectOne('SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname=?', [$role]);
+    verify(! $attributes->rolsuper && ! $attributes->rolbypassrls, 'sequence client has no privileged bypass '.$role);
+    verify((bool) DB::selectOne("SELECT has_schema_privilege(?,'public','USAGE') allowed", [$role])->allowed,
+        'sequence client can resolve public schema '.$role);
+    foreach (['SELECT', 'USAGE', 'UPDATE'] as $privilege) {
+        verify((bool) DB::selectOne("SELECT has_sequence_privilege(?,'public.gisclass_sequence_control',?) allowed", [$role, $privilege])->allowed,
+            'hosted default fixture permits sequence '.$role.' '.$privilege);
+    }
+}
+foreach (['gisclass_anon_member' => 'anon', 'gisclass_authenticated_member' => 'authenticated'] as $member => $role) {
+    verify((bool) DB::selectOne("SELECT pg_has_role(?,?,'USAGE') inherited", [$member, $role])->inherited,
+        'client sequence privileges are inherited from '.$role);
+}
+$sequenceDefaults = DB::selectOne("SELECT COALESCE(jsonb_agg(to_jsonb(d) ORDER BY d.oid),'[]'::jsonb)::text value FROM pg_default_acl d")->value;
+$controlSequence = DB::selectOne("SELECT relowner, relacl::text acl FROM pg_class WHERE oid='public.gisclass_sequence_control'::regclass");
 $historyBefore = DB::selectOne("SELECT pg_get_functiondef('public.protect_finalized_project_history()'::regprocedure) definition,
     proowner, proacl::text acl FROM pg_proc WHERE oid='public.protect_finalized_project_history()'::regprocedure");
 migrate([$migration024]);
@@ -266,12 +291,66 @@ foreach (['media_photos' => ['media_photos_pkey', 'media_photos_request_id_key',
             'validated key/column constraint '.$name);
     }
 }
-foreach (['media_photos' => 22, 'gis_site_types' => 4] as $table => $expected) {
-    verify((int) DB::selectOne('SELECT count(*) total FROM pg_constraint WHERE conrelid=to_regclass(?) AND convalidated', [$table])->total === $expected,
-        'complete validated constraint catalog '.$table);
+$constraintCatalog = [];
+foreach (['media_photos', 'gis_site_types'] as $table) {
+    $constraintCatalog[$table] = DB::select("SELECT c.conname, c.contype, c.convalidated,
+        COALESCE((to_jsonb(c)->>'conenforced')::boolean, true) AS enforced,
+        cardinality(c.conkey) AS column_count,
+        (SELECT a.attname FROM pg_attribute a WHERE a.attrelid=c.conrelid AND a.attnum=c.conkey[1]) AS first_column,
+        pg_get_constraintdef(c.oid) AS definition FROM pg_constraint c WHERE c.conrelid=to_regclass(?) ORDER BY c.contype, c.conname", [$table]);
+}
+$requiredConstraints = [
+    'media_photos' => [
+        'c' => ['media_approval', 'media_dimensions', 'media_exactly_one_parent', 'media_finalizable',
+            'media_photos_disk_check', 'media_photos_display_order_check', 'media_photos_image_format_check',
+            'media_photos_input_sha256_check', 'media_photos_object_prefix_check', 'media_photos_state_check',
+            'media_project_order', 'media_replacement'],
+        'f' => ['media_photos_approved_by_fkey', 'media_photos_gis_location_id_fkey', 'media_photos_monitoring_material_id_fkey',
+            'media_photos_monitoring_visit_report_id_fkey', 'media_photos_project_id_fkey', 'media_photos_replaces_photo_id_fkey',
+            'media_photos_uploaded_by_fkey'],
+        'p' => ['media_photos_pkey'], 'u' => ['media_photos_object_prefix_key', 'media_photos_request_id_key'],
+    ],
+    'gis_site_types' => ['c' => ['gis_site_types_code_check', 'gis_site_types_name_check'],
+        'p' => ['gis_site_types_pkey'], 'u' => ['gis_site_types_code_key']],
+];
+$requiredNotNull = [
+    'media_photos' => ['id', 'uploaded_by', 'request_id', 'disk', 'object_prefix', 'input_sha256', 'state', 'display_order', 'created_at', 'updated_at'],
+    'gis_site_types' => ['id', 'code', 'name'],
+];
+$serverVersion = (int) $pdo->query('SHOW server_version_num')->fetchColumn();
+// PostgreSQL 18 reports RESTRICT actions separately from missing-reference writes.
+$restrictViolation = $serverVersion >= 180000 ? '23001' : '23503';
+foreach ($requiredConstraints as $table => $types) {
+    $expected = [];
+    foreach ($types as $type => $names) {
+        foreach ($names as $name) {
+            $expected[$name] = $type;
+        }
+    }
+    ksort($expected);
+    $catalog = collect($constraintCatalog[$table]);
+    $actual = $catalog->where('contype', '!=', 'n')->mapWithKeys(fn ($row) => [$row->conname => $row->contype])->sortKeys()->all();
+    verify($actual === $expected, 'complete named non-NOT-NULL constraint catalog '.$table);
+    verify($catalog->every(fn ($row) => $row->convalidated === true), 'every catalog constraint validated '.$table);
+    verify($catalog->every(fn ($row) => $row->enforced === true), 'every catalog constraint enforced '.$table);
+    $notNull = DB::table('pg_attribute')->whereRaw('attrelid=to_regclass(?)', [$table])->where('attnum', '>', 0)
+        ->where('attisdropped', false)->where('attnotnull', true)->orderBy('attname')->pluck('attname')->all();
+    $expectedNotNull = $requiredNotNull[$table];
+    sort($expectedNotNull);
+    verify($notNull === $expectedNotNull, 'complete column NOT NULL requirements '.$table);
+    // PostgreSQL 18 catalogs table NOT NULL separately; 17 retains it only in pg_attribute.
+    $catalogNotNull = $catalog->where('contype', 'n');
+    verify($catalogNotNull->pluck('first_column')->sort()->values()->all() === ($serverVersion >= 180000 ? $expectedNotNull : []),
+        'version-appropriate NOT NULL catalog '.$table);
+    verify($catalogNotNull->every(fn ($row) => $row->column_count === 1), 'NOT NULL catalog entries bind exactly one column '.$table);
     verify(! DB::selectOne('SELECT EXISTS(SELECT 1 FROM pg_index WHERE indrelid=to_regclass(?) AND (NOT indisvalid OR NOT indisready)) bad', [$table])->bad,
         'all primary/unique/supporting indexes valid '.$table);
 }
+$constraintEvidence = dirname($directory).'-constraints.json';
+file_put_contents($constraintEvidence, json_encode(['postgres' => $pdo->query('SHOW server_version')->fetchColumn(),
+    'postgis' => $pdo->query('SELECT extensions.postgis_lib_version()')->fetchColumn(),
+    'tables' => $constraintCatalog], JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR));
+echo 'Constraint catalog evidence: '.$constraintEvidence."\n";
 $columns = DB::table('information_schema.columns')->where('table_schema', 'public')->where('table_name', 'gis_site_types')->get()->keyBy('column_name');
 verify($columns['id']->data_type === 'bigint' && $columns['id']->identity_generation === 'ALWAYS', 'catalog BIGINT identity schema');
 verify($columns['code']->character_maximum_length === 50 && $columns['name']->character_maximum_length === 100, 'catalog bounded code/name columns');
@@ -298,6 +377,34 @@ foreach (['media_photos', 'gis_site_types'] as $table) {
     verify(DB::table($table)->count() === 0, 'default-deny RLS hides rows '.$table);
     DB::rollBack();
 }
+
+verify(DB::selectOne("SELECT pg_get_serial_sequence('public.gis_site_types','id') sequence")->sequence === 'public.gis_site_types_id_seq',
+    'sequence security checks target the actual catalog identity sequence');
+foreach ($sequenceClients as $role) {
+    foreach (['SELECT', 'USAGE', 'UPDATE'] as $privilege) {
+        verify(! DB::selectOne("SELECT has_sequence_privilege(?,'public.gis_site_types_id_seq',?) allowed", [$role, $privilege])->allowed,
+            'catalog identity sequence denies '.$role.' '.$privilege);
+    }
+    foreach (['SELECT last_value FROM public.gis_site_types_id_seq',
+        "SELECT nextval('public.gis_site_types_id_seq')", "SELECT setval('public.gis_site_types_id_seq',1,false)"] as $sql) {
+        rejectedSql(function () use ($role, $sql) {
+            DB::statement('SET LOCAL ROLE '.$role);
+            DB::select($sql);
+        }, '42501');
+    }
+}
+$sequenceAcl = DB::select("SELECT pg_get_userbyid(a.grantee) role, a.privilege_type privilege
+    FROM pg_class c CROSS JOIN LATERAL aclexplode(c.relacl) a
+    WHERE c.oid='public.gis_site_types_id_seq'::regclass ORDER BY a.grantee, a.privilege_type");
+$sequenceOwner = DB::selectOne("SELECT pg_get_userbyid(relowner) owner FROM pg_class WHERE oid='public.gis_site_types_id_seq'::regclass")->owner;
+verify($sequenceOwner === 'assocmap_gisclass_verify', 'identity sequence ownership remains with the migration owner');
+verify(array_map(fn ($grant) => [$grant->role, $grant->privilege], $sequenceAcl)
+    === array_map(fn ($privilege) => [$sequenceOwner, $privilege], ['SELECT', 'UPDATE', 'USAGE']),
+    'identity sequence ACL retains every owner privilege and no PUBLIC or client grants');
+verify(DB::selectOne("SELECT COALESCE(jsonb_agg(to_jsonb(d) ORDER BY d.oid),'[]'::jsonb)::text value FROM pg_default_acl d")->value === $sequenceDefaults,
+    '024 leaves all default privileges unchanged');
+$controlAfter024 = DB::selectOne("SELECT relowner, relacl::text acl FROM pg_class WHERE oid='public.gisclass_sequence_control'::regclass");
+verify($controlAfter024 == $controlSequence, '024 leaves unrelated sequence ownership and grants unchanged');
 
 // Proposed BFAR labels exist only inside this task-owned disposable database.
 foreach (['fish_cage' => 'Fish cage', 'fish_pen' => 'Fish pen', 'seaweed_cultivation_site' => 'Seaweed cultivation site',
@@ -342,7 +449,7 @@ rejectedSql(function () {
     DB::table('media_photos')->insert(photo('project_id', PROJECT, ['state' => 'uploading']));
 }, '23505', 'media_one_pending_cover');
 foreach ($parents as $column => $parentId) {
-    rejectedSql(fn () => DB::table($targets[$column])->where('id', $parentId)->delete(), '23503');
+    rejectedSql(fn () => DB::table($targets[$column])->where('id', $parentId)->delete(), $restrictViolation);
 }
 
 // Test a separately authenticated non-owner Laravel role, never a hosted role or credential.
@@ -362,6 +469,35 @@ verify($runtime->actor === 'assocmap_gisclass_app' && $runtime->db === 'postgres
 verify(! DB::selectOne('SELECT rolsuper FROM pg_roles WHERE rolname=current_user')->rolsuper, 'runtime role is not superuser');
 verify(! DB::selectOne("SELECT pg_get_userbyid(relowner)=current_user owned FROM pg_class WHERE oid='media_photos'::regclass")->owned, 'runtime does not own migrated tables');
 verify(DB::table('gis_site_types')->count() === 5, 'runtime SELECT reads catalog with explicit trusted-backend RLS bypass');
+foreach (['SELECT', 'USAGE', 'UPDATE'] as $privilege) {
+    verify(! DB::selectOne("SELECT has_sequence_privilege(current_user,'public.gis_site_types_id_seq',?) allowed", [$privilege])->allowed,
+        'catalog read-only backend needs no sequence '.$privilege);
+}
+// A catalog-writing backend needs only USAGE; keep these synthetic grants and rows transactional.
+$pdo->beginTransaction();
+try {
+    $pdo->exec('GRANT INSERT ON public.gis_site_types TO assocmap_gisclass_app;
+        GRANT USAGE ON SEQUENCE public.gis_site_types_id_seq TO assocmap_gisclass_app;
+        SET LOCAL ROLE assocmap_gisclass_app');
+    $writer = $pdo->query("SELECT current_user actor, rolsuper,
+        has_table_privilege(current_user,'public.gis_site_types','INSERT') can_insert,
+        has_sequence_privilege(current_user,'public.gis_site_types_id_seq','USAGE') can_generate,
+        has_sequence_privilege(current_user,'public.gis_site_types_id_seq','SELECT') can_read_sequence,
+        has_sequence_privilege(current_user,'public.gis_site_types_id_seq','UPDATE') can_reset
+        FROM pg_roles WHERE rolname=current_user")->fetch(PDO::FETCH_ASSOC);
+    verify($writer['actor'] === 'assocmap_gisclass_app' && ! $writer['rolsuper'] && $writer['can_insert'] && $writer['can_generate']
+        && ! $writer['can_read_sequence'] && ! $writer['can_reset'], 'non-owner backend has only the required identity USAGE privilege');
+    $generatedId = $pdo->query("INSERT INTO public.gis_site_types(code,name) VALUES('sequence_backend_probe','Synthetic sequence probe') RETURNING id")->fetchColumn();
+    verify((int) $generatedId > 5, 'non-superuser backend INSERT generates a catalog identity normally');
+    verify((int) $pdo->query('SELECT count(*) FROM public.gis_site_types WHERE id='.(int) $generatedId)->fetchColumn() === 1,
+        'backend can read its generated catalog row');
+} finally {
+    $pdo->rollBack();
+}
+verify(DB::table('gis_site_types')->count() === 5
+    && ! DB::selectOne("SELECT has_table_privilege(current_user,'public.gis_site_types','INSERT')
+        OR has_sequence_privilege(current_user,'public.gis_site_types_id_seq','USAGE') extra_grant")->extra_grant,
+    'synthetic catalog writer grants and row are rolled back');
 rejectedSql(fn () => DB::table('gis_site_types')->where('id', 1)->sharedLock()->first(), '42501');
 // FOR SHARE needs UPDATE on at least one column, not permission to edit names/codes.
 $pdo->exec('GRANT UPDATE(id) ON gis_site_types TO assocmap_gisclass_app');
@@ -471,9 +607,12 @@ denied(fn () => $locations->update($id, $payload + ['version' => $updated['prope
 DB::rollBack();
 
 require __DIR__.'/GisBoundaryPresentationVerification.php';
+require __DIR__.'/GisPermanentDeletionVerification.php';
 
 echo json_encode(['checks' => count($checks), 'failed' => 0, 'postgres' => $pdo->query('SHOW server_version')->fetchColumn(),
     'postgis' => $pdo->query('SELECT extensions.postgis_lib_version()')->fetchColumn(), 'migration_order' => $ledger->pluck('migration')->all(),
     'runtime_role' => 'non-owner NOSUPERUSER BYPASSRLS; explicit local grants; catalog SELECT + UPDATE(id)',
     'boundary' => 'canonical prerequisites and Laravel migration ledger; synthetic Auth rows, local fake storage; no shared services',
+    'constraint_catalog' => $constraintCatalog,
+    'deletion_checks' => $deletionCheckCount,
     'passed' => $checks], JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR)."\n";
