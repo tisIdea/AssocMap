@@ -360,7 +360,8 @@ class GisFinalizedProjectMaintenanceTest extends TestCase
         $this->gis->destroy($empty, (string) GisLocation::findOrFail($empty)->updated_at, $this->actor());
         $this->assertNull(GisLocation::find($empty));
 
-        $withHistory = $this->gis->store($this->payload(), $this->actor(), Request::create('/gis'))['feature']['id'];
+        $withHistory = $this->gis->store($this->payload(['idempotency_key' => '22222222-2222-4222-8222-222222222222']),
+            $this->actor(), Request::create('/gis'))['feature']['id'];
         DB::table('media_photos')->insert([
             'id' => 'photo-history',
             'gis_location_id' => $withHistory,
