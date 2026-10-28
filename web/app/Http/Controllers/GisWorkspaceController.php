@@ -115,7 +115,7 @@ class GisWorkspaceController extends Controller
         $prefixes = ['system_admin' => 'admin', 'field_officer' => 'field-officer', 'association_account' => 'association'];
         $labels = ['system_admin' => 'Administrator GIS Management', 'field_officer' => 'Field Officer GIS Management', 'association_account' => 'Association GIS Viewer'];
 
-        return ['gisPublic' => false, 'gisManager' => $this->queries->manager($user), 'gisAdministrator' => $role === 'system_admin',
+        return ['gisSiteTypes' => $this->queries->siteTypes(), 'gisPublic' => false, 'gisManager' => $this->queries->manager($user), 'gisAdministrator' => $role === 'system_admin',
             'gisLayout' => 'layouts.'.$prefixes[$role],
             'gisBaseUrl' => route($prefixes[$role].'.gis.index'), 'gisTitle' => $labels[$role],
             'gisDescription' => $role === 'association_account' ? 'View project locations and boundaries for your active linked association.'

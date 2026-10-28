@@ -29,7 +29,7 @@ async function fixture({ manager = false, source = workspace, request } = {}) {
     const node = selector => { if (!nodes.has(selector)) nodes.set(selector, new Element()); return nodes.get(selector); };
     const root = new Element(); root.dataset = { gisBase: '/admin/gis', gisPublic: 'false', gisManager: String(manager) };
     const form = node('[data-gis-filters]');
-    form.elements = Object.fromEntries(['q', 'location_type', 'municipality_id', 'barangay_id', 'area_id', 'association_id', 'project_id', 'publication', 'lifecycle'].map(name => [name, new Element()]));
+    form.elements = Object.fromEntries(['q', 'location_type', 'site_type_id', 'municipality_id', 'barangay_id', 'area_id', 'association_id', 'project_id', 'publication', 'lifecycle'].map(name => [name, new Element()]));
     form.elements.lifecycle.value = 'active';
     const parents = ['municipality', 'barangay', 'area', 'association', 'project'].map(kind => {
         const select = form.elements[kind + '_id']; select.dataset.gisParent = kind;
@@ -93,7 +93,7 @@ test('map initialization, map/list switches, selection and dismiss have bounded 
     assert.equal(f.node('[data-gis-map-panel]').hidden, true);
     assert.equal(f.node('[data-gis-list]').children.length, 2);
     const listSelectionRequests = f.calls.length;
-    f.node('[data-gis-list]').children[1].children[3].fire('click'); await settle();
+    f.node('[data-gis-list]').children[1].children.find(child => child.textContent === 'View location').fire('click'); await settle();
     assert.equal(f.node('[data-gis-selection-title]').textContent, 'site-b');
     assert.equal(f.node('[data-gis-selection-title]').focused, true);
     assert.equal(f.calls.length, listSelectionRequests);
@@ -131,6 +131,19 @@ test('parent changes clear dependent filters; opening presentation controls make
     const requests = f.calls.length;
     f.node('.gis-filters').fire('toggle'); f.node('[data-gis-history]').fire('toggle'); await settle();
     assert.equal(f.calls.length, requests);
+});
+
+test('site filters reach map, extent and list without refetching parent options', async () => {
+    const f = await fixture();
+    const before = f.calls.length;
+    f.form.elements.site_type_id.value = '2'; f.form.fire('change', f.form.elements.site_type_id); await settle();
+    assert.equal(f.calls.length, before + 2);
+    assert.equal(f.calls.at(-2).url.searchParams.get('site_type_id'), '2');
+    assert.equal(f.calls.at(-1).url.searchParams.get('site_type_id'), '2');
+    await f.fire('[data-gis-view="list"]', 'click');
+    assert.equal(f.calls.at(-1).url.searchParams.get('site_type_id'), '2');
+    f.form.elements.site_type_id.value = 'unclassified'; f.form.fire('change', f.form.elements.site_type_id); await settle();
+    assert.equal(f.calls.at(-1).url.searchParams.get('site_type_id'), 'unclassified');
 });
 
 test('a late aborted map response cannot replace a newer selected entity', async () => {

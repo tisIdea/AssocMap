@@ -19,28 +19,31 @@ class GisLocationService
     public function store(array $data, UserProfile $user, Request $request): array
     {
         $data = $this->payload($data);
+        $data += ['site_type_id' => null];
 
         return DB::transaction(function () use ($data, $user, $request) {
             $actor = $this->access->actor($user);
             $this->access->identity($data['idempotency_key']);
             $existing = GisLocation::find($data['idempotency_key']);
             $this->access->parents($existing ? [$data, $existing->getAttributes()] : [$data], $actor);
+            $data['site_type_id'] = $this->siteType($data['site_type_id']);
             abort_if(DB::table('audit_logs')->where('entity_type', 'gis_location')
                 ->where('entity_id', $data['idempotency_key'])->where('action_type', 'DELETE GIS')->exists(), 409);
             $this->geometry->validateSpatial($data['geometry']);
             $created = DB::affectingStatement('INSERT INTO gis_locations
-                (id, association_id, project_id, location_type, location_name, address, geom,
+                (id, association_id, project_id, location_type, site_type_id, location_name, address, geom,
                  public_title, public_description, public_address, is_published, created_by, updated_by)
-                VALUES (?, ?, ?, ?, ?, ?, extensions.ST_SetSRID(extensions.ST_GeomFromGeoJSON(?), 4326), ?, ?, ?, FALSE, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, extensions.ST_SetSRID(extensions.ST_GeomFromGeoJSON(?), 4326), ?, ?, ?, FALSE, ?, ?)
                 ON CONFLICT (id) DO NOTHING', [
                 $data['idempotency_key'], $data['association_id'], $data['project_id'], $data['location_type'],
+                $data['site_type_id'],
                 $data['location_name'], $data['address'], json_encode($data['geometry'], JSON_THROW_ON_ERROR),
                 $data['public_title'], $data['public_description'], $data['public_address'], $actor->id, $actor->id,
             ]) === 1;
             $location = $this->locked($data['idempotency_key']);
             if (! $created) {
                 abort_if($location->archived_at !== null, 409, 'This request has already been used. Refresh the register.');
-                foreach (['association_id', 'project_id', 'location_type', 'location_name', 'address', 'public_title', 'public_description', 'public_address'] as $field) {
+                foreach (['association_id', 'project_id', 'location_type', 'site_type_id', 'location_name', 'address', 'public_title', 'public_description', 'public_address'] as $field) {
                     abort_if($location->$field !== $data[$field], 409, 'This request has already been used with different values.');
                 }
                 $same = DB::selectOne('SELECT extensions.ST_Equals(geom,
@@ -69,6 +72,7 @@ class GisLocationService
             $source = $parents[$location->project_id];
             $this->assertVersion($location, $data['version']);
             abort_if($location->archived_at !== null, 409, 'Archived locations cannot be edited.');
+            $data['site_type_id'] = $this->siteType(array_key_exists('site_type_id', $data) ? $data['site_type_id'] : $location->site_type_id);
             $destination = $parents[$data['project_id']];
             if (($source->isFinalized() || $destination->isFinalized())
                 && ($location->project_id !== $data['project_id'] || $location->association_id !== $data['association_id'])) {
@@ -77,10 +81,10 @@ class GisLocationService
             $this->geometry->validateSpatial($data['geometry']);
             if ($location->is_published) $this->requirePublicTitle($data['public_title']);
             $old = $this->snapshot($location);
-            DB::update('UPDATE gis_locations SET association_id = ?, project_id = ?, location_type = ?,
+            DB::update('UPDATE gis_locations SET association_id = ?, project_id = ?, location_type = ?, site_type_id = ?,
                 location_name = ?, address = ?, geom = extensions.ST_SetSRID(extensions.ST_GeomFromGeoJSON(?), 4326),
                 public_title = ?, public_description = ?, public_address = ?, updated_by = ? WHERE id = ?', [
-                $data['association_id'], $data['project_id'], $data['location_type'], $data['location_name'], $data['address'],
+                $data['association_id'], $data['project_id'], $data['location_type'], $data['site_type_id'], $data['location_name'], $data['address'],
                 json_encode($data['geometry'], JSON_THROW_ON_ERROR), $data['public_title'], $data['public_description'],
                 $data['public_address'], $actor->id, $id,
             ]);
@@ -300,9 +304,20 @@ class GisLocationService
         }
     }
 
+    private function siteType(mixed $id): ?int
+    {
+        if ($id === null) return null;
+        if (filter_var($id, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]) === false
+            || ! DB::table('gis_site_types')->where('id', $id)->sharedLock()->first(['id'])) {
+            throw ValidationException::withMessages(['site_type_id' => 'Select an available site classification.']);
+        }
+
+        return (int) $id;
+    }
+
     private function snapshot(GisLocation $location): array
     {
-        $fields = ['association_id', 'project_id', 'location_type', 'location_name', 'address', 'public_title',
+        $fields = ['association_id', 'project_id', 'location_type', 'site_type_id', 'location_name', 'address', 'public_title',
             'public_description', 'public_address', 'is_published', 'published_by', 'published_at', 'archived_at', 'archived_by'];
         $values = [];
         foreach ($fields as $field) $values[$field] = $location->$field;

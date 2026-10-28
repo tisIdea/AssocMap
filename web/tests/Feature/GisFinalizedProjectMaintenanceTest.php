@@ -120,6 +120,7 @@ class GisFinalizedProjectMaintenanceTest extends TestCase
             foreach (['actor_user_id', 'action_type', 'module', 'entity_type', 'entity_id', 'old_values', 'new_values', 'ip_address', 'user_agent'] as $column) $t->text($column)->nullable();
             $t->timestamp('performed_at');
         });
+        (require database_path('migrations/2026_10_28_000000_add_gis_site_types.php'))->up();
         foreach ($this->historyTables() as $table) Schema::create($table, function (Blueprint $t) { $t->string('id')->primary(); $t->text('value'); });
     }
 
@@ -128,6 +129,53 @@ class GisFinalizedProjectMaintenanceTest extends TestCase
         return ['monitoring_records', 'monitoring_production', 'monitoring_production_monthly', 'monitoring_income',
             'trainings', 'training_participants', 'program_activity_records', 'project_products', 'project_materials',
             'monitoring_materials', 'monitoring_visit_reports'];
+    }
+
+    #[DataProvider('statusesAndManagers')]
+    public function test_classification_create_update_clear_and_omitted_legacy_update_preserve_history(string $status, string $actor): void
+    {
+        DB::table('gis_site_types')->insert([['id' => 1, 'code' => 'synthetic_one', 'name' => 'Synthetic one'],
+            ['id' => 2, 'code' => 'synthetic_two', 'name' => 'Synthetic two']]);
+        $this->finalize($status);
+        $before = $this->snapshot();
+        $user = $this->actor($actor);
+        $request = Request::create('/gis');
+        $created = $this->gis->store($this->payload(['site_type_id' => '1']), $user, $request);
+        $id = $created['feature']['id'];
+        $this->assertSame(1, GisLocation::findOrFail($id)->site_type_id);
+        $this->assertFalse($this->gis->store($this->payload(['site_type_id' => 1]), $user, $request)['created']);
+        $this->denied(fn () => $this->gis->store($this->payload(['site_type_id' => 2]), $user, $request));
+        foreach ([['site_type_id' => 2], [], ['site_type_id' => null]] as $index => $change) {
+            $version = $this->queries->detail($user, $id)['properties']['version'];
+            $this->gis->update($id, $this->payload(['version' => $version] + $change), $user, $request);
+            $this->assertSame($index === 2 ? null : 2, GisLocation::findOrFail($id)->site_type_id);
+        }
+        $events = DB::table('audit_logs')->where('entity_id', $id)->orderBy('performed_at')->get();
+        $this->assertCount(4, $events);
+        $this->assertSame(1, json_decode($events[0]->new_values, true)['site_type_id']);
+        $this->assertSame($before, $this->snapshot());
+    }
+
+    public function test_invalid_classification_and_unauthorized_updates_leave_the_location_unchanged(): void
+    {
+        DB::table('gis_site_types')->insert(['id' => 1, 'code' => 'synthetic', 'name' => 'Synthetic']);
+        $request = Request::create('/gis');
+        $id = $this->gis->store($this->payload(), $this->actor(), $request)['feature']['id'];
+        $this->assertNull(GisLocation::findOrFail($id)->site_type_id);
+        $version = $this->queries->detail($this->actor(), $id)['properties']['version'];
+        foreach ([999, -1, 'invalid'] as $invalid) {
+            try {
+                $this->gis->update($id, $this->payload(['version' => $version, 'site_type_id' => $invalid]), $this->actor(), $request);
+                $this->fail('Invalid catalog assignment accepted.');
+            } catch (ValidationException $exception) {
+                $this->assertArrayHasKey('site_type_id', $exception->errors());
+            }
+        }
+        foreach (['other', 'account'] as $actor) {
+            $this->denied(fn () => $this->gis->update($id, $this->payload(['version' => $version, 'site_type_id' => 1]), $this->actor($actor), $request));
+        }
+        $this->assertNull(GisLocation::findOrFail($id)->site_type_id);
+        $this->assertSame(1, DB::table('audit_logs')->count());
     }
 
     private function snapshot(): array

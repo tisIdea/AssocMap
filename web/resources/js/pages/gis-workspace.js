@@ -2,10 +2,12 @@ import { L, createGisMap, featureLayer, fitLayer, locationLabels } from './gis-m
 import { addDetail, debounce, fillOptions, gisRequest, queryUrl, showStatus } from '../core/gis-api.js';
 import { showFeedback, showOperationError } from '../core/feedback.js';
 import { createGisPhotos } from './gis-photos.js';
+import { siteSymbol } from './gis-site-symbols.js';
 
 export async function initGis(root) {
     if (root.dataset.gisInitialized === 'true') return;
     root.dataset.gisInitialized = 'true';
+    root.querySelectorAll('[data-gis-site-symbol]').forEach(symbol => { symbol.innerHTML = siteSymbol(symbol.dataset.gisSiteSymbol); });
     const base = root.dataset.gisBase.replace(/\/$/, '');
     const publicView = root.dataset.gisPublic === 'true';
     const manager = root.dataset.gisManager === 'true';
@@ -56,6 +58,10 @@ export async function initGis(root) {
             : `${p.title || 'Location'} selected. Geometry is unavailable or exceeds the supported limit.`;
         addDetail(details, 'Location', p.title);
         addDetail(details, 'Type', locationLabels[p.location_type]);
+        addDetail(details, 'Site classification', p.site_type_name || 'Unclassified');
+        if (publicView && p.location_type === 'project_boundary') {
+            addDetail(details, 'Marker position', 'Calculated representative position within the boundary, not a surveyed site coordinate.');
+        }
         addDetail(details, publicView ? 'Public address' : 'Project Site Address', p.address);
         if (!publicView) {
             [['Association', p.association], ['Project', p.project], ['Municipality', p.municipality], ['Barangay', p.barangay],
@@ -165,15 +171,16 @@ export async function initGis(root) {
             const card = document.createElement('article'); card.className = 'gis-record-card';
             const heading = document.createElement('h3'); heading.textContent = feature.properties.title || 'Location';
             const type = document.createElement('p'); type.textContent = locationLabels[feature.properties.location_type];
+            const site = document.createElement('p'); site.textContent = feature.properties.site_type_name || 'Unclassified site';
             const address = document.createElement('p'); address.textContent = feature.properties.address || 'No address supplied';
             const button = document.createElement('button'); button.type = 'button'; button.className = 'button'; button.textContent = 'View location';
             button.addEventListener('click', () => {
                 setView('map', false); selectFeature(feature); selection.clearLayers();
-                if (feature.geometry) { const layer = featureLayer(feature, selectFeature).addTo(selection); fitLayer(map, layer); }
+                if (feature.geometry) { const layer = featureLayer(feature, selectFeature, publicView).addTo(selection); fitLayer(map, layer); }
                 else showStatus(status, 'This record has no displayable geometry. Managers can supply replacement geometry.', true);
                 root.querySelector('[data-gis-selection-title]').focus();
             });
-            card.append(heading, type, address, button); list.append(card);
+            card.append(heading, type, site, address, button); list.append(card);
         });
         if (!data.features.length) { const text = document.createElement('p'); text.textContent = emptyMessage(data.meta.empty_reason); list.append(text); }
         page = data.meta.page; lastPage = data.meta.last_page;
@@ -215,7 +222,7 @@ export async function initGis(root) {
             }
             features.clearLayers(); selection.clearLayers();
             if (view === 'map') {
-                data.features.filter(feature => feature.geometry).forEach(feature => featureLayer(feature, selectFeature).addTo(features));
+                data.features.filter(feature => feature.geometry).forEach(feature => featureLayer(feature, selectFeature, publicView).addTo(features));
             } else showList(data);
             if (selected) {
                 const fresh = data.features.find(feature => feature.id === selected.id);
@@ -302,7 +309,8 @@ export async function initGis(root) {
         dialog.querySelector('[data-gis-confirm-message]').textContent = message;
         const preview = dialog.querySelector('[data-gis-confirm-preview]'); preview.replaceChildren();
         if (action === 'publish') {
-            [['Public title', feature.properties.public_title], ['Public address', feature.properties.public_address], ['Public description', feature.properties.public_description]]
+            [['Public title', feature.properties.public_title], ['Public address', feature.properties.public_address], ['Public description', feature.properties.public_description],
+                ['Site classification', feature.properties.site_type_name || 'Unclassified']]
                 .forEach(([label, value]) => addDetail(preview, label, value));
         }
         if (action === 'delete') { addDetail(preview, 'Location', feature.properties.title); addDetail(preview, 'Record ID', feature.id); }

@@ -32,6 +32,7 @@ class SaveGisLocationRequest extends FormRequest
     {
         return [
             'location_type' => ['required', Rule::in(GisLocation::TYPES)], 'location_name' => ['required', 'string', 'max:255'],
+            'site_type_id' => ['nullable', 'integer', 'min:1', Rule::exists('gis_site_types', 'id')],
             'association_id' => ['prohibited'], 'parent_association_id' => ['required', 'uuid'], 'project_id' => ['required', 'uuid'],
             'address' => ['nullable', 'string', 'max:2000'], 'public_title' => ['nullable', 'string', 'max:255'],
             'address_mode' => ['prohibited'],
