@@ -342,6 +342,53 @@ class GisFinalizedProjectMaintenanceTest extends TestCase
         }
     }
 
+    public function test_media_foreign_key_preserves_permanent_delete_and_retains_photo_history(): void
+    {
+        Schema::create('media_photos', function (Blueprint $table) {
+            $table->string('id')->primary();
+            $table->string('gis_location_id');
+            $table->string('state');
+        });
+        $this->connection->incomingForeignKeys = [(object) [
+            'conname' => 'media_photos_gis_location_id_fkey',
+            'nspname' => 'public',
+            'relname' => 'media_photos',
+            'approved_media_fk' => true,
+        ]];
+
+        $empty = $this->gis->store($this->payload(), $this->actor(), Request::create('/gis'))['feature']['id'];
+        $this->gis->destroy($empty, (string) GisLocation::findOrFail($empty)->updated_at, $this->actor());
+        $this->assertNull(GisLocation::find($empty));
+
+        $withHistory = $this->gis->store($this->payload(['idempotency_key' => '22222222-2222-4222-8222-222222222222']),
+            $this->actor(), Request::create('/gis'))['feature']['id'];
+        DB::table('media_photos')->insert([
+            'id' => 'photo-history',
+            'gis_location_id' => $withHistory,
+            'state' => 'deleted',
+        ]);
+        $this->denied(fn () => $this->gis->destroy(
+            $withHistory, (string) GisLocation::findOrFail($withHistory)->updated_at, $this->actor()
+        ));
+        $this->assertNotNull(GisLocation::find($withHistory));
+        $this->assertSame(1, DB::table('media_photos')->where('id', 'photo-history')->count());
+    }
+
+    public function test_unrecognized_incoming_foreign_key_blocks_deletion(): void
+    {
+        $this->connection->incomingForeignKeys = [(object) [
+            'conname' => 'unexpected_location_reference',
+            'nspname' => 'public',
+            'relname' => 'unknown_table',
+            'approved_media_fk' => false,
+        ]];
+        $id = $this->gis->store($this->payload(), $this->actor(), Request::create('/gis'))['feature']['id'];
+        $this->denied(fn () => $this->gis->destroy(
+            $id, (string) GisLocation::findOrFail($id)->updated_at, $this->actor()
+        ));
+        $this->assertNotNull(GisLocation::find($id));
+    }
+
     public function test_required_audit_failure_rolls_back_gis_changes(): void
     {
         $this->finalize('terminated');
