@@ -53,6 +53,11 @@
 .gis-key { width: 13px; height: 13px; border: 2px solid; border-radius: 50%; display: inline-block; flex-shrink: 0; }
 .gis-key.project { background: #228855; border-color: #228855; }
 .gis-key.boundary { background: #e9e1f1; border-color: #7444a7; border-radius: 2px; }
+.gis-site-marker { background: transparent; border: 0; }
+.gis-site-marker svg { display: block; filter: drop-shadow(0 1px 2px #0005); }
+.gis-site-marker:focus-visible { outline: 3px solid #174d36; outline-offset: 3px; border-radius: 6px; }
+.gis-legend-symbol { width: 24px; height: 29px; display: inline-flex; flex-shrink: 0; }
+.gis-legend-symbol svg { width: 100%; height: 100%; }
 .gis-help { font-size: 12px; line-height: 1.7; margin: 12px 0; color: var(--text-secondary); }
 .gis-map-panel > .gis-help { padding: 0 20px 16px; margin: 0; }
 .gis-selection-heading { padding: 20px; background: #f7faff; border-bottom: 1px solid var(--border-color); overflow-wrap: anywhere; }

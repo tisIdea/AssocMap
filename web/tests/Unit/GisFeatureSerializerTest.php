@@ -13,7 +13,8 @@ class GisFeatureSerializerTest extends TestCase
         $location = $this->location();
         $feature = (new GisFeatureSerializer)->make($location, true, true);
         $this->assertSame(['type', 'id', 'geometry', 'properties'], array_keys($feature));
-        $this->assertSame(['location_type', 'title', 'address', 'description'], array_keys($feature['properties']));
+        $this->assertSame(['location_type', 'title', 'address', 'description', 'site_type_id', 'site_type_code', 'site_type_name', 'display_point'], array_keys($feature['properties']));
+        $this->assertNull($feature['properties']['site_type_id']);
         $this->assertSame('Approved title', $feature['properties']['title']);
         $this->assertNull($feature['properties']['address']);
         $this->assertNull($feature['properties']['description']);
@@ -30,6 +31,22 @@ class GisFeatureSerializerTest extends TestCase
         foreach (['version', 'created_by', 'published_by', 'archived_by', 'association_id', 'project_id', 'is_published'] as $field) {
             $this->assertArrayNotHasKey($field, $feature['properties']);
         }
+    }
+
+    public function test_public_display_point_is_additive_and_never_replaces_staff_or_original_geometry(): void
+    {
+        $location = $this->location();
+        $boundary = ['type' => 'Polygon', 'coordinates' => [[[0, 0], [6, 0], [6, 6], [0, 0]]]];
+        $point = ['type' => 'Point', 'coordinates' => [4, 3]];
+        $location->geometry_json = json_encode($boundary);
+        $location->display_point_json = json_encode($point);
+        $public = (new GisFeatureSerializer)->make($location, true);
+        $this->assertSame($boundary, $public['geometry']);
+        $this->assertSame('project_boundary', $public['properties']['location_type']);
+        $this->assertSame($point, $public['properties']['display_point']);
+        $staff = (new GisFeatureSerializer)->make($location, false, true);
+        $this->assertSame($boundary, $staff['geometry']);
+        $this->assertArrayNotHasKey('display_point', $staff['properties']);
     }
 
     public function test_boundaries_remain_multipolygons_and_missing_geometry_does_not_create_a_point(): void

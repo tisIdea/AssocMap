@@ -14,7 +14,13 @@ class GisFeatureSerializer
             'title' => $public ? $location->public_title : $location->location_name,
             'address' => $public ? $location->public_address : $location->address,
             'description' => $location->public_description,
+            'site_type_id' => $location->site_type_id,
+            'site_type_code' => $location->site_type_code,
+            'site_type_name' => $location->site_type_name,
         ];
+        if ($public) {
+            $properties['display_point'] = is_string($location->display_point_json) ? json_decode($location->display_point_json, true) : null;
+        }
         if (! $public) {
             $properties += [
                 'association' => $location->association_name, 'project' => $location->project_title,

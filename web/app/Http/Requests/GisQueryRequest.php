@@ -16,6 +16,7 @@ class GisQueryRequest extends FormRequest
         return [
             'mode' => ['nullable', Rule::in(['map', 'list', 'overview'])], 'page' => ['nullable', 'integer', 'min:1', 'max:100000'],
             'q' => ['nullable', 'string', 'max:100'], 'location_type' => ['nullable', Rule::in(GisLocation::TYPES)],
+            'site_type_id' => ['nullable', 'regex:/^(unclassified|[1-9][0-9]{0,17})$/'],
             'publication' => ['nullable', Rule::in(['published', 'unpublished'])],
             'lifecycle' => ['nullable', Rule::in(['active', 'archived'])],
             'association_id' => ['nullable', 'uuid'], 'project_id' => ['nullable', 'uuid'],

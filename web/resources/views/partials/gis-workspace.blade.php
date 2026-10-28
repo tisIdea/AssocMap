@@ -26,6 +26,7 @@
                 <summary><span><x-icon name="filter" />Geographic filters</span><span class="gis-filter-indicator" data-gis-filter-summary>No additional filters</span><x-icon name="chevron-down" /></summary>
                 <div class="gis-filter-grid">
                     <div class="field"><label for="gis-type">Location type</label><select id="gis-type" name="location_type"><option value="">All project location types</option><option value="project_point">Project point</option><option value="project_boundary">Project boundary</option></select></div>
+                    <div class="field"><label for="gis-site-type">Site classification</label><select id="gis-site-type" name="site_type_id"><option value="">All site classifications</option><option value="unclassified">Unclassified</option>@foreach($gisSiteTypes as $siteType)<option value="{{ $siteType['id'] }}">{{ $siteType['name'] }}</option>@endforeach</select></div>
                     @if($gisPublic)
                         <div class="field"><label for="gis-association">Association via published project location</label><select id="gis-association" name="association_location_id" data-gis-parent="association"><option value="">All eligible associations</option></select><small>Choose an approved project-location title to filter its association's published locations.</small></div>
                     @else
@@ -48,8 +49,12 @@
         <div class="card gis-map-panel" id="gis-map-panel" data-gis-map-panel>
             <div class="gis-panel-heading"><h2><x-icon name="map" />Interactive map</h2><span class="gis-panel-caption">OpenStreetMap</span></div>
             <div class="gis-map" data-gis-map role="region" aria-label="Interactive GIS map" aria-describedby="gis-map-help"></div>
-            <ul class="gis-legend" aria-label="Map legend"><li><i class="gis-key project" aria-hidden="true"></i>Project point</li><li><i class="gis-key boundary" aria-hidden="true"></i>Project boundary</li></ul>
-            <p class="gis-help" id="gis-map-help">The map shows bounded records in the current view. Zoom or filter to narrow results; use the list to browse all records in scope.</p>
+            <ul class="gis-legend" aria-label="Map legend">
+                <li><span class="gis-legend-symbol" data-gis-site-symbol="" aria-hidden="true"></span>{{ $gisPublic ? 'Unclassified location' : 'Unclassified point' }}</li>
+                @foreach($gisSiteTypes as $siteType)<li><span class="gis-legend-symbol" data-gis-site-symbol="{{ $siteType['code'] }}" aria-hidden="true"></span>{{ $siteType['name'] }}{{ $gisPublic ? '' : ' (point)' }}</li>@endforeach
+                @unless($gisPublic)<li><i class="gis-key boundary" aria-hidden="true"></i>Project boundary (all classifications)</li>@endunless
+            </ul>
+            <p class="gis-help" id="gis-map-help">@if($gisPublic)Markers show point locations and calculated representative positions within boundaries. Boundary markers are not surveyed site coordinates. @endif The map shows bounded records in the current view. Zoom or filter to narrow results; use the list to browse all records in scope.</p>
         </div>
         <div class="card gis-register-panel" id="gis-list-panel" data-gis-list-panel hidden>
             <div class="gis-panel-heading"><h2><x-icon name="scroll-text" />{{ $gisManager ? 'GIS register' : 'Location list' }}</h2><span class="gis-panel-caption">20 per page</span></div>

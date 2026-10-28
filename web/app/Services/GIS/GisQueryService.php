@@ -28,6 +28,12 @@ class GisQueryService
         return in_array($this->role($user), ['system_admin', 'field_officer'], true);
     }
 
+    public function siteTypes(): array
+    {
+        return DB::table('gis_site_types')->orderBy('name')->orderBy('id')->get(['id', 'code', 'name'])
+            ->map(fn ($type) => ['id' => (int) $type->id, 'code' => $type->code, 'name' => $type->name])->all();
+    }
+
     public function scoped(?UserProfile $user, ?bool $archived = false): Builder
     {
         $administrator = $user !== null && $this->role($user) === 'system_admin';
@@ -63,6 +69,7 @@ class GisQueryService
         $manager = $user !== null && $this->manager($user);
         $archived = ($filters['lifecycle'] ?? 'active') === 'archived';
         $query = $this->scoped($user, $archived);
+        if ($public) $this->addPublicDisplayPoint($query);
         $this->filter($query, $filters, $public);
         $this->selectFeature($query, $public, $manager);
         $query->orderByDesc('g.updated_at')->orderBy('g.id');
@@ -96,12 +103,14 @@ class GisQueryService
     {
         unset($filters['bbox']);
         $query = $this->scoped($user, ($filters['lifecycle'] ?? 'active') === 'archived');
+        if ($user === null) $this->addPublicDisplayPoint($query);
         $this->filter($query, $filters, $user === null);
         $query->whereRaw($this->readableGeometry());
-        $extent = $query->toBase()->selectRaw('extensions.ST_XMin(extensions.ST_Extent(g.geom)::extensions.box3d) AS west,
-            extensions.ST_YMin(extensions.ST_Extent(g.geom)::extensions.box3d) AS south,
-            extensions.ST_XMax(extensions.ST_Extent(g.geom)::extensions.box3d) AS east,
-            extensions.ST_YMax(extensions.ST_Extent(g.geom)::extensions.box3d) AS north')->first();
+        $geometry = $user === null ? 'gis_display.display_geom' : 'g.geom';
+        $extent = $query->toBase()->selectRaw('extensions.ST_XMin(extensions.ST_Extent('.$geometry.')::extensions.box3d) AS west,
+            extensions.ST_YMin(extensions.ST_Extent('.$geometry.')::extensions.box3d) AS south,
+            extensions.ST_XMax(extensions.ST_Extent('.$geometry.')::extensions.box3d) AS east,
+            extensions.ST_YMax(extensions.ST_Extent('.$geometry.')::extensions.box3d) AS north')->first();
         $bounds = $extent?->west !== null
             ? [(float) $extent->west, (float) $extent->south, (float) $extent->east, (float) $extent->north] : null;
 
@@ -220,6 +229,8 @@ class GisQueryService
     private function filter(Builder $query, array $filters, bool $public): void
     {
         if (! empty($filters['location_type'])) $query->where('g.location_type', $filters['location_type']);
+        if (($filters['site_type_id'] ?? '') === 'unclassified') $query->whereNull('g.site_type_id');
+        elseif (! empty($filters['site_type_id'])) $query->where('g.site_type_id', $filters['site_type_id']);
         if (! empty($filters['q'])) {
             $columns = $public ? ['g.public_title', 'g.public_description', 'g.public_address']
                 : ['g.location_name', 'g.address', 'a.name', 'p.title', 'm.name', 'b.name', 'ar.address'];
@@ -241,8 +252,9 @@ class GisQueryService
         }
         if (! empty($filters['bbox'])) {
             $bounds = array_values($filters['bbox']);
+            $geometry = $public ? 'gis_display.display_geom' : 'g.geom';
             $query->whereRaw('g.geom OPERATOR(extensions.&&) extensions.ST_MakeEnvelope(?, ?, ?, ?, 4326)
-                AND CASE WHEN '.$this->readableGeometry().' THEN extensions.ST_Intersects(g.geom,
+                AND CASE WHEN '.$this->readableGeometry().' THEN extensions.ST_Intersects('.$geometry.',
                     extensions.ST_MakeEnvelope(?, ?, ?, ?, 4326)) ELSE FALSE END', array_merge($bounds, $bounds));
         }
     }
@@ -250,7 +262,8 @@ class GisQueryService
     private function selectFeature(Builder $query, bool $public = false, bool $manager = false): void
     {
         if ($public) {
-            $query->select(['g.id', 'g.location_type', 'g.public_title', 'g.public_description', 'g.public_address']);
+            $query->select(['g.id', 'g.location_type', 'g.public_title', 'g.public_description', 'g.public_address'])
+                ->selectRaw('extensions.ST_AsGeoJSON(gis_display.display_geom, 15, 0) AS display_point_json');
         } else {
             $query->select(['g.id', 'g.association_id', 'g.project_id', 'g.location_type', 'g.location_name', 'g.address',
                 'g.public_title', 'g.public_description', 'g.public_address', 'g.is_published', 'g.published_by', 'g.published_at',
@@ -259,6 +272,8 @@ class GisQueryService
                 'p.program_year', 'm.name as municipality_name', 'b.name as barangay_name', 'ar.address as area_address'])
                 ->selectRaw('g.updated_at::text AS version');
         }
+        $query->leftJoin('gis_site_types as st', 'st.id', '=', 'g.site_type_id')
+            ->addSelect(['g.site_type_id', 'st.code as site_type_code', 'st.name as site_type_name']);
         if (! $public && $manager) {
             $query->addSelect(['p.status as project_status', 'p.closed_at as project_closed_at',
                 'p.archived_at as project_archived_at', 'a.status as association_status', 'a.archived_at as association_archived_at']);
@@ -269,6 +284,14 @@ class GisQueryService
             }
         }
         $query->selectRaw('CASE WHEN '.$this->readableGeometry().' THEN extensions.ST_AsGeoJSON(g.geom, 15, 0) ELSE NULL END AS geometry_json');
+    }
+
+    private function addPublicDisplayPoint(Builder $query): void
+    {
+        // OFFSET 0 keeps this lateral projection from being inlined and recalculated for the viewport and output.
+        $query->crossJoin(DB::raw('LATERAL (SELECT CASE WHEN '.$this->readableGeometry().'
+            THEN CASE WHEN g.location_type = \'project_boundary\' THEN extensions.ST_PointOnSurface(g.geom)
+                ELSE g.geom END ELSE NULL END AS display_geom OFFSET 0) AS gis_display'));
     }
 
     private function readableGeometry(): string

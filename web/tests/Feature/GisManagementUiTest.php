@@ -5,8 +5,10 @@ namespace Tests\Feature;
 use App\Services\Auth\SupabaseAuthService;
 use App\Services\GIS\GisAddressResolver;
 use App\Services\GIS\GisFeatureSerializer;
+use App\Services\GIS\GisLocationService;
 use App\Services\GIS\GisQueryService;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
@@ -25,6 +27,7 @@ class GisManagementUiTest extends TestCase
         config(['app.key' => 'base64:'.base64_encode(str_repeat('g', 32))]);
         $this->withoutVite();
         $this->assertSame(':memory:', DB::connection()->getConfig('database'));
+        Schema::create('gis_site_types', function (Blueprint $t) { $t->id(); $t->string('code')->unique(); $t->string('name'); });
         Schema::create('roles', function (Blueprint $t) { $t->id(); $t->string('code'); $t->boolean('is_active'); $t->string('name')->nullable(); $t->text('description')->nullable(); $t->timestamps(); });
         Schema::create('user_profiles', function (Blueprint $t) {
             $t->string('id')->primary(); $t->integer('role_id'); $t->string('display_name'); $t->boolean('is_active'); $t->timestamps();
@@ -62,7 +65,7 @@ class GisManagementUiTest extends TestCase
         $page = $this->get('/'.$prefix.'/gis')->assertOk()->assertSee('data-gis-workspace', false)
             ->assertSee('Geographic filters')->assertSee('Clear selected location')->assertSee('Interactive map')
             ->assertSee('data-workspace-module="gis"', false)->assertDontSee('association_point');
-        $this->assertCount(2, DB::getQueryLog());
+        $this->assertCount(3, DB::getQueryLog());
         DB::disableQueryLog();
         $dom = new \DOMDocument();
         @$dom->loadHTML($page->getContent());
@@ -155,9 +158,88 @@ class GisManagementUiTest extends TestCase
         $this->app->instance(GisQueryService::class, $queries);
     }
 
-    private function feature(array $properties = []): array
+    public function test_empty_catalog_is_optional_and_synthetic_classifications_render_in_all_views(): void
     {
-        return ['type' => 'Feature', 'id' => self::LOCATION, 'geometry' => ['type' => 'Point', 'coordinates' => [123.8, 10.3]],
+        $emptyEditor = $this->get('/admin/gis/create')->assertOk()->assertSee('No site classifications have been approved yet.')
+            ->assertSee('name="site_type_id"', false)->assertSee('Unclassified');
+        $emptyPublic = $this->get('/map')->assertOk()->assertSee('Unclassified location')->assertSee('All site classifications')
+            ->assertSee('Boundary markers are not surveyed site coordinates.')->assertDontSee('gis-key boundary', false);
+        $types = ['fish_cage' => 'Fish cage', 'fish_pen' => 'Fish pen', 'seaweed_cultivation_site' => 'Seaweed cultivation site',
+            'fishing_gear_site' => 'Fishing gear site', 'post_harvest_facility' => 'Post-harvest facility'];
+        foreach ($types as $code => $name) DB::table('gis_site_types')->insert(['code' => $code, 'name' => $name]);
+        $feature = $this->feature(['site_type_id' => 1]);
+        $this->bindFeature($feature);
+        $pages = ['staff' => $this->get('/admin/gis')->assertOk(), 'public' => $this->get('/map')->assertOk(),
+            'editor' => $this->get('/admin/gis/'.self::LOCATION.'/edit')->assertOk()];
+        $ring = [[123.7, 10.2], [123.75, 10.2], [123.75, 10.25], [123.7, 10.2]];
+        foreach (['boundary-editor' => ['type' => 'Polygon', 'coordinates' => [$ring]],
+            'multipolygon-editor' => ['type' => 'MultiPolygon', 'coordinates' => [[$ring], [[[123.8, 10.3], [123.85, 10.3], [123.85, 10.35], [123.8, 10.3]]]]]] as $name => $geometry) {
+            $this->bindFeature($this->feature(['site_type_id' => 1, 'location_type' => 'project_boundary'], $geometry));
+            $this->app['router']->getRoutes()->getByName('admin.gis.edit')->flushController();
+            $pages[$name] = $this->get('/admin/gis/'.self::LOCATION.'/edit')->assertOk();
+        }
+        foreach ($pages as $page) foreach ($types as $name) $page->assertSee($name);
+        $pages['editor']->assertSee('value="1" selected', false);
+        if ($directory = getenv('ASSOCMAP_GISCLASS_UI_DIRECTORY')) {
+            $this->assertMatchesRegularExpression('/\Aassocmap-gisclass-ui-[a-f0-9]{32}\z/', basename($directory));
+            $this->assertSame(realpath(sys_get_temp_dir()), realpath(dirname($directory)));
+            foreach ($pages as $name => $page) file_put_contents($directory.'/'.$name.'.html', $page->getContent());
+            file_put_contents($directory.'/empty-editor.html', $emptyEditor->getContent());
+            file_put_contents($directory.'/empty-public.html', $emptyPublic->getContent());
+            foreach ([true => 'staff-gallery', false => 'public-gallery'] as $manager => $name) {
+                file_put_contents($directory.'/'.$name.'.html', view('components.gis-photos', ['gisManager' => (bool) $manager])->render());
+            }
+            $image = UploadedFile::fake()->image('site.png', 64, 32);
+            file_put_contents($directory.'/photo.png', file_get_contents($image->getPathname()));
+        }
+    }
+
+    public function test_http_rejects_invalid_site_assignments_before_the_write_service(): void
+    {
+        $payload = ['parent_association_id' => self::LOCATION, 'project_id' => self::LOCATION,
+            'idempotency_key' => self::LOCATION, 'location_type' => 'project_point', 'location_name' => 'Synthetic',
+            'geometry' => ['type' => 'Point', 'coordinates' => [123.8, 10.3]]];
+        foreach ([-1, 0, 'unknown', 999, ['id' => 1]] as $invalid) {
+            $this->postJson('/admin/gis', $payload + ['site_type_id' => $invalid])->assertUnprocessable()->assertJsonValidationErrors('site_type_id');
+        }
+        foreach (['mode=list&site_type_id=-1', 'mode=list&site_type_id[]=1', 'mode=list&site_type_id=not-a-type'] as $query) {
+            $this->getJson('/map/data?'.$query)->assertUnprocessable()->assertJsonValidationErrors('site_type_id');
+        }
+    }
+
+    public function test_http_create_and_update_pass_valid_null_and_omitted_classifications_to_the_service(): void
+    {
+        DB::table('gis_site_types')->insert(['id' => 1, 'code' => 'synthetic', 'name' => 'Synthetic']);
+        $service = Mockery::mock(GisLocationService::class);
+        $payload = ['parent_association_id' => self::LOCATION, 'project_id' => self::LOCATION,
+            'location_type' => 'project_point', 'location_name' => 'Synthetic',
+            'geometry' => ['type' => 'Point', 'coordinates' => [123.8, 10.3]]];
+        $received = [];
+        $service->shouldReceive('store')->times(3)->andReturnUsing(function ($data) use (&$received) {
+            $received[] = $data;
+
+            return ['created' => true, 'feature' => $this->feature()];
+        });
+        $service->shouldReceive('update')->times(3)->andReturnUsing(function ($id, $data) use (&$received) {
+            $this->assertSame(self::LOCATION, $id);
+            $received[] = $data;
+
+            return $this->feature();
+        });
+        $this->app->instance(GisLocationService::class, $service);
+        foreach ([['site_type_id' => 1], ['site_type_id' => null], []] as $change) {
+            $this->postJson('/admin/gis', $payload + $change + ['idempotency_key' => self::LOCATION])->assertCreated();
+            $this->patchJson('/admin/gis/'.self::LOCATION, $payload + $change + ['version' => 'expected-version'])->assertOk();
+            foreach (array_slice($received, -2) as $data) {
+                $this->assertSame(array_key_exists('site_type_id', $change), array_key_exists('site_type_id', $data));
+                $this->assertSame($change['site_type_id'] ?? null, $data['site_type_id'] ?? null);
+            }
+        }
+    }
+
+    private function feature(array $properties = [], ?array $geometry = null): array
+    {
+        return ['type' => 'Feature', 'id' => self::LOCATION, 'geometry' => $geometry ?? ['type' => 'Point', 'coordinates' => [123.8, 10.3]],
             'properties' => array_replace(['location_type' => 'project_point', 'title' => 'Synthetic location', 'archived_at' => null,
                 'association_archived_at' => null, 'project_archived_at' => null, 'can_correct_geometry' => false,
                 'version' => 'saved-version', 'project_id' => self::LOCATION, 'parent_association_id' => self::LOCATION], $properties)];

@@ -25,7 +25,7 @@ class GisLocation extends Model
 
     protected function casts(): array
     {
-        return ['is_published' => 'boolean', 'published_at' => 'datetime', 'archived_at' => 'datetime'];
+        return ['site_type_id' => 'integer', 'is_published' => 'boolean', 'published_at' => 'datetime', 'archived_at' => 'datetime'];
     }
 
     public function association(): BelongsTo
@@ -36,6 +36,11 @@ class GisLocation extends Model
     public function project(): BelongsTo
     {
         return $this->belongsTo(Project::class);
+    }
+
+    public function siteType(): BelongsTo
+    {
+        return $this->belongsTo(GisSiteType::class);
     }
 
     public function photos(): HasMany

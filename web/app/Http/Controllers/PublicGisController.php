@@ -10,9 +10,9 @@ use Illuminate\View\View;
 
 class PublicGisController extends Controller
 {
-    public function index(): View
+    public function index(GisQueryService $gis): View
     {
-        return view('public.gis', ['gisPublic' => true, 'gisManager' => false, 'gisBaseUrl' => route('public.gis'),
+        return view('public.gis', ['gisSiteTypes' => $gis->siteTypes(), 'gisPublic' => true, 'gisManager' => false, 'gisBaseUrl' => route('public.gis'),
             'gisTitle' => 'Public GIS Map', 'gisDescription' => 'Explore approved project locations and boundaries.']);
     }
 
