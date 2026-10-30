@@ -326,6 +326,10 @@ try {
     $municipality = DB::table('municipalities')->insertGetId(['name' => 'Synthetic municipality'], 'id');
     $barangay = DB::table('barangays')->insertGetId(['name' => 'Synthetic barangay', 'municipality_id' => $municipality], 'id');
     DB::table('areas')->insert(['barangay_id' => $barangay, 'address' => 'Synthetic area']);
+    if (in_array('project', $modules, true)) {
+        require __DIR__.'/ProjectTransferVerification.php';
+        verifyProjectTransfers($setup);
+    }
     $scenarios = 0;
     foreach ($modules as $module) {
         foreach (['create', 'update', 'archive', 'unarchive'] as $operation) {

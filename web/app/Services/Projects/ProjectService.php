@@ -140,26 +140,7 @@ class ProjectService
             $currentUser
         );
 
-        /*
-        |--------------------------------------------------------------------------
-        | Protect historical Monitoring scope
-        |--------------------------------------------------------------------------
-        |
-        | Once a Project already has Monitoring records, moving that Project
-        | to another Association would also change the Association context of
-        | its historical Monitoring records.
-        |
-        */
-
-        if (
-            $project->association_id !== $association->id
-            && $this->projectHasMonitoring($project)
-        ) {
-            throw ValidationException::withMessages([
-                'association_id' =>
-                    'The association cannot be changed because this project already has monitoring records.',
-            ]);
-        }
+        $this->assertAssociationTransferAllowed($project, $association);
 
         $category = $this->resolveCategory(
             (int) $data['fisheries_category_id']
@@ -182,11 +163,7 @@ class ProjectService
                 throw ValidationException::withMessages(['project' => 'Archived projects cannot be edited.']);
             }
             $association = $this->resolveAssociationForUser($association->id, $currentUser);
-            if ($project->association_id !== $association->id && $this->projectHasMonitoring($project)) {
-                throw ValidationException::withMessages([
-                    'association_id' => 'The association cannot be changed because this project already has monitoring records.',
-                ]);
-            }
+            $this->assertAssociationTransferAllowed($project, $association);
             $commodity = $this->resolveCommodity(
                 $data,
                 $category,
@@ -890,6 +867,27 @@ class ProjectService
                     ? (bool) $product['is_active']
                     : true,
         ];
+    }
+
+    private function assertAssociationTransferAllowed(Project $project, Association $association): void
+    {
+        if ($project->association_id === $association->id) {
+            return;
+        }
+
+        if ($this->projectHasMonitoring($project)) {
+            throw ValidationException::withMessages([
+                'association_id' => 'The association cannot be changed because this project already has monitoring records.',
+            ]);
+        }
+
+        // Archived links also retain their original association context.
+        if (DB::table('trainings')->where('related_project_id', $project->id)->exists()
+            || DB::table('program_activity_records')->where('related_project_id', $project->id)->exists()) {
+            throw ValidationException::withMessages([
+                'association_id' => 'The association cannot be changed because this project has linked training or program activity records. Their association history must be preserved.',
+            ]);
+        }
     }
 
     /*

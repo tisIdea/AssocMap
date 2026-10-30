@@ -4,7 +4,7 @@
     </x-workspace-nav-section>
     <x-workspace-nav-section id="admin-associations-members" label="ASSOCIATIONS & MEMBERS">
         @foreach(['areas', 'associations', 'members'] as $key)
-            <x-workspace-nav-link :href="route('admin.'.$key.'.index')" :label="$catalog['modules'][$key]['title']" :icon="$catalog['modules'][$key]['icon']" :active="request()->routeIs('admin.'.$key.'.*')" data-nav="{{ $key }}" />
+            <x-workspace-nav-link :href="route('admin.'.$key.'.index')" :label="$key === 'members' ? 'Registered Members' : $catalog['modules'][$key]['title']" :icon="$catalog['modules'][$key]['icon']" :active="request()->routeIs('admin.'.$key.'.*')" data-nav="{{ $key }}" />
         @endforeach
     </x-workspace-nav-section>
     <x-workspace-nav-section id="admin-projects-activities" label="PROJECTS & ACTIVITIES">

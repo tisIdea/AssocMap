@@ -19,6 +19,7 @@ use Tests\TestCase;
 
 class RecordNavigationTest extends TestCase
 {
+    use \Tests\Support\AssertsWorkflowNavigation;
     use \Tests\Support\MonitoringIncomeFixture;
 
     private string $identity = self::ADMIN;
@@ -116,6 +117,8 @@ class RecordNavigationTest extends TestCase
             $table->uuid('id')->primary(); $table->string('entity_type'); $table->uuid('entity_id');
             $table->string('action_type'); $table->timestamp('performed_at');
         });
+        Schema::create('gis_locations', function (Blueprint $table) { $table->uuid('id')->primary(); });
+        (require database_path('migrations/2026_10_27_000000_add_media_photos.php'))->up();
     }
 
     private function data(string $module): array
@@ -160,6 +163,55 @@ class RecordNavigationTest extends TestCase
         return new DOMXPath($document);
     }
 
+    private function recordLinks(DOMXPath $dom, string $destination): array
+    {
+        $expected = parse_url($destination);
+        $links = [];
+        foreach ($dom->query('//a[@href]') as $link) {
+            $actual = parse_url($link->getAttribute('href'));
+            if (($actual['path'] ?? null) !== $expected['path']) {
+                continue;
+            }
+            unset($actual['query'], $actual['fragment']);
+            $this->assertSame($expected, $actual, 'Record links must retain their destination and origin.');
+            $links[] = $link;
+        }
+
+        return $links;
+    }
+
+    private function assertRecordViewLink(DOMXPath $dom, string $module, string $prefix, array $filters = []): string
+    {
+        $links = array_values(array_filter($this->recordLinks($dom, $this->url($module, 'show', $prefix)),
+            fn ($link) => str_starts_with($link->getAttribute('aria-label'), 'View ')));
+        $this->assertCount(1, $links, 'The authorized record must have one View action.');
+        $href = $links[0]->getAttribute('href');
+        $this->assertNull(parse_url($href, PHP_URL_FRAGMENT));
+        parse_str(parse_url($href, PHP_URL_QUERY) ?? '', $query);
+        $this->assertSame(['return_to'], array_keys($query));
+        $this->assertIsString($query['return_to']);
+        $returnTo = parse_url($query['return_to']);
+        parse_str($returnTo['query'] ?? '', $returnQuery);
+        unset($returnTo['query']);
+        $this->assertSame(['path' => parse_url($this->url($module, 'index', $prefix), PHP_URL_PATH)], $returnTo);
+        $this->assertEquals($filters, $returnQuery);
+
+        return $href;
+    }
+
+    private function projectHistory(): array
+    {
+        $snapshot = [];
+        foreach (['associations', 'projects', 'project_products', 'project_materials', 'trainings', 'training_participants',
+            'program_activity_records', 'members', 'monitoring_records', 'monitoring_production',
+            'monitoring_production_monthly', 'monitoring_income', 'monitoring_materials', 'monitoring_visit_reports',
+            'gis_locations', 'media_photos', 'audit_logs'] as $table) {
+            $snapshot[$table] = DB::table($table)->orderBy('id')->get()->toJson();
+        }
+
+        return $snapshot;
+    }
+
     public static function modules(): array { return [['projects'], ['trainings'], ['program-activities']]; }
     public static function managerModules(): array
     {
@@ -172,7 +224,9 @@ class RecordNavigationTest extends TestCase
     public function test_record_pages_and_list_actions_use_pages_while_create_stays_modal(string $module, string $prefix): void
     {
         $this->identity = $prefix === 'admin' ? self::ADMIN : self::OFFICER;
-        $listing = $this->get($this->url($module, 'index', $prefix))->assertOk();
+        $filters = ['q' => 'Synthetic', 'year' => 2026, 'sort' => 'az', 'page' => 1];
+        $register = $this->url($module, 'index', $prefix).'?'.http_build_query($filters);
+        $listing = $this->get($register)->assertOk();
         $dom = $this->document($listing->getContent());
         $creationForm = '//dialog//form[@action="'.$this->url($module, 'store', $prefix).'"]';
         $this->assertSame(0, $dom->query($creationForm)->length);
@@ -185,9 +239,10 @@ class RecordNavigationTest extends TestCase
         $this->assertSame(1, $creationDom->query($creationForm.'//input[@name="_token"]')->length);
         $this->assertNotEmpty($creationDom->evaluate('string('.$creationForm.'//input[@name="_token"]/@value)'));
         $this->assertSame(0, $dom->query('//dialog[contains(@id,"-view-")]')->length);
-        $this->assertGreaterThan(0, $dom->query('//a[@href="'.$this->url($module, 'show', $prefix).'"]')->length);
+        $view = $this->assertRecordViewLink($dom, $module, $prefix, $filters);
         $this->assertSame(1, $dom->query('//a[@href="'.$this->url($module, 'edit', $prefix).'"]')->length);
-        $this->get($this->url($module, 'show', $prefix))->assertOk()->assertSee($this->url($module, 'edit', $prefix), false);
+        $details = $this->get($view)->assertOk()->assertSee($this->url($module, 'edit', $prefix), false);
+        $this->assertWorkflowBack($details, $register);
         $edit = $this->get($this->url($module, 'edit', $prefix))->assertOk()->assertSee('Synthetic');
         $dom = $this->document($edit->getContent());
         $form = '//form[@action="'.$this->url($module, 'update', $prefix).'"]';
@@ -353,15 +408,17 @@ class RecordNavigationTest extends TestCase
         DB::table('associations')->update(['archived_at' => '2026-01-20']);
         foreach ([false, true] as $archived) {
             DB::table($this->table($module))->where('id', $this->id($module))->update(['archived_at' => $archived ? '2026-01-21' : null]);
-            $listing = $this->get($this->url($module, 'index').($archived ? '?status=archived' : ''))->assertOk();
+            $register = $this->url($module, 'index').($archived ? '?status=archived' : '');
+            $listing = $this->get($register)->assertOk();
             $dom = $this->document($listing->getContent());
-            $this->assertGreaterThan(0, $dom->query('//a[@href="'.$this->url($module, 'show').'"]')->length);
+            $view = $this->assertRecordViewLink($dom, $module, 'admin', $archived ? ['status' => 'archived'] : []);
             $this->assertSame(0, $dom->query('//a[@href="'.$this->url($module, 'edit').'"]')->length);
             foreach (['archive', 'unarchive'] as $action) {
                 $this->assertSame(0, $dom->query('//form[@action="'.$this->url($module, $action).'"]')->length);
                 $this->patchJson($this->url($module, $action))->assertUnprocessable();
             }
-            $details = $this->get($this->url($module, 'show'))->assertOk();
+            $details = $this->get($view)->assertOk();
+            $this->assertWorkflowBack($details, $register);
             $detailDom = $this->document($details->getContent());
             $notice = $detailDom->query('//p[contains(@class,"notice")][contains(.,"Association Archived")]');
             $this->assertSame(1, $notice->length);
@@ -370,7 +427,7 @@ class RecordNavigationTest extends TestCase
         }
         $this->identity = self::OFFICER;
         $listing = $this->get($this->url($module, 'index', 'field-officer').'?status=archived')->assertOk();
-        $this->assertSame(0, $this->document($listing->getContent())->query('//a[@href="'.$this->url($module, 'show', 'field-officer').'"]')->length);
+        $this->assertCount(0, $this->recordLinks($this->document($listing->getContent()), $this->url($module, 'show', 'field-officer')));
         foreach (['show', 'edit'] as $action) $this->get($this->url($module, $action, 'field-officer'))->assertForbidden();
         $this->assertDatabaseHas('training_participants', ['id' => self::RECORD, 'member_id' => self::ACCOUNT]);
         $this->assertDatabaseHas('members', ['id' => self::ACCOUNT, 'member_status' => 'active']);
@@ -382,10 +439,8 @@ class RecordNavigationTest extends TestCase
         $owner = '99999999-9999-4999-8999-999999999999';
         DB::table('associations')->insert(['id' => $owner, 'name' => 'Archived actual project owner',
             'status' => 'active', 'primary_field_officer_id' => self::OFFICER]);
-        DB::table('monitoring_production')->delete();
-        DB::table('monitoring_records')->delete();
-        $this->patch($this->url('projects', 'update'), array_replace($this->payload('projects'), ['association_id' => $owner]))
-            ->assertRedirect()->assertSessionHasNoErrors();
+        // Model retained legacy links directly; ordinary transfers must now reject this history.
+        DB::table('projects')->where('id', self::PROJECT)->update(['association_id' => $owner]);
         DB::table('associations')->where('id', $owner)->update(['archived_at' => '2026-01-20']);
         foreach (['trainings', 'program-activities'] as $module) {
             $this->get($this->url($module, 'show'))->assertOk()->assertDontSee($this->url($module, 'edit'), false);
@@ -403,6 +458,63 @@ class RecordNavigationTest extends TestCase
             DB::table($this->table($module))->insert(['id' => $owner] + $unrelated);
             $this->get('/admin/'.$module.'/'.$owner.'/edit')->assertOk();
         }
+    }
+
+    public static function linkedHistoryStates(): array
+    {
+        return ['active history' => [false], 'archived history' => [true]];
+    }
+
+    #[DataProvider('linkedHistoryStates')]
+    public function test_project_transfer_with_linked_history_preserves_ownership_history_and_audit(bool $archived): void
+    {
+        $owner = '99999999-9999-4999-8999-999999999999';
+        $project = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+        DB::table('associations')->insert(['id' => $owner, 'name' => 'Synthetic destination',
+            'status' => 'active', 'primary_field_officer_id' => self::OFFICER]);
+        DB::table('projects')->insert(['id' => $project] + $this->data('projects'));
+        foreach (['trainings', 'program_activity_records'] as $table) {
+            DB::table($table)->where('id', self::PRODUCT)->update(['related_project_id' => $project,
+                'archived_at' => $archived ? '2026-01-20' : null]);
+        }
+        DB::table('audit_logs')->insert(['id' => $project, 'entity_type' => 'project', 'entity_id' => $project,
+            'action_type' => 'CREATE PROJECT', 'performed_at' => '2026-01-01']);
+        $this->assertDatabaseMissing('monitoring_records', ['project_id' => $project]);
+        $before = $this->projectHistory();
+        $edit = route('admin.projects.edit', $project);
+        $this->from($edit)->patch(route('admin.projects.update', $project),
+            array_replace($this->data('projects'), ['association_id' => $owner, 'title' => 'Rejected title']))
+            ->assertRedirect($edit)->assertSessionHasErrors('association_id')->assertSessionMissing('success');
+        $this->assertSame($before, $this->projectHistory());
+        $this->assertDatabaseHas('projects', ['id' => $project, 'association_id' => self::ASSOCIATION]);
+        $this->assertDatabaseCount('audit_logs', 1);
+    }
+
+    #[DataProvider('roles')]
+    public function test_authorized_unlinked_project_can_transfer_without_changing_other_history(string $prefix): void
+    {
+        $this->identity = $prefix === 'admin' ? self::ADMIN : self::OFFICER;
+        $owner = '99999999-9999-4999-8999-999999999999';
+        $project = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+        DB::table('associations')->insert(['id' => $owner, 'name' => 'Synthetic destination',
+            'status' => 'active', 'primary_field_officer_id' => self::OFFICER]);
+        DB::table('projects')->insert(['id' => $project] + $this->data('projects'));
+        $this->assertDatabaseMissing('monitoring_records', ['project_id' => $project]);
+        foreach (['trainings', 'program_activity_records'] as $table) {
+            $this->assertDatabaseMissing($table, ['related_project_id' => $project]);
+        }
+        $before = $this->projectHistory();
+        $this->patch(route($prefix.'.projects.update', $project), array_replace($this->data('projects'), ['association_id' => $owner]))
+            ->assertRedirect(route($prefix.'.projects.index'))->assertSessionHasNoErrors()->assertSessionHas('success');
+        $this->assertDatabaseHas('projects', ['id' => $project, 'association_id' => $owner]);
+        $after = $this->projectHistory();
+        unset($before['projects'], $after['projects']);
+        $this->assertSame($before, $after);
+    }
+
+    public static function roles(): array
+    {
+        return [['admin'], ['field-officer']];
     }
 
     public function test_archived_details_tolerate_missing_optional_relations(): void

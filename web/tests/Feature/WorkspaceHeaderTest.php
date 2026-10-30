@@ -115,7 +115,7 @@ class WorkspaceHeaderTest extends TestCase
             'association' => ['dashboard', 'member-applications.index', 'projects.index', 'trainings.index', 'program-activities.index', 'monitoring.index', 'gis.index', 'reports.index'],
         ];
         $labels = [
-            'admin' => ['Dashboard', 'Area Management', 'Association Management', 'Member Management', 'Projects', 'Trainings', 'Program Activities', 'Monitoring', 'GIS Mapping', 'Reports & Analytics', 'User Management', 'Audit Log'],
+            'admin' => ['Dashboard', 'Area Management', 'Association Management', 'Registered Members', 'Projects', 'Trainings', 'Program Activities', 'Monitoring', 'GIS Mapping', 'Reports & Analytics', 'User Management', 'Audit Log'],
             'field-officer' => ['Dashboard', 'Assigned Associations', 'Association Officers', 'Member Management', 'Member Applications', 'Projects', 'Trainings', 'Program Activities', 'Monitoring', 'GIS Mapping', 'Reports & Analytics'],
             'association' => ['Dashboard', 'Member Applications', 'Projects', 'Trainings', 'Program Activities', 'Monitoring', 'GIS Mapping', 'Reports & Analytics'],
         ];

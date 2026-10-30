@@ -7,6 +7,18 @@
 <a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
 </p>
 
+## AssocMap installation
+
+Run `composer setup` from `web/` to install PHP/JavaScript dependencies, copy `.env.example` only if `.env` is absent, and build frontend assets. It preserves any existing `.env` and APP_KEY. Neither setup nor Composer's create-project hooks generate keys, create databases, or run migrations.
+
+For a fresh installation:
+
+1. Review the example configuration and configure a new, explicitly isolated environment. Never copy another worktree's credentials or assume a local checkout has a local database.
+2. Only for a new environment with an empty APP_KEY, run `php artisan key:generate`. Preserve and back up an existing key; rotating it can invalidate encrypted data and sessions.
+3. Provision the intended PostgreSQL/PostGIS database separately. Laravel's migration set does not install the core schema in `../supabase/migrations/001_assocmap_schema.sql` or wrap every historical SQL migration. Establish the approved core baseline and its Supabase Auth/role/extension prerequisites before later wrappers. Review the SQL files, Laravel wrappers and migration ledger together. SQL-backed wrappers execute their referenced canonical SQL; do not also apply those SQL files directly.
+4. After verifying the target database, establishing the required baseline and approving its migration plan, explicitly run the reviewed Laravel migration command (for example, `php artisan migrate` on the prepared isolated database). Do not run the complete historical chain blindly against a configured/shared database. Shared Supabase provisioning, Auth roles, extensions, grants and RLS require a separately reviewed deployment procedure.
+5. Verify the approved runtime/provider configuration and workflow acceptance before serving the application. Dependency setup alone does not establish database or provider readiness.
+
 ## About Laravel
 
 Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:

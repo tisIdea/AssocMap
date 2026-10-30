@@ -282,22 +282,37 @@ class AssociationProgramReadTest extends TestCase
         }
     }
 
-    public function test_sidebar_renders_one_expanded_group_with_four_links_and_active_child(): void
+    public function test_sidebar_renders_visible_program_sections_with_unique_links_and_active_destination(): void
     {
         foreach ($this->paths() as $path) {
             $page = $this->get($path)->assertOk();
             $dom = new DOMDocument();
             @$dom->loadHTML($page->getContent());
             $xpath = new DOMXPath($dom);
-            $this->assertSame(1, $xpath->query('//button[@data-disclosure="association-program-navigation" and @aria-expanded="true"]')->length);
-            $this->assertSame(0, $xpath->query('//*[@id="association-program-navigation" and @hidden]')->length);
-            $this->assertSame(4, $xpath->query('//*[@id="association-program-navigation"]/a')->length);
-            $this->assertSame(1, $xpath->query('//*[@id="association-program-navigation"]/a[@aria-current="page"]')->length);
-            foreach (['projects', 'trainings', 'monitoring', 'program-activities'] as $module) {
+            $sidebar = '//aside[@id="association-sidebar" and @data-workspace-sidebar]';
+            $navigation = $sidebar.'/nav[@aria-label="Main navigation"]';
+            $this->assertSame(1, $xpath->query($navigation)->length);
+            $this->assertSame(0, $xpath->query($navigation.'//*[@data-disclosure or @hidden]')->length);
+            foreach (['association-projects-activities' => 'PROJECTS & ACTIVITIES',
+                'association-monitoring-insights' => 'MONITORING & INSIGHTS'] as $id => $label) {
+                $section = $navigation.'/section[@aria-labelledby="'.$id.'"]';
+                $this->assertSame(1, $xpath->query($section)->length);
+                $this->assertSame($label, $xpath->evaluate('string('.$section.'/h2[@id="'.$id.'"])'));
+                $this->assertSame(3, $xpath->query($section.'/a')->length);
+            }
+            foreach (['projects' => 'Projects', 'trainings' => 'Trainings',
+                'monitoring' => 'Monitoring', 'program-activities' => 'Program Activities'] as $module => $label) {
                 $url = route('association.'.$module.'.index');
-                $this->assertSame(1, $xpath->query('//*[@id="association-sidebar"]//a[@href="'.$url.'"]')->length);
+                $links = $xpath->query($navigation.'//a[@href="'.$url.'"]');
+                $this->assertSame(1, $links->length);
+                $this->assertSame($label, trim($links->item(0)->textContent));
+                $this->assertSame($label, $links->item(0)->getAttribute('aria-label'));
             }
             $module = str_contains($path, 'trainings') ? 'trainings' : 'program-activities';
+            $active = $xpath->query($navigation.'//a[@aria-current="page"]');
+            $this->assertSame(1, $active->length);
+            $this->assertSame(route('association.'.$module.'.index'), $active->item(0)->getAttribute('href'));
+            $this->assertStringContainsString('active', $active->item(0)->getAttribute('class'));
             $this->assertSame(0, $xpath->query('//*[@data-association-'.$module.']//form[not(@method="GET")]')->length);
         }
     }

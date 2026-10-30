@@ -151,6 +151,44 @@ class MemberApplicationSubmissionTest extends TestCase
             'sex_id' => 1, 'position_id' => 2, 'classification_ids' => [1], 'endorsement_letter' => 'Private synthetic letter'];
     }
 
+    public static function malformedTextFields(): iterable
+    {
+        foreach (['first_name', 'middle_name', 'last_name', 'suffix', 'contact_number',
+            'fishr_registration_number', 'position_other_text', 'endorsement_letter'] as $field) {
+            foreach (['array' => ['unexpected'], 'empty array' => [], 'integer' => 42, 'false' => false] as $kind => $value) {
+                yield $field.' '.$kind => [$field, $value];
+            }
+        }
+    }
+
+    #[DataProvider('malformedTextFields')]
+    public function test_malformed_text_returns_validation_without_persisting_an_application(string $field, mixed $value): void
+    {
+        $this->postJson(self::URL, array_replace($this->applicationData(), [$field => $value]))
+            ->assertUnprocessable()->assertJsonValidationErrors($field);
+        $this->assertDatabaseCount('member_applications', 0);
+        $this->assertDatabaseCount('member_application_classifications', 0);
+        $this->assertDatabaseCount('members', 0);
+        $this->assertSame([], Storage::disk('member_application_photos')->allFiles());
+    }
+
+    public function test_valid_application_text_is_trimmed_and_optional_blanks_remain_nullable(): void
+    {
+        $this->postJson(self::URL, array_replace($this->applicationData(), [
+            'first_name' => '  Synthetic  ', 'last_name' => '  Applicant  ', 'middle_name' => '  ',
+            'suffix' => null, 'contact_number' => '  09123456789  ', 'fishr_registration_number' => '  REG-1  ',
+            'endorsement_letter' => '  Private synthetic letter  ',
+        ]))->assertRedirect();
+        $application = MemberApplication::sole();
+        $this->assertSame('Synthetic', $application->first_name);
+        $this->assertSame('Applicant', $application->last_name);
+        $this->assertNull($application->middle_name);
+        $this->assertNull($application->suffix);
+        $this->assertSame('09123456789', $application->contact_number);
+        $this->assertSame('REG-1', $application->fishr_registration_number);
+        $this->assertSame('Private synthetic letter', $application->endorsement_letter);
+    }
+
     private function usePhotoTransport(string $transport): LocalFilesystemAdapter
     {
         config(['services.supabase_storage.photo_transport' => $transport]);

@@ -199,6 +199,150 @@ class ProjectClosureTest extends TestCase
             'program_year' => 2026, 'implementation_start_date' => '2026-01-01', 'status' => 'ongoing', 'remarks' => 'Retain original remarks.'];
     }
 
+    private function transferDestination(): string
+    {
+        $id = '88888888-8888-4888-8888-888888888888';
+        DB::table('associations')->insert(['id' => $id, 'name' => 'Synthetic destination',
+            'status' => 'active', 'primary_field_officer_id' => self::OFFICER]);
+
+        return $id;
+    }
+
+    private function transferHistory(): array
+    {
+        $history = [];
+        foreach (['projects', 'project_products', 'project_materials', 'trainings', 'training_participants',
+            'program_activity_records', 'monitoring_records', 'monitoring_production',
+            'monitoring_production_monthly', 'monitoring_income', 'monitoring_materials',
+            'monitoring_visit_reports', 'audit_logs'] as $table) {
+            $history[$table] = DB::table($table)->orderBy('id')->get()->toJson();
+        }
+
+        return $history;
+    }
+
+    public static function transferLinks(): iterable
+    {
+        foreach (['admin' => self::ADMIN, 'officer' => self::OFFICER] as $role => $actor) {
+            foreach (['trainings', 'program_activity_records', 'monitoring_records'] as $table) {
+                foreach ($table === 'monitoring_records' ? [false] : [false, true] as $archived) {
+                    yield $role.' '.$table.($archived ? ' archived' : '') => [$actor, $table, $archived];
+                }
+            }
+        }
+    }
+
+    #[DataProvider('transferLinks')]
+    public function test_association_transfer_preserves_and_rejects_linked_history(string $actor, string $table, bool $archived): void
+    {
+        $destination = $this->transferDestination();
+        $service = app(ProjectService::class);
+        $project = $service->create($this->projectData(), $this->actor($actor));
+        $column = $table === 'monitoring_records' ? 'project_id' : 'related_project_id';
+        $changes = [$column => $project->id];
+        if ($archived) {
+            $changes['archived_at'] = now();
+        }
+        DB::table($table)->where('id', self::CHILD)->update($changes);
+        $before = $this->transferHistory();
+        try {
+            $service->update($project, array_replace($this->projectData(), ['association_id' => $destination]), $this->actor($actor));
+            $this->fail('Association-bound history must prevent a transfer.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('association_id', $exception->errors());
+        }
+        $this->assertSame($before, $this->transferHistory());
+        $this->assertSame(self::ASSOCIATION, $project->fresh()->association_id);
+    }
+
+    public function test_project_without_association_bound_history_can_transfer_and_linked_project_can_still_be_edited(): void
+    {
+        $destination = $this->transferDestination();
+        $service = app(ProjectService::class);
+        $project = $service->create($this->projectData(), $this->actor(self::OFFICER));
+        $before = $this->transferHistory();
+        $updated = $service->update($project, array_replace($this->projectData(), ['association_id' => $destination]), $this->actor(self::OFFICER));
+        $this->assertSame($destination, $updated->association_id);
+        $after = $this->transferHistory();
+        unset($before['projects'], $after['projects']);
+        $this->assertSame($before, $after);
+        $edited = $service->update(Project::findOrFail(self::PROJECT),
+            array_replace($this->projectData(), ['title' => 'Permitted same-association edit']), $this->actor());
+        $this->assertSame('Permitted same-association edit', $edited->title);
+    }
+
+    public function test_transfer_rechecks_links_inside_the_mutation_transaction(): void
+    {
+        $destination = $this->transferDestination();
+        $service = app(ProjectService::class);
+        $project = $service->create($this->projectData(), $this->actor());
+        $before = $this->transferHistory();
+        $injected = false;
+        DB::listen(function ($query) use (&$injected, $project): void {
+            if ($injected === false && DB::transactionLevel() > 0 && str_contains($query->sql, 'select')
+                && str_contains($query->sql, '"associations"')) {
+                $injected = true;
+                DB::table('trainings')->where('id', self::CHILD)->update(['related_project_id' => $project->id]);
+            }
+        });
+        try {
+            $service->update($project, array_replace($this->projectData(), ['association_id' => $destination]), $this->actor());
+            $this->fail('A link appearing after preflight must block the transfer.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('association_id', $exception->errors());
+        }
+        $this->assertTrue($injected);
+        $this->assertSame($before, $this->transferHistory());
+    }
+
+    public function test_valid_project_text_is_trimmed_and_optional_blanks_remain_nullable(): void
+    {
+        $this->withSession(['supabase_access_token' => 'synthetic-session'])
+            ->postJson(route('admin.projects.store'), array_replace($this->projectData(), [
+                'title' => '  Trimmed project  ', 'description' => '  Description  ', 'remarks' => '  ',
+                'new_commodity_name' => null,
+            ]))->assertRedirect()->assertSessionHasNoErrors();
+        $project = Project::where('title', 'Trimmed project')->sole();
+        $this->assertSame('Description', $project->description);
+        $this->assertNull($project->remarks);
+        $this->assertNull($project->commodity_id);
+    }
+
+    public function test_linked_project_transfer_returns_an_understandable_http_validation_error(): void
+    {
+        $destination = $this->transferDestination();
+        $project = app(ProjectService::class)->create($this->projectData(), $this->actor());
+        DB::table('trainings')->where('id', self::CHILD)->update(['related_project_id' => $project->id]);
+        $before = $this->transferHistory();
+        $this->withSession(['supabase_access_token' => 'synthetic-session'])
+            ->patchJson(route('admin.projects.update', $project), array_replace($this->projectData(), ['association_id' => $destination]))
+            ->assertUnprocessable()->assertJsonValidationErrors('association_id')
+            ->assertJsonPath('errors.association_id.0', 'The association cannot be changed because this project has linked training or program activity records. Their association history must be preserved.');
+        $this->assertSame($before, $this->transferHistory());
+    }
+
+    public static function malformedProjectText(): iterable
+    {
+        foreach (['title', 'description', 'remarks', 'new_commodity_name'] as $field) {
+            foreach (['array' => ['unexpected'], 'empty array' => [], 'integer' => 42, 'false' => false] as $kind => $value) {
+                yield $field.' '.$kind => [$field, $value];
+            }
+        }
+    }
+
+    #[DataProvider('malformedProjectText')]
+    public function test_malformed_project_text_returns_validation_without_database_changes(string $field, mixed $value): void
+    {
+        $before = $this->transferHistory();
+        $this->withSession(['supabase_access_token' => 'synthetic-session'])
+            ->postJson(route('admin.projects.store'), array_replace($this->projectData(), [$field => $value]))
+            ->assertUnprocessable()->assertJsonValidationErrors($field);
+        $this->patchJson(route('admin.projects.update', self::PROJECT), array_replace($this->projectData(), [$field => $value]))
+            ->assertUnprocessable()->assertJsonValidationErrors($field);
+        $this->assertSame($before, $this->transferHistory());
+        $this->assertDatabaseCount('commodities', 0);
+    }
+
     private function linkedData(string $module): array
     {
         return ['association_id' => self::ASSOCIATION, 'related_project_id' => self::PROJECT, 'title' => 'Historical '.$module,
