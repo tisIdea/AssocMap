@@ -40,6 +40,7 @@ async function fixture({ manager = false, source = workspace, request } = {}) {
     root.querySelector = selector => selector === '[data-gis-confirm]' ? null : !manager && selector === '[data-gis-history]' ? null : node(selector);
     root.querySelectorAll = selector => ({ '[data-gis-parent]': parents, '[data-gis-view]': views, '[data-gis-page]': pages }[selector] || []);
     node('[data-gis-option-search]').optionSearch = true;
+    node('[data-gis-open-details]').disabled = true;
     const map = { listeners: {}, on(name, fn) { this.listeners[name] = fn; }, fitBounds() {}, invalidateSize() {}, closePopup() {},
         getBounds: () => ({ getWest: () => 123, getSouth: () => 10, getEast: () => 124, getNorth: () => 11 }) };
     const defaultRequest = async url => {
@@ -54,7 +55,8 @@ async function fixture({ manager = false, source = workspace, request } = {}) {
         FormData: class { *[Symbol.iterator]() { for (const [name, input] of Object.entries(form.elements)) yield [name, input.value]; } },
         setTimeout: (fn, delay) => { timers.set(++timerId, { fn, delay }); return timerId; }, clearTimeout: id => timers.delete(id),
         L: { featureGroup: () => { const group = { layers: [], addTo() { groups.push(this); return this; }, clearLayers() { this.layers = []; } }; return group; } },
-        createGisMap: () => map, locationLabels: { project_point: 'Project point', project_boundary: 'Project boundary' },
+        createGisMap: () => map, locationLabels: { project_point: 'Project Point', project_boundary: 'Project Boundary' },
+        setFeatureSelection: (group, id) => { group.selectedId = id; },
         featureLayer: (item, select) => { layerCallbacks.set(item.id, () => select(item)); return { addTo(group) { group.layers.push(item); return this; } }; },
         fitLayer() {}, showFeedback() {}, showOperationError() {},
     });
@@ -119,6 +121,21 @@ test('simple filters reuse parent options; active indicators and reset match sub
     assert.equal(f.node('[data-gis-filter-summary]').textContent, 'No additional filters');
     assert.equal(f.calls.at(-1).url.searchParams.get('location_type'), null);
     assert.equal(f.calls.at(-1).url.searchParams.get('lifecycle'), 'active');
+});
+
+test('selection has a keyboard-accessible route to details and clears its map emphasis', async () => {
+    const f = await fixture();
+    assert.equal(f.node('[data-gis-open-details]').disabled, true);
+    f.layerCallbacks.get('site-a')();
+    assert.equal(f.groups[0].selectedId, 'site-a');
+    assert.equal(f.node('[data-gis-open-details]').disabled, false);
+    const requests = f.calls.length;
+    await f.fire('[data-gis-open-details]', 'click');
+    assert.equal(f.node('[data-gis-selection-title]').focused, true);
+    assert.equal(f.calls.length, requests);
+    await f.fire('[data-gis-dismiss]', 'click');
+    assert.equal(f.groups[0].selectedId, null);
+    assert.equal(f.node('[data-gis-open-details]').disabled, true);
 });
 
 test('parent changes clear dependent filters; opening presentation controls makes no request', async () => {

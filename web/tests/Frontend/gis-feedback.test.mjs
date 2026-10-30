@@ -153,6 +153,32 @@ test('GIS request helper preserves status, same-origin/session/CSRF, rejects HTM
     await assert.rejects(context.gisRequest('https://foreign.test/gis')); assert.equal(calls.length, 7);
 });
 
+test('classification-only saves omit unchanged geometry while creation and geometry edits still submit it', async () => {
+    const original = { type: 'Point', coordinates: [123, 10] };
+    for (const change of [{ seed: { id: 'saved', geometry: original }, geometry: original, site: '1', omitted: true },
+        { seed: { id: 'saved', geometry: original }, geometry: original, site: '', omitted: true },
+        { seed: { id: 'saved', geometry: original }, geometry: { type: 'Point', coordinates: [124, 10] }, site: '1', omitted: false },
+        { seed: null, geometry: original, site: '1', omitted: false }]) {
+        let handler, body;
+        const json = { value: JSON.stringify(change.geometry, null, 2) };
+        const context = { seed: change.seed, json, saving: false, associationReady: true, projectState: 'ready', dirty: true,
+            form: { action: '/admin/gis/saved', dataset: {}, elements: { _token: { value: 'synthetic-csrf' } }, reportValidity: () => true,
+                querySelectorAll: () => [], addEventListener: (_, fn) => { handler = fn; } },
+            FormData: class { *[Symbol.iterator]() { yield ['site_type_id', change.site]; yield ['geometry', json.value]; yield ['version', 'original-version']; } },
+            validateGeometry: value => value, boundary: () => false, association: { value: 'a' }, project: { value: 'p' },
+            associationController: undefined, projectController: undefined, stopGeometryModes() {}, updateSaveState() {},
+            save: {}, status: {}, showStatus() {}, applyFormErrors() {}, showFeedback() {}, showOperationError(error) { throw error; },
+            gisRequest: async (_, options) => { body = options.body; return { type: 'Feature', id: 'saved' }; },
+            base: '/admin/gis', window: { location: { assign() {} } }, document: { querySelector: () => null } };
+        runInNewContext(save, context);
+        await handler({ preventDefault() {} });
+        assert.equal(Object.hasOwn(body, 'geometry'), !change.omitted);
+        assert.equal(body.site_type_id, change.site);
+        assert.equal(body.version, 'original-version');
+        if (!change.omitted) assert.equal(JSON.stringify(body.geometry), JSON.stringify(change.geometry));
+    }
+});
+
 test('marked GIS workspace/editor initialization cannot attach another handler', async () => {
     for (const source of [workspace, editor]) {
         const context = {};

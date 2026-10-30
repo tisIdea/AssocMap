@@ -6,10 +6,10 @@
             <p class="public-hero-subtitle">GIS-Based Program Monitoring System<br>for Community Livelihood Associations</p>
             <p class="public-hero-description">A shared workspace for organizing association records, livelihood projects, trainings, monitoring, and geographic information.</p>
             <div class="public-actions">
-                <button type="button" class="public-button public-button-primary" disabled aria-describedby="public-hero-note">Staff Sign In <x-icon name="arrow" /></button>
-                <button type="button" class="public-button public-button-outline" disabled aria-describedby="public-hero-note"><x-icon name="map" /> View Public Map</button>
+                <a href="{{ route('login') }}" class="public-button public-button-primary" aria-describedby="public-hero-note">Staff Sign In <x-icon name="arrow" /></a>
+                <a href="{{ route('public.gis') }}" class="public-button public-button-outline" aria-describedby="public-hero-note"><x-icon name="map" /> View Public Map</a>
             </div>
-            <p id="public-hero-note" class="public-template-note">UI template only. Staff sign-in and the public map will be available after integration.</p>
+            <p id="public-hero-note" class="public-template-note">Explore published project locations without signing in. Staff access requires an authorized account.</p>
         </div>
         <aside class="public-overview" aria-labelledby="public-overview-title">
             <span class="public-overview-icon"><x-icon name="layers" /></span>

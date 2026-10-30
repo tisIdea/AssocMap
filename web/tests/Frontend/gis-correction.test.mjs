@@ -71,6 +71,7 @@ test('historical parents expose correction without general edit, publication, ar
         const details = { replaceChildren() {} };
         const root = { querySelector: selector => selector === '[data-gis-record-actions]' ? actions : ['[data-gis-details]', '[data-gis-history-details]'].includes(selector) ? details : {} };
         const context = { root, manager: true, publicView: false, base: '/admin/gis', selected: null, gallery: null,
+            features: {}, selection: {}, setFeatureSelection() {},
             locationLabels: { project_point: 'Project point' }, addDetail() {}, actorName: value => value,
             confirmAction: () => assert.fail('No general history mutation should be exposed.'),
             document: { createElement: () => ({ addEventListener() {} }) } };

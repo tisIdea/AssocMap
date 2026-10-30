@@ -5,11 +5,11 @@
             <h2 id="public-gis-title">See the geographic context of livelihood programs.</h2>
             <p>The public GIS viewer shows only eligible published project locations and boundaries, without requiring a staff sign-in.</p>
             <p>Unpublished locations and internal records will not be part of the public view.</p>
-            <button type="button" class="public-button public-button-outline" disabled aria-describedby="public-map-note"><x-icon name="map" /> View Public Map</button>
-            <p id="public-map-note" class="public-template-note">Static preview only. The public map is not connected.</p>
+            <a href="{{ route('public.gis') }}" class="public-button public-button-outline" aria-describedby="public-map-note"><x-icon name="map" /> View Public Map</a>
+            <p id="public-map-note" class="public-template-note">Illustrative preview. Open the public map to explore published project locations.</p>
         </div>
         <figure class="public-map-preview" aria-labelledby="public-map-caption">
-            <div class="public-map-heading"><span><x-icon name="map" /> Public map preview</span><span class="public-preview-label">Placeholder</span></div>
+            <div class="public-map-heading"><span><x-icon name="map" /> Public map preview</span><span class="public-preview-label">Illustration</span></div>
             <div class="public-map-canvas" aria-hidden="true">
                 <svg class="public-map-art" viewBox="0 0 600 340" preserveAspectRatio="xMidYMid slice" fill="none">
                     <rect width="600" height="340" fill="#e5eef5" />
@@ -21,8 +21,8 @@
                 <span class="public-map-marker public-project-marker"><x-icon name="briefcase" /></span>
                 <span class="public-map-watermark">Illustrative layout</span>
             </div>
-            <ul class="public-map-legend" aria-label="Map legend placeholders">
-                <li><span class="public-legend-point public-legend-project"></span>Project Location</li>
+            <ul class="public-map-legend" aria-label="Illustration legend">
+                <li><span class="public-legend-point public-legend-project"></span>Project Point</li>
                 <li><span class="public-legend-boundary"></span>Project Boundary</li>
             </ul>
             <figcaption id="public-map-caption">Illustration only. No real locations, coordinates, or project boundaries are shown.</figcaption>

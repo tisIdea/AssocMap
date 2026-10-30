@@ -63,7 +63,8 @@ class GisManagementUiTest extends TestCase
         $this->identity = $id;
         DB::enableQueryLog(); DB::flushQueryLog();
         $page = $this->get('/'.$prefix.'/gis')->assertOk()->assertSee('data-gis-workspace', false)
-            ->assertSee('Geographic filters')->assertSee('Clear selected location')->assertSee('Interactive map')
+            ->assertSee('Map filters')->assertSee('Clear selected location')->assertSee('Interactive map')
+            ->assertSee('View selected details')->assertSee("association's registered geography", false)
             ->assertSee('data-workspace-module="gis"', false)->assertDontSee('association_point');
         $this->assertCount(3, DB::getQueryLog());
         DB::disableQueryLog();
@@ -237,6 +238,53 @@ class GisManagementUiTest extends TestCase
                 $this->assertSame($change['site_type_id'] ?? null, $data['site_type_id'] ?? null);
             }
         }
+    }
+
+    public function test_http_metadata_update_can_omit_geometry_but_creation_and_explicit_geometry_stay_validated(): void
+    {
+        $payload = ['parent_association_id' => self::LOCATION, 'project_id' => self::LOCATION,
+            'location_type' => 'project_point', 'location_name' => 'Synthetic', 'site_type_id' => null];
+        $service = Mockery::mock(GisLocationService::class);
+        $service->shouldReceive('update')->once()->andReturnUsing(function ($id, $data) {
+            $this->assertSame(self::LOCATION, $id);
+            $this->assertArrayNotHasKey('geometry', $data);
+            $this->assertNull($data['site_type_id']);
+
+            return $this->feature();
+        });
+        $this->app->instance(GisLocationService::class, $service);
+        $this->patchJson('/admin/gis/'.self::LOCATION, $payload + ['version' => 'original-version'])->assertOk();
+        $this->postJson('/admin/gis', $payload + ['idempotency_key' => self::LOCATION])->assertUnprocessable()->assertJsonValidationErrors('geometry');
+        foreach ([null, ['type' => 'Polygon', 'coordinates' => []]] as $invalid) {
+            $this->patchJson('/admin/gis/'.self::LOCATION, $payload + ['version' => 'original-version', 'geometry' => $invalid])
+                ->assertUnprocessable()->assertJsonValidationErrors('geometry');
+        }
+        $this->identity = 'account';
+        $this->patchJson('/admin/gis/'.self::LOCATION, $payload + ['version' => 'original-version'])->assertForbidden();
+    }
+
+    public function test_all_proposed_catalog_labels_are_available_without_seeding_or_claiming_official_approval(): void
+    {
+        $types = ['fish_cage' => 'Fish Cage', 'fish_pen' => 'Fish Pen', 'culture_pond' => 'Fishpond / Culture Pond',
+            'seaweed_cultivation_site' => 'Seaweed Cultivation Site', 'hatchery_nursery' => 'Hatchery / Nursery',
+            'payao_installation' => 'Payao Installation', 'post_harvest_facility' => 'Post-Harvest Facility'];
+        foreach ($types as $code => $name) DB::table('gis_site_types')->insert(['code' => $code, 'name' => $name]);
+        foreach (['/admin/gis', '/association/gis', '/map', '/admin/gis/create'] as $url) {
+            $this->identity = str_starts_with($url, '/association/') ? 'account' : 'admin';
+            $page = $this->get($url)->assertOk()->assertSee('Geometry type')->assertDontSee('Official BFAR taxonomy');
+            foreach ($types as $name) $page->assertSee($name);
+        }
+    }
+
+    public function test_landing_map_entries_link_to_the_existing_public_route(): void
+    {
+        $page = $this->get('/')->assertOk()->assertDontSee('The public map is not connected.')
+            ->assertDontSee('will be available after integration.');
+        $dom = new \DOMDocument();
+        @$dom->loadHTML($page->getContent());
+        $xpath = new \DOMXPath($dom);
+        $this->assertSame(3, $xpath->query('//a[@href="'.route('public.gis').'"]')->length);
+        $this->assertSame(0, $xpath->query('//button[@disabled and contains(., "View Public Map")]')->length);
     }
 
     private function feature(array $properties = [], ?array $geometry = null): array

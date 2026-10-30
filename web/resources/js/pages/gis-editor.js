@@ -138,7 +138,7 @@ export async function initGis(root) {
                 editMode: true, dragMode: false, cutPolygon: false, removalMode: true, rotateMode: false });
         }
         root.querySelector('[data-gis-geometry-help]').textContent = boundary()
-            ? 'Draw polygon parts and use vertex editing to adjust them. Multiple parts form a multipolygon. Existing holes are preserved; GeoJSON can also define holes.'
+            ? 'Draw the actual project-site area, not an administrative or association coverage boundary. Multiple parts form a MultiPolygon. Existing holes are preserved; GeoJSON can also define holes.'
             : 'Click the map or enter both coordinates to choose the point. No starting coordinate is supplied.';
         if (json.value) {
             try { renderGeometry(JSON.parse(json.value)); }
@@ -334,7 +334,8 @@ export async function initGis(root) {
             const geometry = validateGeometry(JSON.parse(json.value), boundary());
             const correction = form.dataset?.gisCorrection === 'true';
             const payload = correction ? { version: form.elements.version.value } : Object.fromEntries(new FormData(form));
-            payload.geometry = geometry;
+            if (correction || !seed || JSON.stringify(geometry) !== JSON.stringify(seed.geometry)) payload.geometry = geometry;
+            else delete payload.geometry;
             if (!correction) {
                 payload.parent_association_id = association.value;
                 payload.project_id = project.value;

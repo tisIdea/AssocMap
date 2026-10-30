@@ -1,4 +1,4 @@
-import { L, createGisMap, featureLayer, fitLayer, locationLabels } from './gis-map.js';
+import { L, createGisMap, featureLayer, fitLayer, locationLabels, setFeatureSelection } from './gis-map.js';
 import { addDetail, debounce, fillOptions, gisRequest, queryUrl, showStatus } from '../core/gis-api.js';
 import { showFeedback, showOperationError } from '../core/feedback.js';
 import { createGisPhotos } from './gis-photos.js';
@@ -34,11 +34,13 @@ export async function initGis(root) {
     function clearSelection() {
         gallery?.clear();
         selected = null; selection.clearLayers();
+        setFeatureSelection(features, null);
         map.closePopup();
         root.querySelector('[data-gis-details]').replaceChildren();
         root.querySelector('[data-gis-record-actions]').replaceChildren();
         root.querySelector('[data-gis-selection-title]').textContent = 'No location selected';
         root.querySelector('[data-gis-dismiss]').disabled = true;
+        root.querySelector('[data-gis-open-details]').disabled = true;
         const history = root.querySelector('[data-gis-history]');
         if (history) { history.hidden = true; history.open = false; root.querySelector('[data-gis-history-details]').replaceChildren(); }
         root.querySelector('[data-gis-selection-note]').textContent = 'Select a map feature or a location from the list.';
@@ -47,27 +49,31 @@ export async function initGis(root) {
     function selectFeature(feature) {
         gallery?.select(feature.id, feature.properties.version);
         selected = feature;
+        setFeatureSelection(features, feature.id);
+        setFeatureSelection(selection, feature.id);
         const details = root.querySelector('[data-gis-details]');
         const actions = root.querySelector('[data-gis-record-actions]');
         details.replaceChildren(); actions.replaceChildren();
         const p = feature.properties;
         root.querySelector('[data-gis-selection-title]').textContent = p.title || 'Location';
         root.querySelector('[data-gis-dismiss]').disabled = false;
+        root.querySelector('[data-gis-open-details]').disabled = false;
         root.querySelector('[data-gis-selection-note]').textContent = feature.geometry
             ? `${p.title || 'Location'} selected. ${manager ? 'Available actions follow your current permissions.' : 'Read-only location. Geographic changes are unavailable in this viewer.'}`
             : `${p.title || 'Location'} selected. Geometry is unavailable or exceeds the supported limit.`;
         addDetail(details, 'Location', p.title);
-        addDetail(details, 'Type', locationLabels[p.location_type]);
+        addDetail(details, 'Geometry type', locationLabels[p.location_type]);
+        if (p.location_type === 'project_boundary') addDetail(details, 'Boundary meaning', 'Actual project-site area; not barangay, municipality or association coverage.');
         addDetail(details, 'Site classification', p.site_type_name || 'Unclassified');
         if (publicView && p.location_type === 'project_boundary') {
             addDetail(details, 'Marker position', 'Calculated representative position within the boundary, not a surveyed site coordinate.');
         }
         addDetail(details, publicView ? 'Public address' : 'Project Site Address', p.address);
         if (!publicView) {
-            [['Association', p.association], ['Project', p.project], ['Municipality', p.municipality], ['Barangay', p.barangay],
+            [['Association', p.association], ['Project', p.project], ['Registered municipality', p.municipality], ['Registered barangay', p.barangay],
                 ['Registered Area reference', p.area], ['Program year', p.program_year]].forEach(([label, value]) => addDetail(details, label, value));
             addDetail(details, 'Address context',
-                'Registered Area is association context. Saved site-address verification is not recorded; legacy values may be area fallbacks and require review.');
+                "Geography refers to the association's registration, not spatial containment of the project site. Saved site-address verification is not recorded; legacy values may be area fallbacks and require review.");
         }
         addDetail(details, 'Public description', p.description);
         if (feature.geometry?.type === 'Point') {
@@ -178,6 +184,7 @@ export async function initGis(root) {
                 setView('map', false); selectFeature(feature); selection.clearLayers();
                 if (feature.geometry) { const layer = featureLayer(feature, selectFeature, publicView).addTo(selection); fitLayer(map, layer); }
                 else showStatus(status, 'This record has no displayable geometry. Managers can supply replacement geometry.', true);
+                setFeatureSelection(selection, feature.id);
                 root.querySelector('[data-gis-selection-title]').focus();
             });
             card.append(heading, type, site, address, button); list.append(card);
@@ -312,6 +319,7 @@ export async function initGis(root) {
             [['Public title', feature.properties.public_title], ['Public address', feature.properties.public_address], ['Public description', feature.properties.public_description],
                 ['Site classification', feature.properties.site_type_name || 'Unclassified']]
                 .forEach(([label, value]) => addDetail(preview, label, value));
+            if (feature.properties.location_type === 'project_boundary') addDetail(preview, 'Published boundary', 'Complete boundary coordinates are public, even when the map displays a representative marker.');
         }
         if (action === 'delete') { addDetail(preview, 'Location', feature.properties.title); addDetail(preview, 'Record ID', feature.id); }
         dialog.showModal(); dialog.querySelector('[data-gis-confirm-cancel]').focus();
@@ -373,6 +381,7 @@ export async function initGis(root) {
 
     root.querySelectorAll('[data-gis-view]').forEach(button => button.addEventListener('click', () => setView(button.dataset.gisView)));
     root.querySelector('[data-gis-dismiss]').addEventListener('click', () => { clearSelection(); root.querySelector(`[data-gis-view="${view}"]`).focus(); });
+    root.querySelector('[data-gis-open-details]').addEventListener('click', () => root.querySelector('[data-gis-selection-title]').focus());
     root.querySelector('[data-gis-reload]').addEventListener('click', event => { clearSelection(); loadOptions(); load({ fit: true, notifyFailure: true, returnFocus: event.currentTarget }); });
     retry.addEventListener('click', () => load({ fit: retryFit, notifyFailure: true, returnFocus: retry }));
     form.addEventListener('submit', event => { event.preventDefault(); page = 1; clearSelection(); load({ fit: true }); });

@@ -25,10 +25,12 @@ function fixture() {
         marker(latlng, options) { return { latlng, options }; },
         geoJSON(feature, options) {
             if (feature === null) return { empty: true };
-            const element = { attributes: {}, setAttribute(k, v) { this.attributes[k] = v; } };
+            const element = { attributes: {}, classes: new Set(), setAttribute(k, v) { this.attributes[k] = v; } };
+            element.classList = { toggle(name, active) { active ? element.classes.add(name) : element.classes.delete(name); } };
             const layer = feature.geometry.type === 'Point' ? options.pointToLayer(feature, feature.geometry.coordinates) : { options: options.style };
             Object.assign(layer, { events: {}, on(name, fn) { this.events[name] = fn; }, bindPopup(node) { this.popup = node; },
-                getElement: () => element, openPopup() { this.opened = true; } });
+                getElement: () => element, openPopup() { this.opened = true; }, eachLayer(fn) { fn(this); },
+                setStyle(style) { this.style = style; }, bringToFront() { this.front = true; } });
             options.onEachFeature(feature, layer); layer.events.add();
             layer.rendered = feature;
             nodes.push({ layer, element }); return layer;
@@ -95,4 +97,43 @@ test('legacy and future codes have a safe fallback; classified boundaries retain
         properties: { location_type: 'project_boundary', site_type_code: 'fish_cage' } });
     assert.equal(boundary.options.color, '#7444a7'); assert.equal(boundary.options.fillOpacity, .16);
     assert.equal(f.icons.length, 1);
+});
+
+test('all seven provisional codes render safe named markers including the neutral fallbacks', () => {
+    const f = fixture();
+    const catalog = ['fish_cage', 'fish_pen', 'culture_pond', 'seaweed_cultivation_site', 'hatchery_nursery', 'payao_installation', 'post_harvest_facility'];
+    for (const code of catalog) {
+        const layer = f.render({ id: code, geometry: { type: 'Point', coordinates: [123, 10] },
+            properties: { location_type: 'project_point', title: code, site_type_code: code, site_type_name: 'Proposed '+code } });
+        assert.match(layer.options.icon.html, /^<svg /);
+        assert.match(f.nodes.at(-1).element.attributes['aria-label'], new RegExp('Proposed '+code));
+        assert.deepEqual(Array.from(layer.options.icon.iconSize), [44, 44]);
+    }
+    for (const code of ['culture_pond', 'hatchery_nursery', 'payao_installation']) assert.equal(siteSymbol(code), siteSymbol(null));
+    const boundary = f.render({ id: 'area', geometry: { type: 'Polygon' }, properties: { location_type: 'project_boundary',
+        site_type_code: 'fish_cage', display_point: { type: 'Point', coordinates: [123, 10] } } }, true);
+    assert.match(boundary.options.icon.className, /gis-boundary-marker/);
+    assert.match(f.nodes.at(-1).element.attributes['aria-label'], /representative position/);
+});
+
+test('selected point and boundary emphasis follows identity without changing their geometries', () => {
+    const f = fixture();
+    const source = [{ id: 'point', geometry: { type: 'Point', coordinates: [123, 10] }, properties: { location_type: 'project_point' } },
+        { id: 'area', geometry: { type: 'MultiPolygon', coordinates: [] }, properties: { location_type: 'project_boundary' } }];
+    const before = JSON.stringify(source);
+    const layers = source.map(feature => f.render(feature));
+    const group = { eachLayer(fn) { layers.forEach(fn); } };
+    f.context.setFeatureSelection(group, 'area');
+    assert.equal(f.nodes[0].element.attributes['aria-pressed'], 'false');
+    assert.equal(f.nodes[1].element.attributes['aria-pressed'], 'true');
+    assert.ok(f.nodes[1].element.classes.has('is-selected'));
+    assert.equal(layers[1].style.weight, 5);
+    assert.equal(layers[1].style.color, '#174d36');
+    f.context.setFeatureSelection(group, 'point');
+    assert.equal(f.nodes[0].element.attributes['aria-pressed'], 'true');
+    assert.equal(f.nodes[1].element.attributes['aria-pressed'], 'false');
+    assert.equal(layers[1].style.color, '#7444a7');
+    f.context.setFeatureSelection(group, null);
+    assert.ok(f.nodes.every(({ element }) => element.attributes['aria-pressed'] === 'false' && !element.classes.has('is-selected')));
+    assert.equal(JSON.stringify(source), before);
 });

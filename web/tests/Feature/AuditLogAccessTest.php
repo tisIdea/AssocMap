@@ -111,6 +111,20 @@ class AuditLogAccessTest extends TestCase
         }
     }
 
+    public function test_gis_classification_changes_and_clearing_are_visible_only_to_the_administrator(): void
+    {
+        $this->event(['entity_type' => 'gis_location', 'action_type' => 'UPDATE', 'module' => 'GIS Mapping',
+            'old_values' => json_encode(['site_type_id' => 41]), 'new_values' => json_encode(['site_type_id' => null])]);
+        $before = DB::table('audit_logs')->get()->toJson();
+        $response = $this->signIn()->get('/admin/audit-logs/'.self::EVENT)->assertOk()->assertSee('site_type_id');
+        $this->assertStringContainsString('"site_type_id": 41', html_entity_decode($response->getContent()));
+        $this->assertStringContainsString('"site_type_id": null', html_entity_decode($response->getContent()));
+        foreach ([self::OFFICER, self::ASSOCIATION] as $actor) {
+            $this->signIn($actor)->get('/admin/audit-logs/'.self::EVENT)->assertForbidden()->assertDontSee('site_type_id');
+        }
+        $this->assertSame($before, DB::table('audit_logs')->get()->toJson());
+    }
+
     #[DataProvider('restrictedActors')]
     public function test_non_admins_cannot_open_list_or_event_details(string $id): void
     {
