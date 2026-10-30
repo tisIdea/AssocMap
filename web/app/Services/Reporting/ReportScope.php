@@ -18,6 +18,7 @@ class ReportScope
         abort_unless($actor?->canAccessApplication(throwOnDatabaseError: true)
             && $actor->role?->code === $identity->role?->code
             && in_array($actor->role?->code, ['system_admin', 'field_officer', 'association_account'], true), 403);
+        abort_unless($actor->getRawOriginal('auth_sessions_valid_after') === $identity->getRawOriginal('auth_sessions_valid_after'), 403);
         abort_if($export && $actor->role->code === 'association_account', 403);
 
         return $actor;

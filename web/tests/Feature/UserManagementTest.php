@@ -915,6 +915,100 @@ class UserManagementTest extends TestCase
         Http::assertNothingSent();
     }
 
+    public static function changedAdministratorStates(): iterable
+    {
+        foreach (['assignment', 'revocation'] as $operation) {
+            foreach (['revoked', 'session_cutoff', 'advanced_cutoff', 'changed_role', 'inactive_role', 'email_hold'] as $state) {
+                yield $operation.' '.$state => [$operation, $state];
+            }
+        }
+    }
+
+    private function administratorFreshnessSchema(): void
+    {
+        Schema::table('user_profiles', function (Blueprint $table) {
+            $table->timestampTz('auth_sessions_valid_after')->nullable();
+            $table->uuid('email_change_hold_id')->nullable();
+        });
+        Schema::create('account_reactivations', function (Blueprint $table) {
+            $table->uuid('id')->primary();
+            $table->uuid('user_id');
+            $table->string('state');
+            $table->timestamp('cancelled_at')->nullable();
+            $table->timestamps();
+        });
+    }
+
+    private function administrativeWrite(Request $request, string $operation): void
+    {
+        if ($operation === 'revocation') {
+            app(UserAccessRevocationService::class)->revoke($request, UserProfile::findOrFail(self::OFFICER_B));
+        } else {
+            app(FieldOfficerAssignmentService::class)->assign($request, UserProfile::findOrFail(self::OFFICER_B), [
+                'association_ids' => [self::ASSOCIATION], 'expected_officers' => [self::ASSOCIATION => self::OFFICER_A],
+                'confirm_reassignment' => '1',
+            ]);
+        }
+    }
+
+    #[DataProvider('changedAdministratorStates')]
+    public function test_administrative_writes_reject_changed_authenticated_state_without_business_or_audit_changes(string $operation, string $state): void
+    {
+        $this->administratorFreshnessSchema();
+        if ($state === 'advanced_cutoff') {
+            DB::table('user_profiles')->where('id', self::ADMIN)->update(['auth_sessions_valid_after' => '2026-01-01 00:00:00']);
+        }
+        $actor = UserProfile::with('role')->findOrFail(self::ADMIN);
+        $this->assertTrue($actor->canAccessApplication());
+        $request = Request::create('/synthetic-administration', 'PATCH', ['auth_sessions_valid_after' => '2026-02-01 00:00:00']);
+        $request->attributes->set('current_user', $actor);
+        match ($state) {
+            'revoked' => DB::table('user_profiles')->where('id', self::ADMIN)->update(['is_active' => false]),
+            'session_cutoff', 'advanced_cutoff' => DB::table('user_profiles')->where('id', self::ADMIN)->update(['auth_sessions_valid_after' => '2026-02-01 00:00:00']),
+            'changed_role' => DB::table('user_profiles')->where('id', self::ADMIN)->update(['role_id' => 2]),
+            'inactive_role' => DB::table('roles')->where('id', 1)->update(['is_active' => false]),
+            'email_hold' => DB::table('user_profiles')->where('id', self::ADMIN)->update(['email_change_hold_id' => self::INVITATION]),
+        };
+        $tables = ['user_profiles', 'associations', 'association_accounts', 'user_invitations', 'audit_logs', 'account_reactivations'];
+        $before = [];
+        foreach ($tables as $table) {
+            $before[$table] = DB::table($table)->orderBy('id')->get()->toJson();
+        }
+        try {
+            $this->administrativeWrite($request, $operation);
+            $this->fail('A changed authenticated Administrator must not perform a sensitive write.');
+        } catch (HttpExceptionInterface $exception) {
+            $this->assertSame(403, $exception->getStatusCode());
+        }
+        foreach ($tables as $table) {
+            $this->assertSame($before[$table], DB::table($table)->orderBy('id')->get()->toJson());
+        }
+        Http::assertNothingSent();
+    }
+
+    public static function administrativeOperations(): array
+    {
+        return [['assignment'], ['revocation']];
+    }
+
+    #[DataProvider('administrativeOperations')]
+    public function test_administrative_writes_accept_unchanged_actor_cutoff_and_recheck_target_eligibility(string $operation): void
+    {
+        $this->administratorFreshnessSchema();
+        DB::table('user_profiles')->where('id', self::ADMIN)->update(['auth_sessions_valid_after' => '2026-01-01 00:00:00']);
+        $request = Request::create('/synthetic-administration', 'PATCH');
+        $request->attributes->set('current_user', UserProfile::with('role')->findOrFail(self::ADMIN));
+        DB::table('user_profiles')->where('id', self::OFFICER_B)->update(['auth_sessions_valid_after' => '2026-02-01 00:00:00']);
+        $this->administrativeWrite($request, $operation);
+        if ($operation === 'assignment') {
+            $this->assertDatabaseHas('associations', ['id' => self::ASSOCIATION, 'primary_field_officer_id' => self::OFFICER_B]);
+        } else {
+            $this->assertFalse(UserProfile::findOrFail(self::OFFICER_B)->is_active);
+        }
+        $this->assertDatabaseCount('audit_logs', 1);
+        Http::assertNothingSent();
+    }
+
     public function test_audit_failure_rolls_back_revocation_and_invitation_cancellation(): void
     {
         DB::table('user_invitations')->insert(['id' => self::INVITATION, 'auth_user_id' => self::OFFICER_B,

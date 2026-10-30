@@ -24,14 +24,17 @@ class UserAccessRevocationService
     public function revoke(Request $request, UserProfile $user): bool
     {
         return DB::transaction(function () use ($request, $user) {
+            $identity = $request->attributes->get('current_user');
+            abort_unless($identity instanceof UserProfile && $identity->role?->code === 'system_admin', 403);
             // Serialize revocations before checking the remaining administrators.
             $role = Role::where('code', 'system_admin')->lockForUpdate()->first();
             abort_unless($role?->is_active, 403);
             $administrators = UserProfile::where('role_id', $role->id)->where('is_active', true)
                 ->orderBy('id')->lockForUpdate()->get();
-            $actor = $administrators->firstWhere('id', $request->attributes->get('current_user')?->id);
+            $actor = $administrators->firstWhere('id', $identity->id);
             if ($actor) $actor->setRelation('role', $role);
             abort_unless($actor?->canAccessApplication(throwOnDatabaseError: true), 403);
+            abort_unless($actor->getRawOriginal('auth_sessions_valid_after') === $identity->getRawOriginal('auth_sessions_valid_after'), 403);
             if ($actor->id === $user->id) {
                 throw ValidationException::withMessages(['confirm_revocation' => 'You cannot revoke your own access.']);
             }

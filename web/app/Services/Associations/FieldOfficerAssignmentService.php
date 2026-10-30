@@ -33,7 +33,7 @@ class FieldOfficerAssignmentService
     public function lockParticipants(?UserProfile $administrator, ?string $officerId = null, string $field = 'officer'): array
     {
         $this->requireTransaction();
-        abort_unless($administrator && Str::isUuid($administrator->id), 403);
+        abort_unless($administrator && Str::isUuid($administrator->id) && $administrator->role?->code === 'system_admin', 403);
         // Revocation locks roles before profiles. Keep that order for every writer.
         $roles = Role::whereIn('code', $officerId === null ? ['system_admin'] : ['system_admin', 'field_officer'])
             ->orderBy('id')->sharedLock()->get()->keyBy('id');
@@ -44,6 +44,7 @@ class FieldOfficerAssignmentService
         }
         $actor = $profiles->get($administrator->id);
         abort_unless($actor?->role?->code === 'system_admin' && $actor->canAccessApplication(throwOnDatabaseError: true), 403);
+        abort_unless($actor->getRawOriginal('auth_sessions_valid_after') === $administrator->getRawOriginal('auth_sessions_valid_after'), 403);
         $target = $officerId === null ? null : $profiles->get($officerId);
         if ($officerId !== null && (! $target || ! $this->eligibleOfficer($target))) {
             throw ValidationException::withMessages([$field => 'Select an active, fully activated Field Officer with an active role and eligible application access.']);

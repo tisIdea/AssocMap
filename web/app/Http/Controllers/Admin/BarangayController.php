@@ -8,6 +8,7 @@ use App\Http\Requests\AreaIndexRequest;
 use App\Services\Areas\AreaManagementQueryService;
 use App\Services\Areas\BarangayService;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use App\Models\Barangay;
 use Illuminate\Database\QueryException;
 
@@ -28,7 +29,7 @@ class BarangayController extends Controller
     public function update(StoreBarangayRequest $request, Barangay $barangay, BarangayService $service): RedirectResponse
     {
         try {
-            $service->update($barangay, $request->validated());
+            $service->update($barangay, $request->validated(), $request->attributes->get('current_user'));
         } catch (QueryException $exception) {
             report($exception);
             return back()->withInput()->with('error', 'Unable to update the area. Check for duplicate values and try again.');
@@ -37,10 +38,10 @@ class BarangayController extends Controller
         return redirect()->route('admin.areas.index')->with('success', 'Area updated successfully.');
     }
 
-    public function deactivate(Barangay $barangay, BarangayService $service): RedirectResponse
+    public function deactivate(Request $request, Barangay $barangay, BarangayService $service): RedirectResponse
     {
         try {
-            $service->deactivate($barangay);
+            $service->deactivate($barangay, $request->attributes->get('current_user'));
         } catch (QueryException $exception) {
             report($exception);
             return back()->with('error', 'Unable to deactivate the area. Please try again.');

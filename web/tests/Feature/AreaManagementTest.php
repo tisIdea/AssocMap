@@ -8,6 +8,8 @@ use App\Models\UserProfile;
 use App\Http\Requests\StoreAreaRequest;
 use App\Services\Areas\AreaManagementQueryService;
 use App\Services\Areas\AreaService;
+use App\Services\Areas\BarangayService;
+use App\Services\Areas\MunicipalityService;
 use App\Services\Auth\SupabaseAuthService;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Bootstrap\HandleExceptions;
@@ -131,6 +133,101 @@ class AreaManagementTest extends TestCase
                 'barangay_id' => DB::table('areas')->where('id', self::id($area))->value('barangay_id'),
                 'name' => $name, 'status' => $status, 'archived_at' => $archived, 'created_at' => now(), 'updated_at' => now()]);
         }
+    }
+
+    public static function geographyWrites(): array
+    {
+        return array_map(fn ($operation) => [$operation], [
+            'municipality_create', 'municipality_update', 'municipality_deactivate',
+            'barangay_create', 'barangay_update', 'barangay_deactivate', 'area_create',
+        ]);
+    }
+
+    public static function changedGeographyActors(): iterable
+    {
+        foreach (self::geographyWrites() as [$operation]) {
+            foreach (['revoked', 'session_cutoff', 'advanced_cutoff', 'changed_role', 'inactive_role', 'email_hold'] as $state) {
+                yield $operation.' '.$state => [$operation, $state];
+            }
+        }
+    }
+
+    private function geographyFreshnessSchema(): void
+    {
+        Schema::table('user_profiles', function (Blueprint $table) {
+            $table->timestampTz('auth_sessions_valid_after')->nullable();
+            $table->uuid('email_change_hold_id')->nullable();
+        });
+    }
+
+    private function geographyWrite(string $operation, UserProfile $actor): void
+    {
+        $municipality = Municipality::findOrFail(self::id(1));
+        $barangay = Barangay::findOrFail(self::id(11));
+        $data = ['name' => 'Synthetic security locality', 'municipality_id' => $municipality->id,
+            'barangay_id' => $barangay->id, 'address' => 'Synthetic security address',
+            'auth_sessions_valid_after' => '2026-02-01 00:00:00'];
+        match ($operation) {
+            'municipality_create' => app(MunicipalityService::class)->create($data, $actor),
+            'municipality_update' => app(MunicipalityService::class)->update($municipality, $data, $actor),
+            'municipality_deactivate' => app(MunicipalityService::class)->deactivate($municipality, $actor),
+            'barangay_create' => app(BarangayService::class)->create($data, $actor),
+            'barangay_update' => app(BarangayService::class)->update($barangay, $data, $actor),
+            'barangay_deactivate' => app(BarangayService::class)->deactivate($barangay, $actor),
+            'area_create' => app(AreaService::class)->create($data, $actor),
+        };
+    }
+
+    #[DataProvider('changedGeographyActors')]
+    public function test_geography_writes_reject_changed_authenticated_state_before_persistence(string $operation, string $state): void
+    {
+        $this->geographyFreshnessSchema();
+        if ($state === 'advanced_cutoff') {
+            DB::table('user_profiles')->where('id', self::ADMIN)->update(['auth_sessions_valid_after' => '2026-01-01 00:00:00']);
+        }
+        $actor = UserProfile::with('role')->findOrFail(self::ADMIN);
+        $this->assertTrue($actor->canAccessApplication());
+        match ($state) {
+            'revoked' => DB::table('user_profiles')->where('id', self::ADMIN)->update(['is_active' => false]),
+            'session_cutoff', 'advanced_cutoff' => DB::table('user_profiles')->where('id', self::ADMIN)->update(['auth_sessions_valid_after' => '2026-02-01 00:00:00']),
+            'changed_role' => DB::table('user_profiles')->where('id', self::ADMIN)->update(['role_id' => 2]),
+            'inactive_role' => DB::table('roles')->where('id', 1)->update(['is_active' => false]),
+            'email_hold' => DB::table('user_profiles')->where('id', self::ADMIN)->update(['email_change_hold_id' => self::OFFICER]),
+        };
+        $before = $this->geographySnapshot();
+        try {
+            $this->geographyWrite($operation, $actor);
+            $this->fail('A changed authenticated Administrator must not change geography.');
+        } catch (\Symfony\Component\HttpKernel\Exception\HttpExceptionInterface $exception) {
+            $this->assertSame(403, $exception->getStatusCode());
+        }
+        $this->assertSame($before, $this->geographySnapshot());
+    }
+
+    #[DataProvider('geographyWrites')]
+    public function test_geography_writes_accept_an_unchanged_authenticated_cutoff(string $operation): void
+    {
+        $this->geographyFreshnessSchema();
+        DB::table('user_profiles')->where('id', self::ADMIN)->update(['auth_sessions_valid_after' => '2026-01-01 00:00:00']);
+        $actor = UserProfile::with('role')->findOrFail(self::ADMIN);
+        $before = $this->geographySnapshot();
+        $this->geographyWrite($operation, $actor);
+        $this->assertNotSame($before, $this->geographySnapshot());
+    }
+
+    public function test_geography_http_write_rechecks_a_cutoff_changed_after_authentication(): void
+    {
+        $this->geographyFreshnessSchema();
+        $changed = false;
+        $this->app->resolving(MunicipalityService::class, function () use (&$changed): void {
+            $changed = true;
+            DB::table('user_profiles')->where('id', self::ADMIN)->update(['auth_sessions_valid_after' => '2026-02-01 00:00:00']);
+        });
+        $before = $this->geographySnapshot();
+        $this->postJson(route('admin.municipalities.store'), ['name' => 'Rejected HTTP locality',
+            'auth_sessions_valid_after' => '2026-02-01 00:00:00'])->assertForbidden();
+        $this->assertTrue($changed);
+        $this->assertSame($before, $this->geographySnapshot());
     }
 
     private function dom(string $html): \DOMXPath

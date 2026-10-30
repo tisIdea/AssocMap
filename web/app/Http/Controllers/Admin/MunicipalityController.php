@@ -10,6 +10,7 @@ use App\Services\Areas\AreaManagementQueryService;
 use App\Services\Areas\MunicipalityService;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 
 class MunicipalityController extends Controller
@@ -43,7 +44,7 @@ class MunicipalityController extends Controller
     public function update(StoreMunicipalityRequest $request, Municipality $municipality, MunicipalityService $service): RedirectResponse
     {
         try {
-            $service->update($municipality, $request->validated());
+            $service->update($municipality, $request->validated(), $request->attributes->get('current_user'));
         } catch (QueryException $exception) {
             report($exception);
             return back()->withInput()->with('error', 'Unable to update the area. Check for duplicate values and try again.');
@@ -52,10 +53,10 @@ class MunicipalityController extends Controller
         return redirect()->route('admin.areas.index')->with('success', 'Area updated successfully.');
     }
 
-    public function deactivate(Municipality $municipality, MunicipalityService $service): RedirectResponse
+    public function deactivate(Request $request, Municipality $municipality, MunicipalityService $service): RedirectResponse
     {
         try {
-            $service->deactivate($municipality);
+            $service->deactivate($municipality, $request->attributes->get('current_user'));
         } catch (QueryException $exception) {
             report($exception);
             return back()->with('error', 'Unable to deactivate the area. Please try again.');

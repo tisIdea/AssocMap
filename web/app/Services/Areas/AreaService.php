@@ -6,11 +6,14 @@ use App\Models\Area;
 use App\Models\Barangay;
 use App\Models\Municipality;
 use App\Models\UserProfile;
+use App\Services\Programs\ProgramActorService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class AreaService
 {
+    public function __construct(private ProgramActorService $actors) {}
+
     public function create(
         array $data,
         UserProfile $currentUser
@@ -23,6 +26,8 @@ class AreaService
         ])->validate();
 
         return DB::transaction(function () use ($data, $currentUser): Area {
+            $currentUser = $this->actors->lock($currentUser);
+            abort_unless($currentUser->role?->code === 'system_admin', 403);
             $municipality = Municipality::whereKey($data['municipality_id'])->sharedLock()->first();
             // Serialize Area creation under one Barangay and recheck its current parent.
             $barangay = Barangay::whereKey($data['barangay_id'])->lockForUpdate()->first();

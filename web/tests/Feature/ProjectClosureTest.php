@@ -199,6 +199,75 @@ class ProjectClosureTest extends TestCase
             'program_year' => 2026, 'implementation_start_date' => '2026-01-01', 'status' => 'ongoing', 'remarks' => 'Retain original remarks.'];
     }
 
+    public static function staleFinalizationActors(): iterable
+    {
+        foreach (['completed', 'terminated'] as $outcome) {
+            foreach ([self::ADMIN, self::OFFICER] as $actor) {
+                foreach (['revoked', 'session_cutoff', 'advanced_cutoff', 'changed_role', 'inactive_role', 'email_hold'] as $state) {
+                    yield $outcome.' '.$actor.' '.$state => [$outcome, $actor, $state];
+                }
+            }
+        }
+    }
+
+    #[DataProvider('staleFinalizationActors')]
+    public function test_finalization_rejects_changed_authenticated_state_without_history_or_audit_writes(string $outcome, string $id, string $state): void
+    {
+        Schema::table('user_profiles', function (Blueprint $table) {
+            $table->timestampTz('auth_sessions_valid_after')->nullable();
+            $table->uuid('email_change_hold_id')->nullable();
+        });
+        if ($state === 'advanced_cutoff') {
+            DB::table('user_profiles')->where('id', $id)->update(['auth_sessions_valid_after' => '2026-01-01 00:00:00']);
+        }
+        $request = $this->requestFor($id);
+        $project = Project::findOrFail(self::PROJECT);
+        $data = $this->payload($outcome);
+        $this->assertTrue($request->attributes->get('current_user')->canAccessApplication());
+        match ($state) {
+            'revoked' => DB::table('user_profiles')->where('id', $id)->update(['is_active' => false]),
+            'session_cutoff', 'advanced_cutoff' => DB::table('user_profiles')->where('id', $id)->update(['auth_sessions_valid_after' => '2026-02-01 00:00:00']),
+            'changed_role' => DB::table('user_profiles')->where('id', $id)->update(['role_id' => $id === self::ADMIN ? 2 : 1]),
+            'inactive_role' => DB::table('roles')->where('id', $id === self::ADMIN ? 1 : 2)->update(['is_active' => false]),
+            'email_hold' => DB::table('user_profiles')->where('id', $id)->update(['email_change_hold_id' => self::CHILD]),
+        };
+        $request->merge(['auth_sessions_valid_after' => '2026-02-01 00:00:00']);
+        $before = $this->transferHistory();
+        try {
+            $service = app(ProjectClosureService::class);
+            $outcome === 'completed' ? $service->close($request, $project, $data) : $service->terminate($request, $project, $data);
+            $this->fail('A changed authenticated actor must not finalize a project.');
+        } catch (\Symfony\Component\HttpKernel\Exception\HttpExceptionInterface $exception) {
+            $this->assertSame(403, $exception->getStatusCode());
+        }
+        $this->assertSame($before, $this->transferHistory());
+    }
+
+    #[DataProvider('authorizedActors')]
+    public function test_finalization_with_unchanged_session_cutoff_reads_role_before_profile(string $id, string $prefix, string $outcome): void
+    {
+        Schema::table('user_profiles', function (Blueprint $table) { $table->timestampTz('auth_sessions_valid_after')->nullable(); });
+        DB::table('user_profiles')->where('id', $id)->update(['auth_sessions_valid_after' => '2026-01-01 00:00:00']);
+        $request = $this->requestFor($id);
+        $project = Project::findOrFail(self::PROJECT);
+        $data = $this->payload($outcome);
+        DB::connection()->enableQueryLog();
+        DB::connection()->flushQueryLog();
+        try {
+            $service = app(ProjectClosureService::class);
+            $result = $outcome === 'completed' ? $service->close($request, $project, $data) : $service->terminate($request, $project, $data);
+            $queries = DB::connection()->getQueryLog();
+        } finally {
+            DB::connection()->disableQueryLog();
+        }
+        $actorReads = array_values(array_filter($queries, fn ($query) => str_starts_with($query['query'], 'select')
+            && (str_contains($query['query'], 'from "roles"') || str_contains($query['query'], 'from "user_profiles"'))));
+        $this->assertStringContainsString('from "roles"', $actorReads[0]['query']);
+        $this->assertStringContainsString('from "user_profiles"', $actorReads[1]['query']);
+        $this->assertSame($outcome, $result->status);
+        $this->assertDatabaseCount('audit_logs', 1);
+    }
+
     private function transferDestination(): string
     {
         $id = '88888888-8888-4888-8888-888888888888';
