@@ -6,6 +6,8 @@ use Illuminate\Support\Facades\DB;
 
 trait CreatesEmailChangeFixture
 {
+    use CreatesAccountLifecycleSchema;
+
     protected function createEmailChangeSchema(): void
     {
         DB::unprepared(<<<'SQL'
@@ -23,8 +25,8 @@ trait CreatesEmailChangeFixture
                 cancelled_at TEXT, created_at TEXT, updated_at TEXT);
             CREATE UNIQUE INDEX uq_email_change_pending_per_user ON email_change_requests(user_id) WHERE status='pending';
             SQL);
-        (require database_path('migrations/2026_10_22_000000_add_account_reactivation.php'))->up();
-        (require database_path('migrations/2026_10_22_020000_support_verified_email_change.php'))->up();
+        $this->createReactivationSchema();
+        $this->createVerifiedEmailChangeSchema();
         DB::statement("ATTACH DATABASE ':memory:' AS auth");
         DB::statement('CREATE TABLE auth.users (id TEXT PRIMARY KEY, email TEXT NOT NULL, email_change TEXT)');
         DB::statement('CREATE TABLE auth.sessions (id TEXT PRIMARY KEY, user_id TEXT, created_at TEXT)');

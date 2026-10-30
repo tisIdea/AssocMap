@@ -562,6 +562,7 @@ class ReportAuthorizationTest extends TestCase
     public function test_mobile_reports_use_bearer_eligibility_and_deny_cross_association_scope(): void
     {
         $this->webIdentity(3);
+        /** @var SupabaseAuthService&\Mockery\MockInterface $auth */
         $auth=$this->app->make(SupabaseAuthService::class);
         $auth->shouldReceive('verifyApiIdentity')->andReturn(['outcome'=>'verified',
             'identity'=>['id'=>self::USER,'email'=>'synthetic-report@example.test']]);

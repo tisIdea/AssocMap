@@ -40,7 +40,11 @@ class AreaManagementTest extends TestCase
         config(['associations.geography_schema_ready' => true, 'associations.direct_geography' => true]);
         $this->assertSame('sqlite', DB::connection()->getDriverName());
         $this->assertSame(':memory:', DB::connection()->getConfig('database'));
-        DB::connection()->getPdo()->sqliteCreateFunction('gen_random_uuid', fn () => (string) Str::uuid());
+        $pdo = DB::connection()->getPdo();
+        $createFunction = $pdo instanceof \Pdo\Sqlite
+            ? $pdo->createFunction(...)
+            : \Closure::fromCallable([$pdo, 'sqliteCreateFunction']);
+        $createFunction('gen_random_uuid', fn () => (string) Str::uuid());
         Http::swap((new Factory)->preventStrayRequests());
         $this->withoutVite();
         $this->schema();
@@ -323,6 +327,7 @@ class AreaManagementTest extends TestCase
             'municipality_id' => self::id(2), 'source' => 'psgc', 'page' => 2, 'sort' => 'za']))->assertOk();
         $dom = $this->dom($response->getContent());
         foreach ($dom->query('//a[@data-area-summary and @data-area-summary!="associations"] | //nav[@aria-label="Geographic record type"]/a') as $link) {
+            /** @var \DOMElement $link */
             parse_str(parse_url($link->getAttribute('href'), PHP_URL_QUERY), $parameters);
             $this->assertSame('Alpha', $parameters['q']);
             $this->assertSame('za', $parameters['sort']);
@@ -343,6 +348,7 @@ class AreaManagementTest extends TestCase
         $dom = $this->dom($response->getContent());
         $this->assertGreaterThan(0, $dom->query('//a[@href="'.route('admin.barangays.show', self::id(11)).'"]')->length);
         foreach ($dom->query('//a[contains(@aria-label,"Open Association Management")]') as $link) {
+            /** @var \DOMElement $link */
             parse_str(parse_url($link->getAttribute('href'), PHP_URL_QUERY), $parameters);
             $this->assertSame('Alpha Municipality', $parameters['municipality']);
             $this->assertNotSame('Other Barangay', $parameters['barangay']);

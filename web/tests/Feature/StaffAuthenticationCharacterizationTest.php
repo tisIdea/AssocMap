@@ -84,10 +84,10 @@ class StaffAuthenticationCharacterizationTest extends TestCase
     {
         DB::table('roles')->where('id', 1)->update(['code' => $role]);
         Http::fake([self::PROVIDER.'token*' => Http::response($this->tokens())]);
-        $previousId = $this->browserSession(['marker' => 'retained session data']);
+        $previousId = $this->browserSession(['marker' => 'retained session data', 'supabase_refresh_token' => 'synthetic_legacy_refresh']);
         $response = $this->post('/login', $this->credentials() + ['user_profile_id' => 'untrusted', 'user_role' => 'system_admin'])
             ->assertRedirect(route($destination))->assertSessionHas('user_profile_id', self::ID)->assertSessionHas('user_role', $role)
-            ->assertSessionHas('supabase_access_token', 'synthetic-access')->assertSessionHas('supabase_refresh_token', 'synthetic-refresh')
+            ->assertSessionHas('supabase_access_token', 'synthetic-access')->assertSessionMissing('supabase_refresh_token')
             ->assertSessionHas('marker', 'retained session data');
         $this->assertNotSame($previousId, $response->getCookie(config('session.cookie'))->getValue());
         Http::assertSentCount(1);

@@ -67,10 +67,10 @@ class StaffAuthController extends Controller
         }
 
         $request->session()->regenerate();
+        $request->session()->forget('supabase_refresh_token');
 
         $request->session()->put([
             'supabase_access_token' => $authData['access_token'],
-            'supabase_refresh_token' => $authData['refresh_token'] ?? null,
             'user_profile_id' => $profile->id,
             'user_role' => $profile->role->code,
         ]);

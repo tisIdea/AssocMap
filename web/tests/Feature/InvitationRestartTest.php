@@ -27,9 +27,12 @@ use Mockery;
 use PHPUnit\Framework\Attributes\DataProvider;
 use RuntimeException;
 use Tests\TestCase;
+use Tests\Support\CreatesAccountLifecycleSchema;
 
 class InvitationRestartTest extends TestCase
 {
+    use CreatesAccountLifecycleSchema;
+
     private const USER = '11111111-1111-4111-8111-111111111111';
     private const OTHER = '22222222-2222-4222-8222-222222222222';
     private const INVITATION = '33333333-3333-4333-8333-333333333333';
@@ -154,7 +157,7 @@ class InvitationRestartTest extends TestCase
     public function test_replacement_can_restart_interrupted_activation_without_restoring_the_former_holder(): void
     {
         $this->associationRole();
-        (require database_path('migrations/2026_10_22_010000_support_association_account_replacement.php'))->up();
+        $this->createAssociationReplacementSchema();
         DB::table('user_profiles')->insert(['id' => self::ASSOCIATION, 'role_id' => 3,
             'display_name' => 'Former synthetic holder', 'is_active' => false, 'activated_at' => now()->subDays(2)]);
         DB::table('association_accounts')->insert(['id' => self::ASSOCIATION, 'user_id' => self::ASSOCIATION,

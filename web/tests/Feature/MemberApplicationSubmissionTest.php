@@ -57,13 +57,13 @@ class MemberApplicationSubmissionTest extends TestCase
     {
         MemberApplication::flushEventListeners();
         try {
-            Http::assertNothingSent();
-        } finally {
             try {
-                parent::tearDown();
+                Http::assertNothingSent();
             } finally {
-                HandleExceptions::flushState($this);
+                parent::tearDown();
             }
+        } finally {
+            HandleExceptions::flushState($this);
         }
     }
 
