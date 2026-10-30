@@ -14,6 +14,7 @@ use Aws\S3\S3Client;
 use GuzzleHttp\Psr7\Response;
 use GuzzleHttp\Psr7\Utils;
 use Illuminate\Contracts\Debug\ShouldntReport;
+use Illuminate\Filesystem\FilesystemAdapter;
 use Illuminate\Filesystem\FilesystemManager;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Env;
@@ -49,6 +50,7 @@ class PrivateMediaStorageTest extends TestCase
 
     private function disk(array $results = []): array
     {
+        /** @var FilesystemAdapter $disk */
         $disk = $this->app->make(FilesystemManager::class)->disk('media_private');
         // Replace the SDK transport before any operation; constructor resolution makes no requests.
         $s3 = (new ReflectionProperty($disk->getAdapter(), 'adapter'))->getValue($disk->getAdapter());

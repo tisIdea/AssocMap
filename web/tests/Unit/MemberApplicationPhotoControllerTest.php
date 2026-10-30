@@ -60,6 +60,7 @@ class MemberApplicationPhotoControllerTest extends TestCase
 
     private function actor(string $role, bool $accessible = true): UserProfile
     {
+        /** @var UserProfile&\Mockery\MockInterface $actor */
         $actor = Mockery::mock(UserProfile::class)->makePartial();
         $actor->setRawAttributes(['id' => self::ACTOR_ID]);
         $actor->setRelation('role', new Role(['code' => $role]));

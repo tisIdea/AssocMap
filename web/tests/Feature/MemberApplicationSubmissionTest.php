@@ -12,6 +12,7 @@ use App\Exceptions\MemberApplicationPhotoUnavailableException;
 use App\Exceptions\PrivateMediaStorageException;
 use Illuminate\Database\Events\TransactionCommitted;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Filesystem\LocalFilesystemAdapter;
 use Illuminate\Foundation\Bootstrap\HandleExceptions;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
@@ -150,13 +151,11 @@ class MemberApplicationSubmissionTest extends TestCase
             'sex_id' => 1, 'position_id' => 2, 'classification_ids' => [1], 'endorsement_letter' => 'Private synthetic letter'];
     }
 
-    private function usePhotoTransport(string $transport): string
+    private function usePhotoTransport(string $transport): LocalFilesystemAdapter
     {
         config(['services.supabase_storage.photo_transport' => $transport]);
-        $disk = $transport === 'r2' ? 'media_private' : 'member_application_photos';
-        if ($transport === 'r2') Storage::fake($disk);
 
-        return $disk;
+        return Storage::fake($transport === 'r2' ? 'media_private' : 'member_application_photos');
     }
 
     public static function photoTransports(): array
@@ -223,8 +222,8 @@ class MemberApplicationSubmissionTest extends TestCase
         $application = MemberApplication::sole();
         $this->assertMatchesRegularExpression('~\Aphotos/'.$application->id.'/[0-9a-f-]{36}\.'.$extension.'\z~',
             $application->applicant_photo_path);
-        Storage::disk($disk)->assertExists($application->applicant_photo_path);
-        $image = getimagesizefromstring(Storage::disk($disk)->get($application->applicant_photo_path));
+        $disk->assertExists($application->applicant_photo_path);
+        $image = getimagesizefromstring($disk->get($application->applicant_photo_path));
         $this->assertSame([32, 48], array_slice($image, 0, 2));
         $this->assertArrayNotHasKey('applicant_photo_path', $application->toArray());
     }
@@ -308,7 +307,7 @@ class MemberApplicationSubmissionTest extends TestCase
         $photos->shouldReceive('discard')->once()->withArgs(function ($path, $applicationId) use (&$events, $disk) {
             $events[] = 'discard';
             $this->assertSame(0, DB::transactionLevel());
-            Storage::disk($disk)->assertExists($path);
+            $disk->assertExists($path);
 
             return str_starts_with($path, 'photos/'.$applicationId.'/');
         })->passthru();
@@ -317,7 +316,7 @@ class MemberApplicationSubmissionTest extends TestCase
         MemberApplication::created(function ($application) use (&$events, $failure, $disk) {
             $events[] = 'application saved';
             $this->assertSame(1, DB::transactionLevel());
-            Storage::disk($disk)->assertExists($application->applicant_photo_path);
+            $disk->assertExists($application->applicant_photo_path);
             throw $failure;
         });
         try {
@@ -330,7 +329,7 @@ class MemberApplicationSubmissionTest extends TestCase
         $this->assertSame(['store', 'application saved', 'discard'], $events);
         $this->assertDatabaseCount('member_applications', 0);
         $this->assertDatabaseCount('member_application_classifications', 0);
-        $this->assertSame([], Storage::disk($disk)->allFiles());
+        $this->assertSame([], $disk->allFiles());
     }
 
     #[DataProvider('photoTransports')]
@@ -356,7 +355,7 @@ class MemberApplicationSubmissionTest extends TestCase
         $this->assertDatabaseCount('member_applications', 1);
         $this->assertDatabaseCount('member_application_classifications', 1);
         $application = MemberApplication::firstOrFail();
-        Storage::disk($disk)->assertExists($application->applicant_photo_path);
+        $disk->assertExists($application->applicant_photo_path);
         Log::shouldHaveReceived('warning')->once()->with('Member application submission requires reconciliation.',
             ['application_id' => $application->id, 'code' => 'submission_outcome_uncertain']);
     }
@@ -383,8 +382,7 @@ class MemberApplicationSubmissionTest extends TestCase
 
     public function test_r2_lost_upload_response_preserves_object_and_returns_safe_503_without_an_application(): void
     {
-        $this->usePhotoTransport('r2');
-        $fake = Storage::disk('media_private');
+        $fake = $this->usePhotoTransport('r2');
         $disk = Mockery::mock($fake);
         $path = null;
         $disk->shouldReceive('put')->once()->andReturnUsing(function ($name, $contents, $options) use ($fake, &$path): never {
@@ -399,6 +397,7 @@ class MemberApplicationSubmissionTest extends TestCase
             ->assertStatus(503)->assertJsonPath('message', 'The photo upload could not be confirmed. No application was submitted. Wait before retrying; contact the administrator if this continues.');
         $this->assertDatabaseCount('member_applications', 0);
         $this->assertDatabaseCount('member_application_classifications', 0);
+        $this->assertIsString($path);
         $fake->assertExists($path);
         Log::shouldHaveReceived('warning')->once()->with('Member application photo upload requires attention.',
             ['application_id' => explode('/', $path)[1], 'code' => 'photo_upload_outcome_uncertain']);

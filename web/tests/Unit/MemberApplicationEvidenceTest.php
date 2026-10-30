@@ -234,23 +234,23 @@ class MemberApplicationEvidenceTest extends TestCase
     public function test_local_references_remain_supported_without_cloud_fallback(): void
     {
         config(['services.supabase_storage.photo_transport' => 'local']);
-        Storage::fake('member_application_photos');
+        $disk = Storage::fake('member_application_photos');
         $path = 'photos/'.self::APPLICATION_ID.'/'.self::PHOTO_ID.'.png';
-        Storage::disk('member_application_photos')->put($path, 'synthetic local object', 'private');
+        $disk->put($path, 'synthetic local object', 'private');
         $service = $this->photos();
         $photo = $service->open(self::APPLICATION_ID, $path);
         $this->assertSame('synthetic local object', stream_get_contents($photo['stream']));
         fclose($photo['stream']);
         $service->discard($path, self::APPLICATION_ID);
-        Storage::disk('member_application_photos')->assertMissing($path);
+        $disk->assertMissing($path);
         Http::assertNothingSent();
     }
 
     public function test_supabase_missing_photo_and_failed_cleanup_never_use_matching_local_file(): void
     {
-        Storage::fake('member_application_photos');
+        $disk = Storage::fake('member_application_photos');
         $path = 'photos/'.self::APPLICATION_ID.'/'.self::PHOTO_ID.'.png';
-        Storage::disk('member_application_photos')->put($path, 'synthetic local object', 'private');
+        $disk->put($path, 'synthetic local object', 'private');
         Http::fake([
             'https://storage.example.test/storage/v1/object/authenticated/member-application-photos/'.$path
                 => Http::response(['code' => 'NoSuchKey'], 404),
@@ -260,7 +260,7 @@ class MemberApplicationEvidenceTest extends TestCase
         $service = $this->photos();
         $this->assertNull($service->open(self::APPLICATION_ID, $path));
         $service->discard($path, self::APPLICATION_ID);
-        Storage::disk('member_application_photos')->assertExists($path);
+        $disk->assertExists($path);
         Http::assertSentCount(2);
     }
 
@@ -278,29 +278,29 @@ class MemberApplicationEvidenceTest extends TestCase
     public function test_invalid_provider_is_rejected_without_reading_local_file_or_contacting_storage(): void
     {
         config(['services.supabase_storage.photo_transport' => 'invalid-provider']);
-        Storage::fake('member_application_photos');
+        $disk = Storage::fake('member_application_photos');
         $path = 'photos/'.self::APPLICATION_ID.'/'.self::PHOTO_ID.'.png';
-        Storage::disk('member_application_photos')->put($path, 'synthetic local object', 'private');
+        $disk->put($path, 'synthetic local object', 'private');
         try {
             $this->photos()->open(self::APPLICATION_ID, $path);
             $this->fail('The invalid provider was accepted.');
         } catch (MemberApplicationPhotoUnavailableException $exception) {
-            Storage::disk('member_application_photos')->assertExists($path);
+            $disk->assertExists($path);
             Http::assertNothingSent();
         }
     }
 
     public function test_cleanup_keeps_the_provider_selected_when_the_service_was_created(): void
     {
-        Storage::fake('member_application_photos');
+        $disk = Storage::fake('member_application_photos');
         $path = 'photos/'.self::APPLICATION_ID.'/'.self::PHOTO_ID.'.png';
-        Storage::disk('member_application_photos')->put($path, 'synthetic local object', 'private');
+        $disk->put($path, 'synthetic local object', 'private');
         Http::fake(['https://storage.example.test/storage/v1/object/member-application-photos'
             => Http::response([['name' => $path]], 200)]);
         $service = $this->photos();
         config(['services.supabase_storage.photo_transport' => 'local']);
         $service->discard($path, self::APPLICATION_ID);
-        Storage::disk('member_application_photos')->assertExists($path);
+        $disk->assertExists($path);
         Http::assertSentCount(1);
     }
 
@@ -363,7 +363,7 @@ class MemberApplicationEvidenceTest extends TestCase
     private function requireGd(): void
     {
         foreach (['imagecreatetruecolor', 'imagecreatefromstring', 'imagejpeg', 'imagepng',
-            'imagesx', 'imagesy', 'imagealphablending', 'imagesavealpha', 'imagedestroy'] as $function) {
+            'imagesx', 'imagesy', 'imagealphablending', 'imagesavealpha'] as $function) {
             if (! function_exists($function)) $this->markTestSkipped('PHP GD with JPEG/PNG support is required.');
         }
     }

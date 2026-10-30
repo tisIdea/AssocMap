@@ -5,6 +5,7 @@ namespace App\Services\Members;
 use App\Exceptions\MemberApplicationPhotoUnavailableException;
 use App\Services\SupabaseStorageService;
 use ErrorException;
+use Illuminate\Filesystem\FilesystemAdapter;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -167,6 +168,7 @@ class MemberApplicationPhotoService
         set_error_handler(static fn () => throw new MemberApplicationPhotoUnavailableException, E_WARNING | E_NOTICE);
 
         try {
+            /** @var FilesystemAdapter $disk */
             $disk = Storage::disk(self::R2_DISK);
             if (! $disk->exists($path)) return null;
             if (hrtime(true) > $deadline) throw new MemberApplicationPhotoUnavailableException;
@@ -240,7 +242,7 @@ class MemberApplicationPhotoService
     private function encode(UploadedFile $photo): array
     {
         foreach (['imagecreatefromstring', 'imagejpeg', 'imagepng', 'imagesx', 'imagesy',
-            'imagealphablending', 'imagesavealpha', 'imagedestroy'] as $function) {
+            'imagealphablending', 'imagesavealpha'] as $function) {
             if (! function_exists($function)) {
                 throw ValidationException::withMessages([
                     'applicant_photo' => 'Photo processing is unavailable. Contact the administrator to enable PHP GD with JPEG and PNG support.',
@@ -294,7 +296,7 @@ class MemberApplicationPhotoService
         } finally {
             while (ob_get_level() > $bufferLevel) ob_end_clean();
             restore_error_handler();
-            if ($image !== null && $image !== false) imagedestroy($image);
+            unset($image);
         }
     }
 

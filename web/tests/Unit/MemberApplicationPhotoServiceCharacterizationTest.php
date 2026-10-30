@@ -7,6 +7,7 @@ use App\Exceptions\PrivateMediaStorageException;
 use App\Services\Members\MemberApplicationPhotoService;
 use App\Services\SupabaseStorageService;
 use Illuminate\Contracts\Filesystem\Filesystem;
+use Illuminate\Filesystem\FilesystemAdapter;
 use Illuminate\Foundation\Bootstrap\HandleExceptions;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
@@ -82,6 +83,7 @@ class MemberApplicationPhotoServiceCharacterizationTest extends TestCase
         $diskName = $this->useTransport($transport);
         $source = UploadedFile::fake()->image('portrait.'.$extension, 32, 24)->getContent();
         $file = UploadedFile::fake()->createWithContent('portrait.'.$extension, $source.'SYNTHETIC_TRAILING_PAYLOAD');
+        /** @var FilesystemAdapter $disk */
         $disk = Storage::disk($diskName);
         $privateDisk = Mockery::mock($disk);
         $options = $transport === 'r2' ? ['visibility' => 'private', 'ContentType' => $mime, 'CacheControl' => 'private, no-store, max-age=0'] : 'private';
