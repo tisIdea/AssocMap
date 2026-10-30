@@ -4,6 +4,8 @@ namespace Tests\Unit;
 
 use App\Exceptions\PrivateMediaStorageException;
 use App\Services\PrivateMediaAdapter;
+use App\Services\Members\MemberApplicationPhotoService;
+use App\Services\SupabaseStorageService;
 use Aws\Command;
 use Aws\MockHandler;
 use Aws\Result;
@@ -214,6 +216,46 @@ class PrivateMediaStorageTest extends TestCase
             $this->assertSame('https', $request->getUri()->getScheme());
             $this->assertStringContainsString('/auto/s3/aws4_request', $request->getHeaderLine('Authorization'));
         }
+    }
+
+    public function test_member_application_r2_round_trip_uses_the_guarded_sdk_adapter_without_acl_headers(): void
+    {
+        config(['services.supabase_storage.photo_transport' => 'r2', 'filesystems.disks.media_private.region' => 'auto',
+            'filesystems.disks.media_private.endpoint' => 'https://synthetic-account.r2.cloudflarestorage.com']);
+        $contents = '';
+        $requests = [];
+        $capture = function ($command, $request) use (&$contents, &$requests) {
+            $requests[] = [$command, $request];
+            if ($command->getName() === 'PutObject') $contents = (string) $request->getBody();
+
+            return new Result(['ContentLength' => strlen($contents), 'ContentType' => 'image/png', 'Body' => Utils::streamFor($contents)]);
+        };
+        [, $handler] = $this->disk(array_fill(0, 6, $capture));
+        $remote = Mockery::mock(SupabaseStorageService::class);
+        $remote->shouldNotReceive('upload');
+        $remote->shouldNotReceive('download');
+        $remote->shouldNotReceive('delete');
+        $photos = new MemberApplicationPhotoService($remote);
+        $application = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+        $path = $photos->store(UploadedFile::fake()->image('portrait.png', 8, 8), $application);
+        $photo = $photos->open($application, $path);
+        try {
+            $this->assertSame($contents, stream_get_contents($photo['stream']));
+            $this->assertSame('image/png', $photo['mime_type']);
+        } finally {
+            fclose($photo['stream']);
+        }
+        $photos->discard($path, $application);
+        $this->assertCount(0, $handler);
+        $this->assertSame(['PutObject', 'HeadObject', 'HeadObject', 'HeadObject', 'GetObject', 'DeleteObject'],
+            array_map(fn ($pair) => $pair[0]->getName(), $requests));
+        foreach ($requests as [$command, $request]) {
+            $this->assertSame($path, $command['Key']);
+            $this->assertNull($command['ACL']);
+            $this->assertFalse($request->hasHeader('x-amz-acl'));
+        }
+        $this->assertSame('image/png', $requests[0][1]->getHeaderLine('Content-Type'));
+        $this->assertSame('private, no-store, max-age=0', $requests[0][1]->getHeaderLine('Cache-Control'));
     }
 
     public function test_automatic_multipart_upload_does_not_send_acl_headers(): void

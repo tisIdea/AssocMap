@@ -13,12 +13,15 @@ use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
 use League\Flysystem\FilesystemException;
 use Symfony\Component\HttpFoundation\File\Exception\FileException;
+use Throwable;
 use ValueError;
 
 class MemberApplicationPhotoService
 {
     private const DISK = 'member_application_photos';
+    private const R2_DISK = 'media_private';
     private const MAX_BYTES = 2 * 1024 * 1024;
+    private const READ_SECONDS = 30;
     private mixed $transport;
 
     public function __construct(private SupabaseStorageService $remote)
@@ -47,6 +50,30 @@ class MemberApplicationPhotoService
                 : 'The photo could not be stored. No application was submitted. Try again later or contact the administrator.');
         }
 
+        if ($this->transport() === 'r2') {
+            try {
+                $written = Storage::disk(self::R2_DISK)->put($path, $contents, [
+                    'visibility' => 'private',
+                    'ContentType' => $extension === 'jpg' ? 'image/jpeg' : 'image/png',
+                    'CacheControl' => 'private, no-store, max-age=0',
+                ]);
+            } catch (FilesystemException $exception) {
+                $written = false;
+            }
+
+            if (! $written) {
+                // A failed response can follow a successful write; retain the object for reconciliation.
+                Log::warning('Member application photo upload requires attention.', [
+                    'application_id' => $applicationId,
+                    'code' => 'photo_upload_outcome_uncertain',
+                ]);
+                throw new MemberApplicationPhotoUnavailableException(
+                    'The photo upload could not be confirmed. No application was submitted. Wait before retrying; contact the administrator if this continues.');
+            }
+
+            return $path;
+        }
+
         try {
             $written = Storage::disk(self::DISK)->put($path, $contents, 'private');
         } catch (FilesystemException $exception) {
@@ -71,7 +98,7 @@ class MemberApplicationPhotoService
             if ($this->transport() === 'supabase') {
                 $result = $this->remote->delete($path);
                 if (in_array($result['outcome'], ['deleted', 'missing'], true)) return;
-            } elseif (Storage::disk(self::DISK)->delete($path)) {
+            } elseif (Storage::disk($this->transport() === 'r2' ? self::R2_DISK : self::DISK)->delete($path)) {
                 return;
             }
         } catch (FilesystemException | MemberApplicationPhotoUnavailableException $exception) {
@@ -88,6 +115,8 @@ class MemberApplicationPhotoService
     {
         $mimeType = $this->mimeTypeFor($path, $applicationId);
         if ($mimeType === null) return null;
+
+        if ($this->transport() === 'r2') return $this->openR2($path, $mimeType);
 
         if ($this->transport() === 'supabase') {
             $photo = $this->remote->download($path);
@@ -124,9 +153,79 @@ class MemberApplicationPhotoService
 
     private function transport(): string
     {
-        if (! in_array($this->transport, ['local', 'supabase'], true)) throw new MemberApplicationPhotoUnavailableException;
+        if (! in_array($this->transport, ['local', 'supabase', 'r2'], true)) throw new MemberApplicationPhotoUnavailableException;
 
         return $this->transport;
+    }
+
+    private function openR2(string $path, string $mimeType): ?array
+    {
+        $source = null;
+        $output = null;
+        $image = null;
+        $deadline = hrtime(true) + self::READ_SECONDS * 1000000000;
+        set_error_handler(static fn () => throw new MemberApplicationPhotoUnavailableException, E_WARNING | E_NOTICE);
+
+        try {
+            $disk = Storage::disk(self::R2_DISK);
+            if (! $disk->exists($path)) return null;
+            if (hrtime(true) > $deadline) throw new MemberApplicationPhotoUnavailableException;
+            $expected = $disk->size($path);
+            if (! is_int($expected) || $expected < 1 || $expected > self::MAX_BYTES || hrtime(true) > $deadline) {
+                throw new MemberApplicationPhotoUnavailableException;
+            }
+            if ($disk->mimeType($path) !== $mimeType || hrtime(true) > $deadline) {
+                throw new MemberApplicationPhotoUnavailableException;
+            }
+
+            $source = $disk->readStream($path);
+            $output = fopen('php://temp', 'w+b');
+            if (! is_resource($source) || ! is_resource($output)) throw new MemberApplicationPhotoUnavailableException;
+
+            // Stage the complete bounded image before HTTP headers or bytes can be sent.
+            $bytes = 0;
+            while (! feof($source)) {
+                if (hrtime(true) > $deadline) throw new MemberApplicationPhotoUnavailableException;
+                $chunk = fread($source, min(65536, $expected + 1 - $bytes));
+                if ($chunk === false || ($chunk === '' && ! feof($source))) throw new MemberApplicationPhotoUnavailableException;
+                $bytes += strlen($chunk);
+                if ($bytes > $expected || fwrite($output, $chunk) !== strlen($chunk)) {
+                    throw new MemberApplicationPhotoUnavailableException;
+                }
+            }
+            if ($bytes !== $expected || hrtime(true) > $deadline || ! rewind($output)) {
+                throw new MemberApplicationPhotoUnavailableException;
+            }
+
+            $contents = stream_get_contents($output, self::MAX_BYTES + 1);
+            if (! is_string($contents) || strlen($contents) !== $expected) throw new MemberApplicationPhotoUnavailableException;
+            // GD can decode a truncated JPEG without its end marker.
+            $ending = $mimeType === 'image/jpeg' ? "\xff\xd9" : "\0\0\0\0IEND\xae\x42\x60\x82";
+            if (! str_ends_with($contents, $ending)) throw new MemberApplicationPhotoUnavailableException;
+            $info = getimagesizefromstring($contents);
+            if ($info === false || $info['mime'] !== $mimeType || $info[0] < 1 || $info[1] < 1 || $info[0] > 2048 || $info[1] > 2048) {
+                throw new MemberApplicationPhotoUnavailableException;
+            }
+            $image = imagecreatefromstring($contents);
+            if ($image === false || hrtime(true) > $deadline || ! rewind($output)) {
+                throw new MemberApplicationPhotoUnavailableException;
+            }
+
+            return ['stream' => $output, 'mime_type' => $mimeType];
+        } catch (Throwable) {
+            if (is_resource($output)) fclose($output);
+            throw new MemberApplicationPhotoUnavailableException;
+        } finally {
+            try {
+                if (is_resource($source)) fclose($source);
+            } catch (Throwable) {
+                if (is_resource($output)) fclose($output);
+                throw new MemberApplicationPhotoUnavailableException;
+            } finally {
+                unset($image);
+                restore_error_handler();
+            }
+        }
     }
 
     public function mimeTypeFor(?string $path, string $applicationId): ?string

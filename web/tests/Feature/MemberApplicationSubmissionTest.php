@@ -9,6 +9,7 @@ use App\Services\Members\MemberApplicationPhotoService;
 use App\Services\Members\MemberApplicationService;
 use App\Services\SupabaseStorageService;
 use App\Exceptions\MemberApplicationPhotoUnavailableException;
+use App\Exceptions\PrivateMediaStorageException;
 use Illuminate\Database\Events\TransactionCommitted;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Bootstrap\HandleExceptions;
@@ -149,6 +150,20 @@ class MemberApplicationSubmissionTest extends TestCase
             'sex_id' => 1, 'position_id' => 2, 'classification_ids' => [1], 'endorsement_letter' => 'Private synthetic letter'];
     }
 
+    private function usePhotoTransport(string $transport): string
+    {
+        config(['services.supabase_storage.photo_transport' => $transport]);
+        $disk = $transport === 'r2' ? 'media_private' : 'member_application_photos';
+        if ($transport === 'r2') Storage::fake($disk);
+
+        return $disk;
+    }
+
+    public static function photoTransports(): array
+    {
+        return ['local' => ['local'], 'R2' => ['r2']];
+    }
+
     public static function readOnlyAssociations(): array
     {
         return ['inactive' => ['inactive', null], 'archived' => ['active', '2026-01-01'],
@@ -170,12 +185,15 @@ class MemberApplicationSubmissionTest extends TestCase
 
     public static function omittedPhotos(): array
     {
-        return ['omitted' => [[]], 'explicit null' => [['applicant_photo' => null]]];
+        return ['local omitted' => [[], 'local'], 'local null' => [['applicant_photo' => null], 'local'],
+            'R2 omitted' => [[], 'r2'], 'R2 null' => [['applicant_photo' => null], 'r2']];
     }
 
     #[DataProvider('omittedPhotos')]
-    public function test_submission_without_photo_stores_null_and_preserves_application_data(array $photo): void
+    public function test_submission_without_photo_stores_null_and_preserves_application_data(array $photo, string $transport): void
     {
+        $this->usePhotoTransport($transport);
+        Storage::shouldReceive('disk')->never();
         $this->from(self::URL)->post(self::URL, array_merge($this->applicationData(), $photo))
             ->assertRedirect(self::URL)->assertSessionHasNoErrors()
             ->assertSessionHas('success', 'Member application submitted successfully.');
@@ -187,25 +205,26 @@ class MemberApplicationSubmissionTest extends TestCase
         $this->assertSame(2, $application->position_id);
         $this->assertSame('Private synthetic letter', $application->endorsement_letter);
         $this->assertSame([1], $application->classifications()->pluck('member_classifications.id')->all());
-        $this->assertSame([], Storage::disk('member_application_photos')->allFiles());
     }
 
     public static function validPhotoExtensions(): array
     {
-        return ['JPEG' => ['jpg'], 'PNG' => ['png']];
+        return ['local JPEG' => ['jpg', 'local'], 'local PNG' => ['png', 'local'],
+            'R2 JPEG' => ['jpg', 'r2'], 'R2 PNG' => ['png', 'r2']];
     }
 
     #[DataProvider('validPhotoExtensions')]
-    public function test_submission_with_valid_photo_preserves_private_upload(string $extension): void
+    public function test_submission_with_valid_photo_preserves_private_upload(string $extension, string $transport): void
     {
+        $disk = $this->usePhotoTransport($transport);
         $photo = UploadedFile::fake()->image('portrait.'.$extension, 32, 48);
         $this->from(self::URL)->post(self::URL, array_merge($this->applicationData(), ['applicant_photo' => $photo]))
             ->assertRedirect(self::URL)->assertSessionHasNoErrors()->assertSessionHas('success');
         $application = MemberApplication::sole();
         $this->assertMatchesRegularExpression('~\Aphotos/'.$application->id.'/[0-9a-f-]{36}\.'.$extension.'\z~',
             $application->applicant_photo_path);
-        Storage::disk('member_application_photos')->assertExists($application->applicant_photo_path);
-        $image = getimagesizefromstring(Storage::disk('member_application_photos')->get($application->applicant_photo_path));
+        Storage::disk($disk)->assertExists($application->applicant_photo_path);
+        $image = getimagesizefromstring(Storage::disk($disk)->get($application->applicant_photo_path));
         $this->assertSame([32, 48], array_slice($image, 0, 2));
         $this->assertArrayNotHasKey('applicant_photo_path', $application->toArray());
     }
@@ -273,9 +292,11 @@ class MemberApplicationSubmissionTest extends TestCase
         $this->assertSame([], Storage::disk('member_application_photos')->allFiles());
     }
 
-    public function test_confirmed_photo_is_discarded_only_after_the_application_transaction_rolls_back(): void
+    #[DataProvider('photoTransports')]
+    public function test_confirmed_photo_is_discarded_only_after_the_application_transaction_rolls_back(string $transport): void
     {
         if (! extension_loaded('gd')) $this->markTestSkipped('PHP GD is required.');
+        $disk = $this->usePhotoTransport($transport);
         $events = [];
         $photos = Mockery::mock(MemberApplicationPhotoService::class, [new SupabaseStorageService])->makePartial();
         $photos->shouldReceive('store')->once()->withArgs(function ($photo, $applicationId) use (&$events) {
@@ -284,19 +305,19 @@ class MemberApplicationSubmissionTest extends TestCase
 
             return $photo instanceof UploadedFile && is_string($applicationId);
         })->passthru();
-        $photos->shouldReceive('discard')->once()->withArgs(function ($path, $applicationId) use (&$events) {
+        $photos->shouldReceive('discard')->once()->withArgs(function ($path, $applicationId) use (&$events, $disk) {
             $events[] = 'discard';
             $this->assertSame(0, DB::transactionLevel());
-            Storage::disk('member_application_photos')->assertExists($path);
+            Storage::disk($disk)->assertExists($path);
 
             return str_starts_with($path, 'photos/'.$applicationId.'/');
         })->passthru();
         $this->app->instance(MemberApplicationPhotoService::class, $photos);
         $failure = new RuntimeException('Synthetic application persistence failure');
-        MemberApplication::created(function ($application) use (&$events, $failure) {
+        MemberApplication::created(function ($application) use (&$events, $failure, $disk) {
             $events[] = 'application saved';
             $this->assertSame(1, DB::transactionLevel());
-            Storage::disk('member_application_photos')->assertExists($application->applicant_photo_path);
+            Storage::disk($disk)->assertExists($application->applicant_photo_path);
             throw $failure;
         });
         try {
@@ -309,12 +330,14 @@ class MemberApplicationSubmissionTest extends TestCase
         $this->assertSame(['store', 'application saved', 'discard'], $events);
         $this->assertDatabaseCount('member_applications', 0);
         $this->assertDatabaseCount('member_application_classifications', 0);
-        $this->assertSame([], Storage::disk('member_application_photos')->allFiles());
+        $this->assertSame([], Storage::disk($disk)->allFiles());
     }
 
-    public function test_failure_after_commit_retains_photo_and_database_history_for_reconciliation(): void
+    #[DataProvider('photoTransports')]
+    public function test_failure_after_commit_retains_photo_and_database_history_for_reconciliation(string $transport): void
     {
         if (! extension_loaded('gd')) $this->markTestSkipped('PHP GD is required.');
+        $disk = $this->usePhotoTransport($transport);
         Log::spy();
         $failure = new RuntimeException('Synthetic post-commit failure');
         Event::listen(TransactionCommitted::class, static function () use ($failure): never { throw $failure; });
@@ -333,7 +356,7 @@ class MemberApplicationSubmissionTest extends TestCase
         $this->assertDatabaseCount('member_applications', 1);
         $this->assertDatabaseCount('member_application_classifications', 1);
         $application = MemberApplication::firstOrFail();
-        Storage::disk('member_application_photos')->assertExists($application->applicant_photo_path);
+        Storage::disk($disk)->assertExists($application->applicant_photo_path);
         Log::shouldHaveReceived('warning')->once()->with('Member application submission requires reconciliation.',
             ['application_id' => $application->id, 'code' => 'submission_outcome_uncertain']);
     }
@@ -356,6 +379,29 @@ class MemberApplicationSubmissionTest extends TestCase
         $this->assertSame(0, DB::transactionLevel());
         $this->assertDatabaseCount('member_applications', 0);
         $this->assertSame([], Storage::disk('member_application_photos')->allFiles());
+    }
+
+    public function test_r2_lost_upload_response_preserves_object_and_returns_safe_503_without_an_application(): void
+    {
+        $this->usePhotoTransport('r2');
+        $fake = Storage::disk('media_private');
+        $disk = Mockery::mock($fake);
+        $path = null;
+        $disk->shouldReceive('put')->once()->andReturnUsing(function ($name, $contents, $options) use ($fake, &$path): never {
+            $path = $name;
+            $fake->put($name, $contents, $options);
+            throw new PrivateMediaStorageException('write_unconfirmed');
+        });
+        $disk->shouldNotReceive('delete');
+        Storage::shouldReceive('disk')->once()->with('media_private')->andReturn($disk);
+        Log::spy();
+        $this->postJson(self::URL, $this->applicationData() + ['applicant_photo' => UploadedFile::fake()->image('portrait.png', 8, 8)])
+            ->assertStatus(503)->assertJsonPath('message', 'The photo upload could not be confirmed. No application was submitted. Wait before retrying; contact the administrator if this continues.');
+        $this->assertDatabaseCount('member_applications', 0);
+        $this->assertDatabaseCount('member_application_classifications', 0);
+        $fake->assertExists($path);
+        Log::shouldHaveReceived('warning')->once()->with('Member application photo upload requires attention.',
+            ['application_id' => explode('/', $path)[1], 'code' => 'photo_upload_outcome_uncertain']);
     }
 
     public function test_guest_photo_routes_require_authentication_before_opening_storage(): void
