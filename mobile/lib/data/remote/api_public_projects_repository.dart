@@ -2,11 +2,22 @@ import '../../core/errors/public_gis_failure.dart';
 import '../../core/networking/public_gis_client.dart';
 import '../models/public_gis_feature.dart';
 import '../models/public_project.dart';
+import '../models/gis_site_type.dart';
 import '../repositories/public_projects_repository.dart';
 
-class ApiPublicProjectsRepository implements ViewportPublicProjectsRepository {
+class ApiPublicProjectsRepository
+    implements ViewportPublicProjectsRepository, GisSiteTypesRepository {
   ApiPublicProjectsRepository(this.client);
   final PublicGisClient client;
+
+  @override
+  Future<List<GisSiteType>> getSiteTypes() async {
+    try {
+      return GisSiteType.catalogFromJson(await client.getSiteTypes());
+    } on FormatException {
+      throw PublicGisFailure(GisFailureCode.invalidResponse);
+    }
+  }
 
   @override
   Future<List<PublicProject>> getPublicProjects() async =>
@@ -17,9 +28,14 @@ class ApiPublicProjectsRepository implements ViewportPublicProjectsRepository {
     GisBounds? bounds,
     String query = '',
     String? locationType,
+    String? siteTypeId,
   }) async {
     final search = query.trim();
     if (search.runes.length > 100 ||
+        (siteTypeId != null &&
+            !RegExp(
+              r'^(unclassified|[1-9][0-9]{0,17})$',
+            ).hasMatch(siteTypeId)) ||
         (locationType != null &&
             !const [
               'project_point',
@@ -30,6 +46,7 @@ class ApiPublicProjectsRepository implements ViewportPublicProjectsRepository {
     final filters = <String, String>{
       if (search.isNotEmpty) 'q': search,
       'location_type': ?locationType,
+      'site_type_id': ?siteTypeId,
     };
     try {
       if (bounds == null) {

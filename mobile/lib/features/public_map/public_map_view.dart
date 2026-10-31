@@ -8,6 +8,7 @@ import '../../core/networking/bounded_http_client.dart';
 import '../../data/models/public_gis_feature.dart';
 import '../../data/models/geo_boundary.dart';
 import '../../data/models/public_project.dart';
+import 'gis_site_symbols.dart';
 
 LatLng mapPoint(GeoPoint point) => LatLng(point.latitude, point.longitude);
 
@@ -69,6 +70,14 @@ class _PublicMapViewState extends State<PublicMapView> {
   ValueChanged<PublicProject> get onSelected => widget.onSelected;
   bool get _mock => widget.mode == GisDataMode.mock;
 
+  Color _markerColor(PublicProject project) => selectedId == project.id
+      ? gisSelectionColor
+      : _mock
+      ? projectColor(project.category)
+      : project.isBoundary
+      ? gisBoundaryColor
+      : gisPointColor;
+
   @override
   void dispose() {
     _polygonHits.dispose();
@@ -87,11 +96,10 @@ class _PublicMapViewState extends State<PublicMapView> {
   }
 
   List<LatLng> get _allPoints => [
-    for (final project in projects) ...[
-      if (project.location != null) mapPoint(project.location!),
-      for (final polygon in project.boundary?.polygons ?? <GeoPolygon>[])
-        ...polygon.exterior.map(mapPoint),
-    ],
+    for (final project in projects)
+      ...(_mock ? project.geometryPoints : project.publicDisplayPoints).map(
+        mapPoint,
+      ),
   ];
 
   void _fit() => controller.fitCamera(
@@ -147,7 +155,7 @@ class _PublicMapViewState extends State<PublicMapView> {
                 });
               },
             ),
-            if (showBoundaries)
+            if (_mock && showBoundaries)
               GestureDetector(
                 onTap: () {
                   final hits = _polygonHits.value?.hitValues;
@@ -185,23 +193,31 @@ class _PublicMapViewState extends State<PublicMapView> {
             MarkerLayer(
               markers: [
                 for (final project in projects)
-                  if (project.location != null)
+                  if ((_mock ? project.location : project.publicMarker) != null)
                     Marker(
-                      point: mapPoint(project.location!),
+                      point: mapPoint(
+                        (_mock ? project.location : project.publicMarker)!,
+                      ),
                       width: 52,
                       height: 52,
                       child: Semantics(
-                        label: 'Project marker: ${project.title}',
+                        label: _mock
+                            ? 'Project marker: ${project.title}'
+                            : '${project.filterLabel}${project.isBoundary ? ' representative marker' : ' marker'}: ${project.title}. Site classification: ${project.siteTypeLabel}',
                         button: true,
+                        selected: selectedId == project.id,
                         child: DecoratedBox(
                           decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: selectedId == project.id
-                                ? projectColor(project.category)
-                                : Colors.white,
+                            shape: !_mock && project.isBoundary
+                                ? BoxShape.rectangle
+                                : BoxShape.circle,
+                            borderRadius: !_mock && project.isBoundary
+                                ? BorderRadius.circular(8)
+                                : null,
+                            color: Colors.white,
                             border: Border.all(
-                              color: projectColor(project.category),
-                              width: 2,
+                              color: _markerColor(project),
+                              width: selectedId == project.id ? 4 : 2,
                             ),
                             boxShadow: const [
                               BoxShadow(
@@ -212,12 +228,16 @@ class _PublicMapViewState extends State<PublicMapView> {
                           ),
                           child: IconButton(
                             key: ValueKey('marker-${project.id}'),
-                            tooltip: project.title,
+                            tooltip: _mock
+                                ? project.title
+                                : '${project.title} · ${project.filterLabel} · ${project.siteTypeLabel}',
                             onPressed: () => onSelected(project),
-                            color: selectedId == project.id
-                                ? Colors.white
-                                : projectColor(project.category),
-                            icon: const Icon(Icons.location_on_outlined),
+                            color: _markerColor(project),
+                            icon: Icon(
+                              _mock
+                                  ? Icons.location_on_outlined
+                                  : gisSiteSymbol(project.siteTypeCode),
+                            ),
                           ),
                         ),
                       ),
@@ -268,7 +288,9 @@ class _PublicMapViewState extends State<PublicMapView> {
                   icon: const Icon(Icons.remove),
                 ),
                 IconButton(
-                  tooltip: 'Fit visible projects',
+                  tooltip: _mock
+                      ? 'Fit visible projects'
+                      : 'Fit visible locations',
                   onPressed: _allPoints.isEmpty ? null : _fit,
                   icon: const Icon(Icons.center_focus_strong),
                 ),

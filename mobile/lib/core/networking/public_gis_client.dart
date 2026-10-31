@@ -19,7 +19,15 @@ class PublicGisClient {
   final Duration timeout;
   final int maxResponseBytes;
 
-  Future<Map<String, dynamic>> getData(Map<String, String> query) async {
+  Future<Map<String, dynamic>> getData(Map<String, String> query) =>
+      _get('data', query);
+
+  Future<Map<String, dynamic>> getSiteTypes() => _get('site-types', const {});
+
+  Future<Map<String, dynamic>> _get(
+    String resource,
+    Map<String, String> query,
+  ) async {
     Uri? base;
     try {
       base = baseUri();
@@ -35,7 +43,10 @@ class PublicGisClient {
       throw PublicGisFailure(GisFailureCode.configuration);
     }
     final prefix = base.path.replaceFirst(RegExp(r'/+$'), '');
-    final uri = base.replace(path: '$prefix/map/data', queryParameters: query);
+    final uri = base.replace(
+      path: '$prefix/map/$resource',
+      queryParameters: query,
+    );
     final client = _clientFactory();
     StreamSubscription<List<int>>? subscription;
     Completer<void>? finished;
@@ -57,7 +68,10 @@ class PublicGisClient {
         );
       }
       final contentType = response.headers['content-type']
-          ?.split(';').first.trim().toLowerCase();
+          ?.split(';')
+          .first
+          .trim()
+          .toLowerCase();
       if (response.isRedirect ||
           contentType != 'application/json' ||
           (response.contentLength != null &&

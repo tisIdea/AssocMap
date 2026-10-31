@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../app/configuration/app_config.dart';
 import '../../core/widgets/assocmap_widgets.dart';
 import '../../data/models/public_project.dart';
+import 'gis_site_symbols.dart';
 
 class PublicProjectDetails extends StatelessWidget {
   const PublicProjectDetails({
@@ -32,12 +33,16 @@ class PublicProjectDetails extends StatelessWidget {
                   children: [
                     Expanded(
                       child: Text(
-                        'Public project summary',
+                        mode == GisDataMode.live
+                            ? 'Public location details'
+                            : 'Public project summary',
                         style: Theme.of(context).textTheme.labelLarge,
                       ),
                     ),
                     IconButton(
-                      tooltip: 'Close project details',
+                      tooltip: mode == GisDataMode.live
+                          ? 'Close location details'
+                          : 'Close project details',
                       onPressed: () => Navigator.pop(context),
                       icon: const Icon(Icons.close),
                     ),
@@ -55,11 +60,27 @@ class PublicProjectDetails extends StatelessWidget {
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                 const SizedBox(height: 12),
+                if (mode == GisDataMode.live) ...[
+                  Text('Geometry type: ${project.filterLabel}'),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Icon(gisSiteSymbol(project.siteTypeCode)),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Site classification: ${project.siteTypeLabel}',
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
                 Wrap(
                   spacing: 8,
                   runSpacing: 4,
                   children: [
-                    Chip(label: Text(project.filterLabel)),
+                    if (mode != GisDataMode.live)
+                      Chip(label: Text(project.filterLabel)),
                     if (project.areaLabel != null)
                       Chip(label: Text(project.areaLabel!)),
                   ],
@@ -73,7 +94,11 @@ class PublicProjectDetails extends StatelessWidget {
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  project.boundary == null
+                  mode == GisDataMode.live && project.isBoundary
+                      ? project.displayPoint == null
+                            ? 'Representative marker unavailable from this server. The original project boundary is retained.'
+                            : 'A representative marker within the project site is shown. The original boundary, including all parts and holes, is retained. This is not an administrative boundary.'
+                      : project.boundary == null
                       ? 'Location marker only · No boundary provided'
                       : 'Boundary available · ${project.boundary!.polygons.length} area(s)',
                 ),
