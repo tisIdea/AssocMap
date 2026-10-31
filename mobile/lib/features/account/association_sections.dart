@@ -143,9 +143,13 @@ class _AssociationSectionsState extends State<AssociationSections> {
         ),
       ),
       const SizedBox(height: 16),
-      _unavailable(
-        'Registration records unavailable',
-        'Registration totals are shown when available. Individual applications are currently unavailable on mobile.',
+      OutlinedButton.icon(
+        onPressed: () => widget.onOpenSection('registrations'),
+        icon: const Icon(Icons.fact_check_outlined),
+        label: const Text('View my applications'),
+      ),
+      const Text(
+        'Open applications submitted by this account to check their review status.',
       ),
     ] else ...[
       const TextField(
@@ -164,13 +168,13 @@ class _AssociationSectionsState extends State<AssociationSections> {
       const SizedBox(height: 16),
       _unavailable(
         'Member roster unavailable',
-        'Individual member records are currently unavailable on mobile. Use your association web workspace to view the official roster.',
+        'Official member records are unavailable to Association Accounts. Contact your assigned Field Officer for roster assistance.',
       ),
     ],
     const SizedBox(height: 16),
     const ReadOnlyNotice(
       message:
-          'The official roster is view only. Registration approvals are handled by Field Officers only.',
+          'View applications submitted by this account under Registrations. Registration approvals are handled by Field Officers only.',
     ),
   ];
 

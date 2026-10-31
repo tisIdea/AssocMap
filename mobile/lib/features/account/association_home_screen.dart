@@ -7,10 +7,12 @@ import '../../core/widgets/assocmap_widgets.dart';
 import '../../data/models/auth_session.dart';
 import '../../data/repositories/analytics_repository.dart';
 import '../../data/repositories/dashboard_repository.dart';
+import '../../data/repositories/member_applications_repository.dart';
 import '../reports/association_analytics_screen.dart';
 import 'association_dashboard_screen.dart';
 import 'association_sections.dart';
 import 'member_registration_screen.dart';
+import 'member_applications_screen.dart';
 
 class AssociationHomeScreen extends StatefulWidget {
   const AssociationHomeScreen({
@@ -20,12 +22,14 @@ class AssociationHomeScreen extends StatefulWidget {
     required this.session,
     this.analytics = const UnavailableAnalyticsRepository(),
     this.dashboard = const UnavailableDashboardRepository(),
+    this.memberApplications = const UnavailableMemberApplicationsRepository(),
   });
   final AppConfig config;
   final AuthController controller;
   final AuthSession session;
   final AnalyticsRepository analytics;
   final DashboardRepository dashboard;
+  final MemberApplicationsRepository memberApplications;
   @override
   State<AssociationHomeScreen> createState() => _AssociationHomeScreenState();
 }
@@ -33,16 +37,21 @@ class AssociationHomeScreen extends StatefulWidget {
 class _AssociationHomeScreenState extends State<AssociationHomeScreen> {
   int _tab = 0;
   String _section = 'home';
-  void _open(String section) => setState(() {
-    _section = section;
-    _tab = switch (section) {
-      'members' => 1,
-      'projects' || 'trainings' || 'production' => 2,
-      'register' => 3,
-      'profile' => 4,
-      _ => 0,
-    };
-  });
+  bool _submittingApplication = false;
+  void _open(String section) {
+    if (_submittingApplication) return;
+    setState(() {
+      _section = section;
+      _tab = switch (section) {
+        'members' || 'registrations' => 1,
+        'projects' || 'trainings' || 'production' => 2,
+        'register' => 3,
+        'profile' => 4,
+        _ => 0,
+      };
+    });
+  }
+
   Future<void> _logout() async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -154,6 +163,7 @@ class _AssociationHomeScreenState extends State<AssociationHomeScreen> {
     final title = switch (_section) {
       'association' => 'Association profile',
       'members' => 'Members & registrations',
+      'registrations' => 'My member applications',
       'projects' || 'trainings' => 'Programs',
       'production' => 'Production monitoring',
       'register' => 'New Member Registration',
@@ -182,6 +192,12 @@ class _AssociationHomeScreenState extends State<AssociationHomeScreen> {
         onSessionExpired: widget.controller.expireSession,
         onOpenSection: _open,
       ),
+      'registrations' => MemberApplicationsScreen(
+        repository: widget.memberApplications,
+        associationId: widget.session.association!.id,
+        onUnauthorized: widget.controller.expireSession,
+        onRegister: () => _open('register'),
+      ),
       'production' || 'reports' => AssociationAnalyticsScreen(
         key: ValueKey(_section),
         repository: widget.analytics,
@@ -193,6 +209,13 @@ class _AssociationHomeScreenState extends State<AssociationHomeScreen> {
       ),
       'register' => MemberRegistrationScreen(
         associationName: widget.session.association!.name,
+        associationId: widget.session.association!.id,
+        repository: widget.memberApplications,
+        onUnauthorized: widget.controller.expireSession,
+        onApplications: () => _open('registrations'),
+        onBusyChanged: (busy) {
+          if (mounted) setState(() => _submittingApplication = busy);
+        },
       ),
       _ => _account(),
     };

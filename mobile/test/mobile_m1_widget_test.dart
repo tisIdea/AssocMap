@@ -16,6 +16,7 @@ import 'package:mobile/features/account/association_home_screen.dart';
 
 import 'mobile_m1_auth_test.dart' show config, me, json, providerSession;
 import 'association_dashboard_test.dart' show dashboard;
+import 'support/member_application_fixtures.dart';
 
 class _EmptyPublicRepository implements PublicProjectsRepository {
   @override
@@ -26,6 +27,7 @@ void main() {
   late GoTrueClient provider;
   late ApiAuthRepository repository;
   late FutureOr<http.Response> Function(http.Request) apiReply;
+  late FutureOr<http.Response> Function(http.Request) identityReply;
   setUp(() {
     provider = GoTrueClient(
       url: '${config.supabaseUrl}/auth/v1',
@@ -37,14 +39,16 @@ void main() {
       ),
     );
     apiReply = (request) => json({'data': dashboard()});
+    identityReply = (_) => json(me());
     repository = ApiAuthRepository(
       config: config,
       provider: provider,
       api: LaravelApiClient(
         config: config,
         client: MockClient(
-          (request) async =>
-              request.url.path.endsWith('/me') ? json(me()) : apiReply(request),
+          (request) async => request.url.path.endsWith('/me')
+              ? identityReply(request)
+              : apiReply(request),
         ),
       ),
     );
@@ -83,6 +87,73 @@ void main() {
     await tester.ensureVisible(button);
     await tester.tap(button);
     await tester.pumpAndSettle();
+  }
+
+  for (final allowed in [true, false]) {
+    testWidgets(
+      'Registration is hidden during resume verification and retained only for eligible access ($allowed)',
+      (tester) async {
+        apiReply = (request) => json({
+          'data': request.url.path.endsWith('/options')
+              ? applicationOptions()
+              : dashboard(),
+        });
+        await open(tester);
+        await signIn(tester);
+        await tester.tap(find.byKey(const ValueKey('workspace-tab-3')));
+        await tester.pumpAndSettle();
+        final field = find.byKey(const ValueKey('application-first_name'));
+        await tester.enterText(field, 'Transient private draft');
+        tester.testTextInput.hide();
+        await tester.pump();
+        final verification = Completer<http.Response>();
+        identityReply = (_) => verification.future;
+        tester.binding.handleAppLifecycleStateChanged(
+          AppLifecycleState.inactive,
+        );
+        tester.binding.handleAppLifecycleStateChanged(
+          AppLifecycleState.resumed,
+        );
+        await tester.pump();
+        expect(
+          find.byKey(const ValueKey('application-first_name')),
+          findsNothing,
+        );
+        final hiddenField = find.descendant(
+          of: find.byKey(
+            const ValueKey('application-first_name'),
+            skipOffstage: false,
+          ),
+          matching: find.byType(EditableText, skipOffstage: false),
+          skipOffstage: false,
+        );
+        expect(
+          tester.widget<EditableText>(hiddenField).focusNode.canRequestFocus,
+          isFalse,
+        );
+        expect(find.byType(CircularProgressIndicator), findsOneWidget);
+        verification.complete(
+          allowed ? json(me()) : json({'message': 'Denied'}, 403),
+        );
+        await tester.pumpAndSettle();
+        if (allowed) {
+          expect(
+            tester.widget<TextFormField>(field).controller!.text,
+            'Transient private draft',
+          );
+        } else {
+          expect(
+            find.byKey(
+              const ValueKey('application-first_name'),
+              skipOffstage: false,
+            ),
+            findsNothing,
+          );
+          expect(find.byKey(const ValueKey('login-email')), findsOneWidget);
+        }
+        expect(tester.takeException(), isNull);
+      },
+    );
   }
 
   testWidgets(

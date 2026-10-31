@@ -79,6 +79,7 @@ class MemberApplicationSubmissionTest extends TestCase
         });
         Schema::create('user_invitations', function (Blueprint $table) {
             $table->uuid('id')->primary(); $table->uuid('auth_user_id')->nullable();
+            $table->string('email')->nullable();
             $table->string('status'); $table->string('last_error_code')->nullable();
             $table->timestamp('accepted_at')->nullable(); $table->timestamp('last_attempt_at')->nullable(); $table->timestamps();
         });
@@ -94,11 +95,13 @@ class MemberApplicationSubmissionTest extends TestCase
         });
         Schema::create('association_positions', function (Blueprint $table) {
             $table->id(); $table->string('code'); $table->string('name');
+            $table->integer('sort_order')->default(0);
             $table->boolean('is_officer'); $table->boolean('is_active'); $table->timestamps();
         });
         Schema::create('members', function (Blueprint $table) {
             $table->uuid('id')->primary(); $table->uuid('association_id'); $table->unsignedBigInteger('position_id');
             $table->string('member_status'); $table->timestamp('archived_at')->nullable();
+            $table->string('fishr_registration_number')->nullable();
             $table->foreign('association_id')->references('id')->on('associations');
             $table->foreign('position_id')->references('id')->on('association_positions');
         });
@@ -452,5 +455,154 @@ class MemberApplicationSubmissionTest extends TestCase
         foreach (['association', 'field-officer'] as $prefix) {
             $this->get('/'.$prefix.'/member-applications/'.$application->id.'/photo')->assertRedirect(route('login'));
         }
+    }
+
+    private function mobile(): void
+    {
+        $this->flushSession();
+        $auth = Mockery::mock(SupabaseAuthService::class);
+        $auth->shouldReceive('verifyApiIdentity')->with('synthetic-mobile-token')->andReturn([
+            'outcome' => 'verified', 'identity' => ['id' => self::ACCOUNT, 'email' => 'account@example.test'],
+        ]);
+        $this->app->instance(SupabaseAuthService::class, $auth);
+        $this->withToken('synthetic-mobile-token');
+    }
+
+    public function test_mobile_options_are_active_server_catalogs_and_pending_applications_do_not_reserve_positions(): void
+    {
+        $this->mobile();
+        $this->postJson('/api/v1/association/member-applications', $this->applicationData())->assertCreated();
+        DB::table('sex_categories')->insert(['id' => 9, 'name' => 'Inactive', 'is_active' => false]);
+        DB::table('association_positions')->insert(['id' => 9, 'code' => 'INACTIVE', 'name' => 'Inactive', 'is_active' => false, 'is_officer' => false]);
+        DB::table('member_classifications')->insert(['id' => 9, 'code' => 'INACTIVE', 'name' => 'Inactive', 'is_active' => false]);
+        $this->getJson('/api/v1/association/member-applications/options')->assertOk()
+            ->assertJsonPath('data.association.id', self::ASSOCIATION)->assertJsonCount(1, 'data.sex_categories')
+            ->assertJsonCount(1, 'data.positions')->assertJsonCount(1, 'data.classifications')
+            ->assertJsonPath('data.positions.0.occupied', false)->assertDontSee('Inactive');
+        DB::table('members')->insert(['id' => (string) \Illuminate\Support\Str::uuid(), 'association_id' => self::ASSOCIATION,
+            'position_id' => 2, 'member_status' => 'active']);
+        $this->getJson('/api/v1/association/member-applications/options')->assertOk()->assertJsonPath('data.positions.0.occupied', true);
+    }
+
+    public function test_mobile_submission_reuses_pending_workflow_and_private_photo_service_without_creating_a_member(): void
+    {
+        $this->mobile();
+        $response = $this->postJson('/api/v1/association/member-applications', $this->applicationData() + [
+            'applicant_photo' => UploadedFile::fake()->image('applicant.png', 8, 8),
+        ])->assertCreated()->assertJsonPath('data.association_id', self::ASSOCIATION)
+            ->assertJsonPath('data.application.status', 'pending')->assertJsonPath('data.application.has_photo', true)
+            ->assertHeader('Cache-Control', 'max-age=0, no-store, private');
+        $application = MemberApplication::findOrFail($response->json('data.application.id'));
+        $this->assertSame(self::ACCOUNT, $application->submitted_by_user_id);
+        $this->assertSame('Private synthetic letter', $application->endorsement_letter);
+        $this->assertSame([1], $application->classifications()->pluck('member_classifications.id')->all());
+        Storage::disk('member_application_photos')->assertExists($application->applicant_photo_path);
+        $this->assertDatabaseCount('members', 0);
+        $this->assertNull($application->reviewed_at);
+        $response->assertDontSee($application->applicant_photo_path)->assertDontSee('Private synthetic letter');
+    }
+
+    public function test_mobile_validation_has_field_errors_and_rejects_scope_or_review_injection(): void
+    {
+        $this->mobile();
+        foreach (['association_id' => self::ASSOCIATION, 'submitted_by_user_id' => self::ACCOUNT,
+            'status' => 'approved', 'applicant_photo_path' => 'private/path'] as $field => $value) {
+            $this->postJson('/api/v1/association/member-applications', $this->applicationData() + [$field => $value])
+                ->assertUnprocessable()->assertJsonValidationErrors($field)->assertJsonPath('error.code', 'validation_failed');
+        }
+        $data = $this->applicationData();
+        $data['birth_date'] = '2999-01-01';
+        $data['endorsement_letter'] = ' ';
+        $this->postJson('/api/v1/association/member-applications', $data)->assertUnprocessable()
+            ->assertJsonValidationErrors(['birth_date', 'endorsement_letter']);
+        $this->assertDatabaseCount('member_applications', 0);
+        $this->assertDatabaseCount('members', 0);
+    }
+
+    public function test_mobile_list_is_paginated_filtered_and_limited_to_current_account_and_association(): void
+    {
+        $this->mobile();
+        $id = $this->postJson('/api/v1/association/member-applications', $this->applicationData())->assertCreated()->json('data.application.id');
+        DB::table('member_applications')->where('id', $id)->update(['status' => 'rejected', 'rejection_reason' => 'Synthetic review reason', 'reviewed_at' => now()]);
+        DB::table('user_profiles')->insert(['id' => '99999999-9999-4999-8999-999999999999', 'role_id' => 1,
+            'display_name' => 'Other synthetic holder', 'is_active' => true]);
+        $other = (array) DB::table('member_applications')->where('id', $id)->first();
+        $other['id'] = (string) \Illuminate\Support\Str::uuid();
+        $other['submitted_by_user_id'] = '99999999-9999-4999-8999-999999999999';
+        $other['first_name'] = 'Withheld other submitter';
+        DB::table('member_applications')->insert($other);
+        $this->getJson('/api/v1/association/member-applications?status=rejected')->assertOk()
+            ->assertJsonPath('data.total', 1)->assertJsonPath('data.page', 1)->assertJsonPath('data.last_page', 1)
+            ->assertJsonPath('data.applications.0.id', $id)->assertJsonPath('data.applications.0.rejection_reason', 'Synthetic review reason')
+            ->assertDontSee('Withheld')->assertDontSee('endorsement_letter')->assertDontSee('applicant_photo_path')
+            ->assertDontSee('birth_date')->assertDontSee('contact_number');
+        $this->getJson('/api/v1/association/member-applications?status=pending')->assertOk()->assertJsonCount(0, 'data.applications');
+        $this->getJson('/api/v1/association/member-applications?association_id='.self::ASSOCIATION)->assertUnprocessable();
+        $this->getJson('/api/v1/association/member-applications?page=0')->assertUnprocessable();
+    }
+
+    public function test_mobile_unavailable_submission_is_safe_and_never_returns_a_success_receipt(): void
+    {
+        $this->mobile();
+        $service = Mockery::mock(MemberApplicationService::class);
+        $service->shouldReceive('submit')->once()->andThrow(new RuntimeException('Private SQL or provider diagnostic'));
+        $this->app->instance(MemberApplicationService::class, $service);
+        $this->postJson('/api/v1/association/member-applications', $this->applicationData())->assertStatus(503)
+            ->assertJsonPath('error.code', 'service_unavailable')->assertDontSee('Private SQL')->assertDontSee('data');
+        $this->assertDatabaseCount('member_applications', 0);
+    }
+
+    public function test_mobile_submission_requires_bearer_identity_even_with_a_web_session(): void
+    {
+        $this->postJson('/api/v1/association/member-applications', $this->applicationData())->assertUnauthorized();
+        $this->mobile();
+        DB::table('association_accounts')->update(['is_active' => false]);
+        $this->postJson('/api/v1/association/member-applications', $this->applicationData())->assertForbidden();
+        $this->assertDatabaseCount('member_applications', 0);
+    }
+
+    public function test_mobile_fishr_duplicate_is_rejected_by_the_existing_business_rule(): void
+    {
+        $this->mobile();
+        $data = $this->applicationData() + ['fishr_registration_number' => 'SYNTHETIC-FISHR'];
+        $this->postJson('/api/v1/association/member-applications', $data)->assertCreated();
+        $this->postJson('/api/v1/association/member-applications', $data)->assertUnprocessable()
+            ->assertJsonValidationErrors('fishr_registration_number');
+        $this->assertDatabaseCount('member_applications', 1);
+        $this->assertDatabaseCount('members', 0);
+    }
+
+    public function test_mobile_list_paginates_and_excludes_records_in_another_association(): void
+    {
+        $this->mobile();
+        $id = $this->postJson('/api/v1/association/member-applications', $this->applicationData())->assertCreated()->json('data.application.id');
+        $row = (array) DB::table('member_applications')->where('id', $id)->first();
+        for ($i = 0; $i < 25; $i++) {
+            $row['id'] = (string) \Illuminate\Support\Str::uuid();
+            DB::table('member_applications')->insert($row);
+        }
+        $other = '88888888-8888-4888-8888-888888888888';
+        DB::table('associations')->insert(['id' => $other, 'name' => 'Other association', 'status' => 'active']);
+        $row['id'] = (string) \Illuminate\Support\Str::uuid();
+        $row['association_id'] = $other;
+        $row['first_name'] = 'Withheld other association';
+        DB::table('member_applications')->insert($row);
+        $this->getJson('/api/v1/association/member-applications')->assertOk()->assertJsonCount(25, 'data.applications')
+            ->assertJsonPath('data.total', 26)->assertJsonPath('data.last_page', 2)->assertDontSee('Withheld');
+        $this->getJson('/api/v1/association/member-applications?page=2')->assertOk()->assertJsonCount(1, 'data.applications')
+            ->assertJsonPath('data.page', 2)->assertDontSee('Withheld');
+    }
+
+    public function test_mobile_empty_catalog_does_not_create_defaults_and_staff_cannot_submit(): void
+    {
+        $this->mobile();
+        foreach (['sex_categories', 'association_positions', 'member_classifications'] as $table) {
+            DB::table($table)->update(['is_active' => false]);
+        }
+        $this->getJson('/api/v1/association/member-applications/options')->assertOk()
+            ->assertJsonCount(0, 'data.sex_categories')->assertJsonCount(0, 'data.positions')->assertJsonCount(0, 'data.classifications');
+        DB::table('roles')->update(['code' => 'field_officer']);
+        $this->postJson('/api/v1/association/member-applications', $this->applicationData())->assertForbidden();
+        $this->assertDatabaseCount('member_applications', 0);
     }
 }

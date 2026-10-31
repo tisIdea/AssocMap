@@ -13,6 +13,8 @@ import '../data/repositories/public_projects_repository.dart';
 import '../data/remote/api_auth_repository.dart';
 import '../data/remote/api_dashboard_repository.dart';
 import '../data/remote/api_analytics_repository.dart';
+import '../data/remote/api_member_applications_repository.dart';
+import '../data/repositories/member_applications_repository.dart';
 import '../features/public_map/public_map_screen.dart';
 import 'configuration/app_config.dart';
 import 'routing/app_routes.dart';
@@ -26,6 +28,7 @@ class AssocMapApp extends StatefulWidget {
     this.authentication,
     this.analytics,
     this.dashboard,
+    this.memberApplications,
     this.tileProviderFactory,
   });
 
@@ -34,6 +37,7 @@ class AssocMapApp extends StatefulWidget {
   final AuthRepository? authentication;
   final AnalyticsRepository? analytics;
   final DashboardRepository? dashboard;
+  final MemberApplicationsRepository? memberApplications;
   final TileProvider Function()? tileProviderFactory;
 
   @override
@@ -45,6 +49,7 @@ class _AssocMapAppState extends State<AssocMapApp> with WidgetsBindingObserver {
   late final AuthRepository _repository;
   late final AnalyticsRepository _analytics;
   late final DashboardRepository _dashboard;
+  late final MemberApplicationsRepository _memberApplications;
 
   @override
   void initState() {
@@ -70,6 +75,20 @@ class _AssocMapAppState extends State<AssocMapApp> with WidgetsBindingObserver {
               )
             : const UnavailableDashboardRepository());
     _auth = AuthController(repository: _repository, mode: widget.config.mode);
+    _memberApplications =
+        widget.memberApplications ??
+        (repository is ApiAuthRepository
+            ? ApiMemberApplicationsRepository(
+                config: widget.config,
+                read: repository.read,
+                associationId: () => _auth.session?.association?.id,
+                write: (fields, {photo}) => repository.submitMemberApplication(
+                  fields,
+                  photo: photo?.bytes,
+                  photoName: photo?.name,
+                ),
+              )
+            : const UnavailableMemberApplicationsRepository());
     WidgetsBinding.instance.addObserver(this);
     unawaited(_auth.restoreSession());
   }
@@ -109,12 +128,14 @@ class _AssocMapAppState extends State<AssocMapApp> with WidgetsBindingObserver {
         controller: _auth,
         analytics: _analytics,
         dashboard: _dashboard,
+        memberApplications: _memberApplications,
       ),
       AppRoutes.associationHome: (_) => AssociationGuard(
         config: widget.config,
         controller: _auth,
         analytics: _analytics,
         dashboard: _dashboard,
+        memberApplications: _memberApplications,
       ),
     },
     onUnknownRoute: (_) => MaterialPageRoute<void>(

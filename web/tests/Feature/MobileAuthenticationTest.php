@@ -130,7 +130,8 @@ class MobileAuthenticationTest extends TestCase
     public static function protectedMobileEndpoints(): array
     {
         return array_map(fn ($path) => ['/api/v1/'.$path],
-            ['me', 'association/dashboard', 'association/reports', 'association/reports/options']);
+            ['me', 'association/dashboard', 'association/reports', 'association/reports/options',
+                'association/member-applications', 'association/member-applications/options']);
     }
 
     private function fakeProvider(mixed $response): void

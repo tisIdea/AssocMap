@@ -21,6 +21,10 @@ class ApiRequestGuard
 
     public function handle(Request $request, Closure $next): Response
     {
+        if ($request->isMethod('POST') && $request->is('api/v1/association/member-applications')) {
+            abort_if((int) $request->server('CONTENT_LENGTH', 0) > 2 * 1024 * 1024 + 65536
+                || strlen($request->getContent()) > 2 * 1024 * 1024 + 65536, 413);
+        }
         return self::secure($next($request));
     }
 
@@ -68,6 +72,11 @@ class ApiRequestGuard
         }
         if ($status >= 500) Log::warning('API request unavailable.', ['code' => $code, 'http_status' => $status]);
 
-        return self::error($code, $message, $status, $headers);
+        $response = self::error($code, $message, $status, $headers);
+        if ($exception instanceof ValidationException && $request->routeIs('api.association.member-applications.*')) {
+            $response->setData($response->getData(true) + ['errors' => $exception->errors()]);
+        }
+
+        return $response;
     }
 }
