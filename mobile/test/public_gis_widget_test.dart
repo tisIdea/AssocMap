@@ -11,6 +11,7 @@ import 'package:mobile/app/configuration/app_config.dart';
 import 'package:mobile/core/networking/public_gis_client.dart';
 import 'package:mobile/data/remote/api_public_projects_repository.dart';
 import 'package:mobile/features/public_map/public_map_screen.dart';
+import 'package:mobile/features/public_map/gis_site_symbols.dart';
 
 import 'support/public_gis_fixtures.dart';
 
@@ -55,6 +56,136 @@ Future<void> _open(
 }
 
 void main() {
+  testWidgets(
+    'Classification visuals stay consistent across legend, markers, list and selected details',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1200, 1000);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      const codes = [
+        'fish_cage',
+        'fish_pen',
+        'culture_pond',
+        'seaweed_cultivation_site',
+        'hatchery_nursery',
+        'payao_installation',
+        'post_harvest_facility',
+        null,
+      ];
+      final features = [
+        for (var index = 0; index < codes.length; index++)
+          (index.isOdd ? classifiedBoundary() : pointFeature())
+            ..['id'] =
+                '11111111-1111-4111-8111-${index.toString().padLeft(12, '0')}',
+      ];
+      for (var index = 0; index < codes.length; index++) {
+        final code = codes[index];
+        (features[index]['properties'] as Map<String, dynamic>).addAll({
+          'title': 'Visual site $index',
+          'site_type_id': code == null ? null : index + 1,
+          'site_type_code': code,
+          'site_type_name': code == null ? null : 'Classified $code',
+        });
+      }
+      final before = jsonEncode(features);
+      final requests = <http.Request>[];
+      await _open(
+        tester,
+        (request) async {
+          requests.add(request);
+          return _json(
+            request.url.queryParameters['mode'] == 'overview'
+                ? overview()
+                : mapResponse(features: features),
+          );
+        },
+        catalogRespond: (request) async {
+          requests.add(request);
+          return _json({
+            'data': [
+              for (var index = 0; index < codes.length - 1; index++)
+                {
+                  'id': index + 1,
+                  'code': codes[index],
+                  'name': 'Classified ${codes[index]}',
+                },
+            ],
+          });
+        },
+      );
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Map legend'));
+      await tester.tap(find.text('Map legend'));
+      await tester.pumpAndSettle();
+      final requestCount = requests.length;
+      for (var index = 0; index < codes.length; index++) {
+        final code = codes[index];
+        final label = code == null ? 'Unclassified' : 'Classified $code';
+        final legend = tester.widget<ListTile>(
+          find.widgetWithText(
+            ListTile,
+            code == null ? 'Unclassified / unknown symbol' : label,
+          ),
+        );
+        expect((legend.leading! as Icon).icon, gisSiteSymbol(code));
+        expect((legend.leading! as Icon).color, gisSiteColor(code));
+        final marker = find.byKey(ValueKey('marker-${features[index]['id']}'));
+        final button = tester.widget<IconButton>(marker);
+        expect((button.icon as Icon).icon, gisSiteSymbol(code));
+        expect(button.color, gisSiteColor(code));
+        button.onPressed!();
+        await tester.pumpAndSettle();
+        final detailRow = find
+            .ancestor(
+              of: find.text('Site classification: $label'),
+              matching: find.byType(Row),
+            )
+            .first;
+        final detailIcon = tester.widget<Icon>(
+          find.descendant(of: detailRow, matching: find.byType(Icon)),
+        );
+        expect(detailIcon.icon, gisSiteSymbol(code));
+        expect(detailIcon.color, gisSiteColor(code));
+        await tester.tap(find.byTooltip('Close location details'));
+        await tester.pumpAndSettle();
+        final decoration =
+            tester
+                    .widget<DecoratedBox>(
+                      find
+                          .ancestor(
+                            of: marker,
+                            matching: find.byType(DecoratedBox),
+                          )
+                          .first,
+                    )
+                    .decoration
+                as BoxDecoration;
+        expect(
+          decoration.shape,
+          index.isOdd ? BoxShape.rectangle : BoxShape.circle,
+        );
+        expect((decoration.border! as Border).top.color, gisSelectionColor);
+        expect(tester.widget<IconButton>(marker).color, gisSiteColor(code));
+        final list = find.byKey(ValueKey('project-${features[index]['id']}'));
+        await tester.scrollUntilVisible(
+          list,
+          100,
+          scrollable: find.descendant(
+            of: find.byKey(const ValueKey('public-project-list')),
+            matching: find.byType(Scrollable),
+          ),
+        );
+        final avatar = tester.widget<ListTile>(list).leading! as CircleAvatar;
+        expect((avatar.child! as Icon).icon, gisSiteSymbol(code));
+        expect((avatar.child! as Icon).color, gisSiteColor(code));
+      }
+      expect(requests.length, requestCount);
+      expect(jsonEncode(features), before);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets(
     'Live loading and empty states use fake HTTP without demo fallback',
     (tester) async {

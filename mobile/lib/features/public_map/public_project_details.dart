@@ -65,7 +65,10 @@ class PublicProjectDetails extends StatelessWidget {
                   const SizedBox(height: 8),
                   Row(
                     children: [
-                      Icon(gisSiteSymbol(project.siteTypeCode)),
+                      Icon(
+                        gisSiteSymbol(project.siteTypeCode),
+                        color: gisSiteColor(project.siteTypeCode),
+                      ),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(

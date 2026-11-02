@@ -68,6 +68,7 @@
 .gis-map-panel > .gis-help { padding: 0 20px 16px; margin: 0; }
 .gis-selection-heading { padding: 20px; background: #f7faff; border-bottom: 1px solid var(--border-color); overflow-wrap: anywhere; }
 .gis-selection-icon { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 10px; color: var(--primary); background: #e6eff9; margin-bottom: 12px; }
+.gis-selection-icon svg { width: 28px; height: 34px; }
 .gis-selection-heading h3 { font-size: 16px; color: #263f58; }
 .gis-selection-heading p { font-size: 12px; margin-top: 8px; line-height: 1.7; }
 .gis-module .gis-dismiss { padding: 8px; min-width: 44px; }

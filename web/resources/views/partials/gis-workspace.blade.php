@@ -70,7 +70,7 @@
         <aside class="card gis-location-panel" id="gis-location-panel" aria-labelledby="gis-details-title">
             <div class="gis-panel-heading"><h2 id="gis-details-title">Location information</h2><button type="button" class="button gis-dismiss" data-gis-dismiss aria-label="Clear selected location" disabled><x-icon name="close" /></button></div>
             <div class="gis-location-content" role="region" aria-labelledby="gis-details-title" tabindex="0">
-                <div class="gis-selection-heading"><span class="gis-selection-icon"><x-icon name="map-pin" /></span><h3 data-gis-selection-title tabindex="-1">No location selected</h3><p data-gis-selection-note role="status" aria-live="polite">Select a map feature or a location from the list.</p></div>
+                <div class="gis-selection-heading"><span class="gis-selection-icon" data-gis-selection-symbol data-gis-site-symbol="" aria-hidden="true"></span><h3 data-gis-selection-title tabindex="-1">No location selected</h3><p data-gis-selection-note role="status" aria-live="polite">Select a map feature or a location from the list.</p></div>
                 <dl data-gis-details></dl>
                 @if($gisManager)<details class="gis-history" data-gis-history hidden><summary>Record history and public details</summary><dl data-gis-history-details></dl></details>@endif
                 <div class="gis-record-actions" data-gis-record-actions></div>

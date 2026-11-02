@@ -168,7 +168,8 @@ class GisManagementUiTest extends TestCase
         $emptyPublic = $this->get('/map')->assertOk()->assertSee('Unclassified location')->assertSee('All site classifications')
             ->assertSee('Boundary markers are not surveyed site coordinates.')->assertDontSee('gis-key boundary', false);
         $types = ['fish_cage' => 'Fish cage', 'fish_pen' => 'Fish pen', 'seaweed_cultivation_site' => 'Seaweed cultivation site',
-            'fishing_gear_site' => 'Fishing gear site', 'post_harvest_facility' => 'Post-harvest facility'];
+            'fishing_gear_site' => 'Fishing gear site', 'post_harvest_facility' => 'Post-harvest facility',
+            'culture_pond' => 'Fishpond / Culture Pond', 'hatchery_nursery' => 'Hatchery / Nursery', 'payao_installation' => 'Payao Installation'];
         foreach ($types as $code => $name) DB::table('gis_site_types')->insert(['code' => $code, 'name' => $name]);
         $feature = $this->feature(['site_type_id' => 1]);
         $this->bindFeature($feature);
@@ -182,6 +183,10 @@ class GisManagementUiTest extends TestCase
             $pages[$name] = $this->get('/admin/gis/'.self::LOCATION.'/edit')->assertOk();
         }
         foreach ($pages as $page) foreach ($types as $name) $page->assertSee($name);
+        foreach (['staff', 'public'] as $name) {
+            $pages[$name]->assertSee('data-gis-selection-symbol', false);
+            foreach (array_keys($types) as $code) $pages[$name]->assertSee('data-gis-site-symbol="'.$code.'"', false);
+        }
         $pages['editor']->assertSee('value="1" selected', false);
         if ($directory = getenv('ASSOCMAP_GISCLASS_UI_DIRECTORY')) {
             $this->assertMatchesRegularExpression('/\Aassocmap-gisclass-ui-[a-f0-9]{32}\z/', basename($directory));

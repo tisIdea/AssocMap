@@ -646,12 +646,18 @@ class _PublicMapScreenState extends State<PublicMapScreen> {
             for (final type in _siteTypes)
               ListTile(
                 dense: true,
-                leading: Icon(gisSiteSymbol(type.code)),
+                leading: Icon(
+                  gisSiteSymbol(type.code),
+                  color: gisSiteColor(type.code),
+                ),
                 title: Text(type.name),
               ),
             const ListTile(
               dense: true,
-              leading: Icon(Icons.location_on_outlined),
+              leading: Icon(
+                Icons.location_on_outlined,
+                color: gisUnclassifiedColor,
+              ),
               title: Text('Unclassified / unknown symbol'),
             ),
           ],
@@ -666,6 +672,9 @@ class _PublicMapScreenState extends State<PublicMapScreen> {
     separatorBuilder: (_, _) => const SizedBox(height: 6),
     itemBuilder: (context, index) {
       final project = projects[index];
+      final color = _live
+          ? gisSiteColor(project.siteTypeCode)
+          : projectColor(project.category);
       return Card(
         margin: EdgeInsets.zero,
         color: Colors.white,
@@ -676,20 +685,14 @@ class _PublicMapScreenState extends State<PublicMapScreen> {
             vertical: 6,
           ),
           leading: CircleAvatar(
-            backgroundColor:
-                (_live && project.isBoundary
-                        ? gisBoundaryColor
-                        : projectColor(project.category))
-                    .withValues(alpha: .12),
+            backgroundColor: color.withValues(alpha: .12),
             child: Icon(
               _live
                   ? gisSiteSymbol(project.siteTypeCode)
                   : project.location == null
                   ? Icons.crop_free
                   : Icons.location_on_outlined,
-              color: _live && project.isBoundary
-                  ? gisBoundaryColor
-                  : projectColor(project.category),
+              color: color,
             ),
           ),
           title: Text(

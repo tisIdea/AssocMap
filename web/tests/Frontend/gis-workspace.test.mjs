@@ -2,11 +2,13 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { createContext, runInContext } from 'node:vm';
+import { siteSymbol } from '../../resources/js/pages/gis-site-symbols.js';
 
 const read = path => readFileSync(new URL('../../resources/js/' + path, import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 const workspace = read('pages/gis-workspace.js');
 const api = read('core/gis-api.js');
 const editor = read('pages/gis-editor.js');
+const siteCodes = ['fish_cage', 'fish_pen', 'culture_pond', 'seaweed_cultivation_site', 'hatchery_nursery', 'payao_installation', 'post_harvest_facility'];
 const settle = async () => { await new Promise(setImmediate); await new Promise(setImmediate); };
 const feature = (id, properties = {}) => ({ type: 'Feature', id, geometry: { type: 'Point', coordinates: [123.8, 10.3] },
     properties: { title: id, location_type: 'project_point', archived_at: null, ...properties } });
@@ -37,8 +39,11 @@ async function fixture({ manager = false, source = workspace, request } = {}) {
     });
     const views = ['map', 'list'].map(view => { const button = node(`[data-gis-view="${view}"]`); button.dataset.gisView = view; return button; });
     const pages = ['previous', 'next'].map(page => { const button = node(`[data-gis-page="${page}"]`); button.dataset.gisPage = page; return button; });
+    const legendSymbols = [...siteCodes, ''].map(code => { const symbol = new Element(); symbol.dataset.gisSiteSymbol = code; return symbol; });
+    node('[data-gis-selection-symbol]').dataset.gisSiteSymbol = '';
     root.querySelector = selector => selector === '[data-gis-confirm]' ? null : !manager && selector === '[data-gis-history]' ? null : node(selector);
-    root.querySelectorAll = selector => ({ '[data-gis-parent]': parents, '[data-gis-view]': views, '[data-gis-page]': pages }[selector] || []);
+    root.querySelectorAll = selector => ({ '[data-gis-parent]': parents, '[data-gis-view]': views, '[data-gis-page]': pages,
+        '[data-gis-site-symbol]': [...legendSymbols, node('[data-gis-selection-symbol]')] }[selector] || []);
     node('[data-gis-option-search]').optionSearch = true;
     node('[data-gis-open-details]').disabled = true;
     const map = { listeners: {}, on(name, fn) { this.listeners[name] = fn; }, fitBounds() {}, invalidateSize() {}, closePopup() {},
@@ -49,7 +54,7 @@ async function fixture({ manager = false, source = workspace, request } = {}) {
         if (url.searchParams.get('mode') === 'overview') return { type: 'FeatureCollection', features: [], meta: { bounds: [123, 10, 124, 11] } };
         return { type: 'FeatureCollection', features: [feature('site-a'), feature('site-b')], meta: { page: 1, last_page: 1, total: 2 } };
     };
-    const context = createContext({ root, URL, AbortController, console,
+    const context = createContext({ root, URL, AbortController, console, siteSymbol,
         window: { location: { origin: 'https://assocmap.test' } },
         document: { createElement: () => new Element() },
         FormData: class { *[Symbol.iterator]() { for (const [name, input] of Object.entries(form.elements)) yield [name, input.value]; } },
@@ -68,7 +73,7 @@ async function fixture({ manager = false, source = workspace, request } = {}) {
     context.fillOptions = (select, data) => { if (!data.options.some(option => option.value === select.value)) select.value = ''; };
     runInContext(source.replace(/^import .*\n/gm, '').replace(/^export /gm, ''), context);
     await context.initGis(root);
-    return { root, form, node, calls, map, groups, context, layerCallbacks,
+    return { root, form, node, calls, map, groups, context, layerCallbacks, legendSymbols,
         async flushTimers(delay) { for (const [id, timer] of [...timers]) if (delay === undefined || timer.delay === delay) { timers.delete(id); timer.fn(); } await settle(); },
         async fire(selector, event, target) { node(selector).fire(event, target); await settle(); },
     };
@@ -136,6 +141,22 @@ test('selection has a keyboard-accessible route to details and clears its map em
     await f.fire('[data-gis-dismiss]', 'click');
     assert.equal(f.groups[0].selectedId, null);
     assert.equal(f.node('[data-gis-open-details]').disabled, true);
+});
+
+test('legend and selected details share classification artwork and reset to neutral without requests', async () => {
+    const f = await fixture({ request: (url, options, fallback) => url.searchParams.get('mode') === 'map'
+        ? { type: 'FeatureCollection', features: siteCodes.map(code => feature(code, { site_type_code: code })), meta: {} }
+        : fallback(url, options) });
+    const before = f.calls.length;
+    for (const [index, code] of siteCodes.entries()) {
+        f.layerCallbacks.get(code)();
+        assert.equal(f.node('[data-gis-selection-symbol]').innerHTML, siteSymbol(code));
+        assert.equal(f.legendSymbols[index].innerHTML, siteSymbol(code));
+    }
+    await f.fire('[data-gis-dismiss]', 'click');
+    assert.equal(f.node('[data-gis-selection-symbol]').innerHTML, siteSymbol(null));
+    assert.equal(f.legendSymbols.at(-1).innerHTML, siteSymbol(null));
+    assert.equal(f.calls.length, before);
 });
 
 test('parent changes clear dependent filters; opening presentation controls makes no request', async () => {

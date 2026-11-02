@@ -325,20 +325,40 @@ void main() {
     }
   });
 
-  test('Symbol families match web including neutral and legacy fallbacks', () {
-    expect(gisSiteSymbol('fish_cage'), Icons.grid_on);
-    expect(gisSiteSymbol('fish_pen'), Icons.fence);
-    expect(gisSiteSymbol('seaweed_cultivation_site'), Icons.grass);
-    expect(gisSiteSymbol('post_harvest_facility'), Icons.warehouse_outlined);
-    expect(gisSiteSymbol('fishing_gear_site'), Icons.phishing);
-    for (final code in [
-      null,
-      'culture_pond',
-      'hatchery_nursery',
-      'payao_installation',
-      'unknown_site',
-    ]) {
-      expect(gisSiteSymbol(code), Icons.location_on_outlined);
-    }
-  });
+  test(
+    'All seven classifications have unique symbols and colors matching web',
+    () {
+      expect(gisSiteSymbol('fish_cage'), Icons.grid_on);
+      expect(gisSiteSymbol('fish_pen'), Icons.fence);
+      expect(gisSiteSymbol('culture_pond'), Icons.water);
+      expect(gisSiteSymbol('seaweed_cultivation_site'), Icons.grass);
+      expect(gisSiteSymbol('hatchery_nursery'), Icons.egg_outlined);
+      expect(gisSiteSymbol('payao_installation'), Icons.anchor);
+      expect(gisSiteSymbol('post_harvest_facility'), Icons.warehouse_outlined);
+      expect(gisSiteSymbol('fishing_gear_site'), Icons.phishing);
+      const codes = [
+        'fish_cage',
+        'fish_pen',
+        'culture_pond',
+        'seaweed_cultivation_site',
+        'hatchery_nursery',
+        'payao_installation',
+        'post_harvest_facility',
+      ];
+      expect(codes.map(gisSiteSymbol).toSet(), hasLength(7));
+      expect(codes.map(gisSiteColor).toSet(), hasLength(7));
+      expect(gisSiteColor(null), const Color(0xFF64748B));
+      for (final code in [null, 'unknown_site']) {
+        expect(gisSiteSymbol(code), Icons.location_on_outlined);
+        expect(gisSiteColor(code), gisUnclassifiedColor);
+      }
+      for (final code in [...codes, null]) {
+        final color = gisSiteColor(code);
+        expect(
+          1.05 / (color.computeLuminance() + .05),
+          greaterThanOrEqualTo(4.5),
+        );
+      }
+    },
+  );
 }

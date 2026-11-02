@@ -74,9 +74,7 @@ class _PublicMapViewState extends State<PublicMapView> {
       ? gisSelectionColor
       : _mock
       ? projectColor(project.category)
-      : project.isBoundary
-      ? gisBoundaryColor
-      : gisPointColor;
+      : gisSiteColor(project.siteTypeCode);
 
   @override
   void dispose() {
@@ -232,7 +230,9 @@ class _PublicMapViewState extends State<PublicMapView> {
                                 ? project.title
                                 : '${project.title} · ${project.filterLabel} · ${project.siteTypeLabel}',
                             onPressed: () => onSelected(project),
-                            color: _markerColor(project),
+                            color: _mock
+                                ? _markerColor(project)
+                                : gisSiteColor(project.siteTypeCode),
                             icon: Icon(
                               _mock
                                   ? Icons.location_on_outlined

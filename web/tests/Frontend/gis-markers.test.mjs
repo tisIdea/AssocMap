@@ -4,16 +4,31 @@ import test from 'node:test';
 import { createContext, runInContext } from 'node:vm';
 import { siteSymbol } from '../../resources/js/pages/gis-site-symbols.js';
 
-const codes = ['fish_cage', 'fish_pen', 'seaweed_cultivation_site', 'fishing_gear_site', 'post_harvest_facility'];
-test('proposed site symbols differ by artwork and never interpolate catalog content', () => {
+const codes = ['fish_cage', 'fish_pen', 'culture_pond', 'seaweed_cultivation_site', 'hatchery_nursery', 'payao_installation', 'post_harvest_facility'];
+test('all seven site symbols have distinct artwork and never interpolate catalog content', () => {
     const artwork = codes.map(code => siteSymbol(code).replace(/fill="[^"]*"/g, ''));
-    assert.equal(new Set(artwork).size, 5);
+    assert.equal(new Set(artwork).size, 7);
     for (const code of [...codes, null, 'future_type', '<img src=x onerror=alert(1)>', '__proto__']) {
         const svg = siteSymbol(code);
         assert.match(svg, /^<svg /);
         assert.doesNotMatch(svg, /<image|href=|onerror|<img/);
     }
     assert.equal(siteSymbol('future_type'), siteSymbol(null));
+    assert.notEqual(siteSymbol('fishing_gear_site'), siteSymbol(null));
+});
+
+test('classification colors are distinct and contrast with white icon strokes', () => {
+    const colors = [...codes, null].map(code => siteSymbol(code).match(/fill="(#[a-f0-9]{6})"/)[1]);
+    assert.equal(new Set(colors).size, 8);
+    assert.equal(colors.at(-1), '#64748b');
+    for (const color of colors) {
+        const linear = color.slice(1).match(/../g).map(channel => {
+            const value = parseInt(channel, 16) / 255;
+            return value <= .04045 ? value / 12.92 : ((value + .055) / 1.055) ** 2.4;
+        });
+        const luminance = linear[0] * .2126 + linear[1] * .7152 + linear[2] * .0722;
+        assert.ok(1.05 / (luminance + .05) >= 4.5, `${color} must contrast with white`);
+    }
 });
 
 function fixture() {
@@ -85,7 +100,7 @@ test('public boundaries never invent a point or fall back to outlines when the d
         assert.equal(f.render({ geometry: { type: 'Polygon' }, properties: { location_type: 'project_boundary', display_point: point } }, true).empty, true);
     }
     assert.equal(f.icons.length, 0);
-    assert.match(siteSymbol(null), /#596b78/);
+    assert.match(siteSymbol(null), /#64748b/);
 });
 
 test('legacy and future codes have a safe fallback; classified boundaries retain polygon styling', () => {
@@ -99,21 +114,22 @@ test('legacy and future codes have a safe fallback; classified boundaries retain
     assert.equal(f.icons.length, 1);
 });
 
-test('all seven provisional codes render safe named markers including the neutral fallbacks', () => {
+test('all seven classifications use their own symbol in actual point and boundary markers', () => {
     const f = fixture();
-    const catalog = ['fish_cage', 'fish_pen', 'culture_pond', 'seaweed_cultivation_site', 'hatchery_nursery', 'payao_installation', 'post_harvest_facility'];
-    for (const code of catalog) {
+    for (const code of codes) {
         const layer = f.render({ id: code, geometry: { type: 'Point', coordinates: [123, 10] },
             properties: { location_type: 'project_point', title: code, site_type_code: code, site_type_name: 'Proposed '+code } });
-        assert.match(layer.options.icon.html, /^<svg /);
+        assert.equal(layer.options.icon.html, siteSymbol(code));
+        assert.notEqual(layer.options.icon.html, siteSymbol(null));
         assert.match(f.nodes.at(-1).element.attributes['aria-label'], new RegExp('Proposed '+code));
         assert.deepEqual(Array.from(layer.options.icon.iconSize), [44, 44]);
+        const boundary = f.render({ id: code + '-boundary', geometry: { type: 'Polygon' }, properties: { location_type: 'project_boundary',
+            site_type_code: code, display_point: { type: 'Point', coordinates: [123, 10] } } }, true);
+        assert.equal(boundary.options.icon.html, siteSymbol(code));
+        assert.match(boundary.options.icon.className, /gis-boundary-marker/);
+        assert.match(f.nodes.at(-1).element.attributes['aria-label'], /representative position/);
     }
-    for (const code of ['culture_pond', 'hatchery_nursery', 'payao_installation']) assert.equal(siteSymbol(code), siteSymbol(null));
-    const boundary = f.render({ id: 'area', geometry: { type: 'Polygon' }, properties: { location_type: 'project_boundary',
-        site_type_code: 'fish_cage', display_point: { type: 'Point', coordinates: [123, 10] } } }, true);
-    assert.match(boundary.options.icon.className, /gis-boundary-marker/);
-    assert.match(f.nodes.at(-1).element.attributes['aria-label'], /representative position/);
+    assert.equal(f.icons.length, 14);
 });
 
 test('selected point and boundary emphasis follows identity without changing their geometries', () => {

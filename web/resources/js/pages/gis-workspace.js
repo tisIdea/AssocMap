@@ -39,6 +39,7 @@ export async function initGis(root) {
         root.querySelector('[data-gis-details]').replaceChildren();
         root.querySelector('[data-gis-record-actions]').replaceChildren();
         root.querySelector('[data-gis-selection-title]').textContent = 'No location selected';
+        root.querySelector('[data-gis-selection-symbol]').innerHTML = siteSymbol(null);
         root.querySelector('[data-gis-dismiss]').disabled = true;
         root.querySelector('[data-gis-open-details]').disabled = true;
         const history = root.querySelector('[data-gis-history]');
@@ -56,6 +57,7 @@ export async function initGis(root) {
         details.replaceChildren(); actions.replaceChildren();
         const p = feature.properties;
         root.querySelector('[data-gis-selection-title]').textContent = p.title || 'Location';
+        root.querySelector('[data-gis-selection-symbol]').innerHTML = siteSymbol(p.site_type_code);
         root.querySelector('[data-gis-dismiss]').disabled = false;
         root.querySelector('[data-gis-open-details]').disabled = false;
         root.querySelector('[data-gis-selection-note]').textContent = feature.geometry

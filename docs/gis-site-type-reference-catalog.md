@@ -6,17 +6,17 @@ These are proposed AssocMap project classifications pending final BFAR Region VI
 
 `Database\Seeders\GisSiteTypeSeeder` uses the existing migration 024 structure: generated BIGINT identity `id`, unique lowercase `code` matching `^[a-z][a-z0-9_]{0,49}$`, and a nonblank `name` of at most 100 characters. All seven codes and labels fit those limits. The catalog has no timestamps, approval/source fields, or `is_active` column. The seeder supplies only `code` and `name`; the database allocates IDs. The guarded `GisSiteType` model remains unchanged.
 
-| Code | Proposed label | Existing web symbol |
-| --- | --- | --- |
-| `fish_cage` | Fish Cage | Dedicated cage symbol |
-| `fish_pen` | Fish Pen | Dedicated pen symbol |
-| `culture_pond` | Fishpond / Culture Pond | Neutral fallback |
-| `seaweed_cultivation_site` | Seaweed Cultivation Site | Dedicated seaweed symbol |
-| `hatchery_nursery` | Hatchery / Nursery | Neutral fallback |
-| `payao_installation` | Payao Installation | Neutral fallback |
-| `post_harvest_facility` | Post-Harvest Facility | Dedicated facility symbol |
+| Code | Proposed label | Web/mobile symbol family | Color |
+| --- | --- | --- | --- |
+| `fish_cage` | Fish Cage | Cage/grid | Blue `#2563EB` |
+| `fish_pen` | Fish Pen | Fence | Teal `#0F766E` |
+| `culture_pond` | Fishpond / Culture Pond | Water/waves | Cyan `#0E7490` |
+| `seaweed_cultivation_site` | Seaweed Cultivation Site | Seaweed/grass | Green `#15803D` |
+| `hatchery_nursery` | Hatchery / Nursery | Egg | Orange `#B45309` |
+| `payao_installation` | Payao Installation | Anchor | Purple `#7E22CE` |
+| `post_harvest_facility` | Post-Harvest Facility | Warehouse | Brown `#795548` |
 
-The existing fixed SVG renderer safely handles all seven codes. The three fallback entries remain distinguishable by their catalog labels in web filters, legends, popups, and details. No new icon artwork or Flutter changes are included. Existing `fishing_gear_site` rows or other additional classifications are retained; this seeder does not create that code.
+All seven classifications have distinct fixed symbols and matching colors across web and Flutter legends, map markers, and details. Web uses local inline SVG; Flutter uses built-in Material icons. Labels remain visible alongside symbols, and all palette colors have at least 4.5:1 contrast against white. Unclassified and unknown codes use neutral gray `#64748B`. Geometry badges/shapes and the green selection outline remain separate from classification color; selecting a marker retains its classification icon and color. Reload web pages or recreate the Flutter map screen after catalog changes because the catalog is loaded at page/screen initialization. Existing `fishing_gear_site` rows retain their legacy symbol; this seeder does not create that code.
 
 Geometry remains independent: `location_type` still distinguishes project points from boundaries; Polygon and MultiPolygon remain boundary representations. Project fisheries categories and commodities are unchanged.
 
