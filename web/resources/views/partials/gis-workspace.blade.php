@@ -20,7 +20,7 @@
     <div class="card gis-search-panel">
         <form data-gis-filters>
             <div class="gis-search-bar">
-                <div class="field gis-search"><label for="gis-search">Search {{ $gisPublic ? 'approved titles and addresses' : 'locations, associations and geography' }}</label><div><x-icon name="search" /><input id="gis-search" name="q" type="search" maxlength="100" placeholder="Search GIS locations…" aria-describedby="gis-search-help"></div><small id="gis-search-help">Results update as you type or apply filters. Refresh Records reloads and fits matching locations in map view.</small></div>
+                <div class="field gis-search"><label for="gis-search">Search {{ $gisPublic ? 'approved titles and addresses' : 'locations, associations and geography' }}</label><div class="search-box"><x-icon name="search" /><input id="gis-search" name="q" type="search" maxlength="100" placeholder="Search GIS locations…" aria-describedby="gis-search-help"></div><small id="gis-search-help">Results update as you type or apply filters. Refresh Records reloads and fits matching locations in map view.</small></div>
                 <button type="submit" class="button button-primary">Apply filters</button><button type="reset" class="button">Reset</button>
             </div>
             <details class="gis-filters">

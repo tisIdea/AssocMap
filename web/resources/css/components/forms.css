@@ -9,3 +9,12 @@
 .detail-grid { margin: 0; display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 22px; }.detail-grid + .detail-grid { border-top: 1px solid var(--border-color); margin-top: 20px; padding-top: 20px; }dt { color: var(--text-secondary); font-size: 11px; margin-bottom: 5px; }dd { margin: 0; color: #36516a; font-size: 12px; overflow-wrap: anywhere; }
 .modal { border: 1px solid var(--border-color); border-radius: 14px; padding: 26px; width: min(510px,calc(100% - 30px)); box-shadow: 0 20px 80px #12324b33; color: var(--text-primary); max-height: 85vh; }.modal::backdrop { background: #132d49a6; backdrop-filter: blur(2px); }.modal-heading { display: flex; align-items: center; justify-content: space-between; gap: 15px; margin-bottom: 17px; }.modal-heading h2 { font-size: 19px; }.modal > p, .modal form > p { margin-bottom: 20px; font-size: 13px; }.modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 25px; }.modal .detail-grid { grid-template-columns: 1fr 1fr; margin-bottom: 20px; }
 .toast { position: fixed; bottom: 25px; right: 25px; z-index: 80; width: min(430px,calc(100% - 40px)); border: 1px solid #cee2d6; border-left: 4px solid #398665; background: white; color: #355847; padding: 16px 20px; border-radius: 8px; box-shadow: 0 9px 35px #17395126; font-size: 13px; }
+.form-actions, .detail-actions, .modal-actions { flex-wrap: wrap; }
+.modal { overflow: auto; overscroll-behavior: contain; max-height: 85dvh; }
+.modal-heading > h2 { min-width: 0; overflow-wrap: anywhere; }
+.modal-heading > .icon-button { flex-shrink: 0; }
+.modal :is(p, dd, .notice) { overflow-wrap: anywhere; }
+@media (max-width: 480px) {
+    .form-actions > .button, .modal-actions > .button { flex: 1 1 auto; }
+    .field input:not([type=checkbox]):not([type=radio]), .field select, .field textarea { font-size: 16px; }
+}

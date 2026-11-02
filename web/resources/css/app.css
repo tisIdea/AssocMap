@@ -6,6 +6,7 @@
 @import './components/workflow-navigation.css';
 @import './pages/admin-dashboard.css';
 @import './components/summary-counter.css';
+@import './components/summary-cards.css';
 @import './components/tables.css';
 @import './components/forms.css';
 @import './components/feedback.css';

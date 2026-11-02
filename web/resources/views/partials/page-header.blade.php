@@ -1,1 +1,1 @@
-<header class="page-header"><div><div class="eyebrow">{{ $eyebrow ?? 'Administration' }}</div><h1 tabindex="-1">{{ $title }}</h1><p>{{ $description ?? '' }}</p></div><div class="page-header-actions">{{ $actions ?? '' }}<span class="preview-label"><span></span> UI preview</span></div></header>
+<header class="page-header"><div><div class="eyebrow">{{ $eyebrow ?? 'Administration' }}</div><h1 tabindex="-1">{{ $title }}</h1><p>{{ $description ?? '' }}</p></div><div class="page-header-actions">{{ $actions ?? '' }}</div></header>

@@ -1,13 +1,13 @@
 /* Public landing shell. Keep all additions scoped away from admin views. */
 .public-page {
-    --public-primary: #0a447d;
-    --public-primary-dark: #08365f;
-    --public-primary-light: #edf4fb;
-    --public-page-bg: #f5f7fa;
+    --public-primary: var(--primary);
+    --public-primary-dark: var(--primary-hover);
+    --public-primary-light: var(--primary-soft);
+    --public-page-bg: var(--page-bg);
     --public-surface: #fff;
     --public-text: #1f2937;
     --public-muted: #53677c;
-    --public-border: #dce5ee;
+    --public-border: var(--border-color);
     --public-radius: 12px;
     --public-shadow: 0 3px 12px rgb(23 48 77 / 4%);
     background: var(--public-surface);
@@ -19,7 +19,7 @@
 .public-page .public-container { width: min(1160px, calc(100% - 48px)); margin-inline: auto; }
 .public-page p { color: var(--public-muted); }
 .public-page section[id] { scroll-margin-top: 24px; }
-.public-page :focus-visible { outline: 3px solid #377dbb; outline-offset: 4px; }
+.public-page :focus-visible { outline: 3px solid var(--public-primary); outline-offset: 4px; }
 .public-page .public-header { border-bottom: 1px solid var(--public-border); background: var(--public-surface); }
 .public-page .public-navbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 24px; min-height: 90px; padding-block: 20px; }
 .public-page .public-brand { display: inline-flex; align-items: center; gap: 12px; color: var(--public-primary); }

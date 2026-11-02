@@ -18,3 +18,17 @@ fieldset { padding: 0; border: 0; margin: 0; min-width: 0; }.checkbox-options { 
 .table-footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; border-top: 1px solid #e7edf3; padding: 16px 20px; color: var(--text-secondary); font-size: 11px; }.pagination { display: flex; gap: 5px; }.pagination button { border: 1px solid var(--border-color); border-radius: 5px; width: 29px; height: 29px; background: #fff; display: grid; place-items: center; font-size: 11px; }.pagination button[aria-current] { background: #eaf2fb; color: var(--primary); opacity: 1; border-color: #d6e5f4; }.pagination .icon { width: 13px; height: 13px; }
 .empty-state { padding: 45px 20px; text-align: center; }.empty-icon { width: 45px; height: 45px; margin: 0 auto 12px; display: grid; place-items: center; border-radius: 12px; background: #edf3fa; color: #6688ac; }.empty-state p { margin-top: 6px; font-size: 12px; }
 .area-intro { display: flex; align-items: center; justify-content: space-between; padding: 23px; gap: 22px; border-bottom: 1px solid var(--border-color); }.area-intro p { font-size: 12px; margin-top: 5px; }.area-selector { min-width: 245px; }
+input:not([type=checkbox]):not([type=radio]), select, textarea { min-height: 44px; font-size: 14px; border-color: var(--border-color); }
+input::placeholder, textarea::placeholder { color: #65768a; }
+.search-box .icon { top: 14px; }
+.search-box > .icon { pointer-events: none; }
+.data-table { font-size: 13px; }
+.data-table th { font-size: 11px; background: var(--surface-subtle); color: var(--text-secondary); }
+.data-table td { overflow-wrap: anywhere; }
+.data-table tbody tr:hover { background: #fbfdff; }
+.table-scroll:focus-visible { outline-offset: -3px; }
+.table-footer, .table-footer > nav, .filter-actions { flex-wrap: wrap; }
+.table-footer > nav { display: flex; gap: 8px; }
+.empty-state { max-width: 65ch; margin-inline: auto; overflow-wrap: anywhere; }
+.empty-icon { background: var(--primary-soft); color: var(--primary); }
+.empty-state p { font-size: 13px; line-height: 1.7; }

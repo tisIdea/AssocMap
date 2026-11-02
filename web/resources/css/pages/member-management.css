@@ -3,15 +3,6 @@
 .member-management .member-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 20px; padding: 24px; border-top: 3px solid var(--primary); }
 .member-management .member-heading > div { flex: 1 1 300px; min-width: 0; }
 .member-management .member-heading p:not(.eyebrow) { margin-top: 8px; font-size: 13px; }
-.member-management .member-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(185px, 1fr)); gap: 16px; }
-.member-management .member-summary > a { color: inherit; border-radius: var(--radius-md); min-width: 0; }
-.member-management .member-summary .stat-card { height: 100%; transition: background-color 150ms, border-color 150ms; }
-.member-management .member-summary .stat-top { font-size: 12px; }
-.member-management .member-summary strong { color: var(--primary); }
-.member-management .member-summary a:hover .stat-card { border-color: #7a9fca; background: #f3f7fd; }
-.member-management .member-summary a[aria-current="page"] .stat-card { background: #0b427b; border-color: #0b427b; box-shadow: 0 4px 14px rgb(11 66 123 / 15%); }
-.member-management .member-summary a[aria-current="page"] :is(.stat-top, strong, small) { color: #fff; }
-.member-management .member-summary a[aria-current="page"] .stat-icon { color: #fff; background: rgb(255 255 255 / 15%); }
 .member-management .member-summary-help { font-size: 12px; line-height: 1.7; margin-top: -6px; }
 .member-management .member-register { min-width: 0; overflow: hidden; }
 .member-management .member-section-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 22px; }
@@ -65,13 +56,10 @@
 .member-record-dialog .modal-actions { flex-wrap: wrap; }
 @media (max-width: 760px) {
     .member-management .member-heading, .member-management .member-section-heading { padding: 18px; }
-    .member-management .member-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .member-management .member-register-pagination { align-items: flex-start; flex-direction: column; }
     .member-record-dialog .detail-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 480px) {
-    .member-management .member-summary .stat-card { padding: 15px; }
-    .member-management .member-summary .stat-top { flex-direction: column; align-items: flex-start; gap: 10px; }
     .member-management .member-search-bar { padding-inline: 18px; }
     .member-management .member-filter-grid, .member-management .member-association-context .detail-grid,
     .member-record-dialog .detail-grid, .member-record-dialog .form-grid, .member-record-dialog .form-section { grid-template-columns: minmax(0, 1fr); }

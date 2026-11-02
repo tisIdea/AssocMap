@@ -51,7 +51,7 @@
         <main id="main-content" tabindex="-1">
             @yield('content')
         </main>
-        <footer class="app-footer"><span>AssocMap · GIS-Based Program Monitoring Information System</span><span>Capstone Project Prototype</span></footer>
+        <footer class="app-footer"><span>AssocMap · GIS-Based Program Monitoring Information System</span></footer>
     </div>
     @stack('dialogs')
     <x-global-feedback :notification="$globalFeedbackNotification ?? null" />

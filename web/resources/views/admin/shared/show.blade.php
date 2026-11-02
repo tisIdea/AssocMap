@@ -1,5 +1,5 @@
 <a class="back-link" href="#{{ $module['key'] }}"><x-icon name="back" />Back to {{ $module['title'] }}</a>
-@include('partials.page-header', ['title' => $module['singular'].' Details', 'description' => 'Record details will appear here once connected.', 'eyebrow' => $module['title']])
+@include('partials.page-header', ['title' => $module['singular'].' Details', 'description' => 'Review the available record information.', 'eyebrow' => $module['title']])
 <div class="detail-banner card"><span class="detail-avatar"><x-icon :name="$module['icon']" /></span><div><h2>{{ $module['record']['name'] ?? $module['record']['title'] ?? $module['record']['project'] ?? $module['record']['entity'] ?? 'No record selected' }}</h2><p>{{ $module['description'] }}</p></div>@if(isset($module['action']) && $module['key'] !== 'users')<a class="button button-primary" href="#{{ $module['key'] }}/edit">Edit {{ $module['singular'] }}</a>@else<span class="badge badge-neutral">{{ ($module['readonly'] ?? false) ? 'Read-only' : 'No account selected' }}</span>@endif</div>
 @if($module['key'] === 'users')<div class="detail-actions"><button class="button" type="button" data-dialog="email-modal">Change Email</button><button class="button button-danger-outline" type="button" data-confirm="Disable the selected account?">Disable Account</button></div>@endif
 @if(isset($module['sections']))

@@ -1,0 +1,17 @@
+/* Shared geographic and member register KPI cards; aria-current follows existing filters. */
+.summary-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 185px), 1fr)); gap: 16px; }
+.summary-cards > a { color: inherit; border-radius: var(--radius-md); min-width: 0; }
+.summary-cards > a .stat-card { height: 100%; transition: background-color 150ms, border-color 150ms; }
+.summary-cards .stat-top { font-size: 12px; gap: 10px; }
+.summary-cards > a .stat-card > strong { color: var(--primary); }
+.summary-cards .stat-card > small { font-size: 11px; line-height: 1.5; }
+.summary-cards > a:is(:hover, :focus-visible) .stat-card { border-color: #7a9fca; background: #f3f7fd; }
+.summary-cards > a[aria-current="page"] .stat-card { background: var(--sidebar-bg); border-color: var(--sidebar-bg); box-shadow: 0 4px 14px rgb(11 66 123 / 15%); }
+.summary-cards > a[aria-current="page"] .stat-card :is(.stat-top, strong, small) { color: #fff; }
+.summary-cards > a[aria-current="page"] .stat-icon { color: #fff; background: rgb(255 255 255 / 15%); }
+@media (max-width: 760px) { .summary-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 480px) {
+    .summary-cards .stat-card { padding: 15px; }
+    .summary-cards .stat-top { flex-direction: column; align-items: flex-start; }
+}
+@media (prefers-reduced-motion: reduce) { .summary-cards > a .stat-card { transition: none; } }

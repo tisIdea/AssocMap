@@ -700,7 +700,8 @@ class UserManagementTest extends TestCase
         $dom = $this->registerDom($response->getContent());
         $this->assertSame(4, $dom->query('//details[@data-user-actions]/summary[@aria-label]')->length);
         $this->assertSame(4, $dom->query('//details[@data-user-actions]//a[normalize-space(.)="View Account Details"]')->length);
-        $this->assertSame(4, $dom->query('//details[@data-user-actions]//button[@type="button" and @disabled and contains(.,"Reset Password")]')->length);
+        $this->assertSame(0, $dom->query('//details[@data-user-actions]//button[contains(.,"Reset Password")]')->length);
+        $response->assertDontSee('Coming soon');
         $this->assertSame(3, $dom->query('//details[@data-user-actions]//a[contains(@href,"#user-access") and contains(.,"Manage access")]')->length);
         $this->assertSame(1, $dom->query('//details[@data-user-actions]//button[@disabled and contains(.,"Your account")]')->length);
         $this->assertSame(0, $dom->query('//details[@data-user-actions]//form')->length);
