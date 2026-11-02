@@ -21,7 +21,7 @@ class ProfileAuthIdentityService
 
         try {
             return DB::table('auth.users')->whereIn('id', $profileIds)->get(['id', 'email'])->keyBy('id');
-        } catch (QueryException $exception) {
+        } catch (QueryException) {
             Log::notice('Profile Auth metadata could not be read.', ['code' => 'auth_profile_lookup_unavailable']);
 
             return null;

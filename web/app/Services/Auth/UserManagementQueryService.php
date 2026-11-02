@@ -163,7 +163,7 @@ class UserManagementQueryService
                     ->orderBy('id')->get(['id', 'display_name']);
                 foreach ($profiles as $profile) $references->push(['id' => $profile->id,
                     'name' => $profile->display_name, 'reason' => 'Current email matches an existing account']);
-            } catch (QueryException $exception) {
+            } catch (QueryException) {
                 Log::notice('Invitation account references unavailable.', ['code' => 'invitation_reference_lookup_unavailable']);
             }
         }

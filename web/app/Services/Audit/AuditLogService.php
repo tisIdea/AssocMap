@@ -107,7 +107,7 @@ class AuditLogService
                 JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
 
             return ['json' => $json, 'message' => $json === null ? 'No permitted change fields were recorded.' : null];
-        } catch (InvalidArgumentException|JsonException $exception) {
+        } catch (InvalidArgumentException|JsonException) {
             return ['json' => null, 'message' => 'The saved snapshot cannot be displayed within the supported limits.'];
         }
     }

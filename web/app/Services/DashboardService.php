@@ -223,7 +223,7 @@ class DashboardService
     {
         try {
             return $read();
-        } catch (QueryException $exception) {
+        } catch (QueryException) {
             Log::warning('Dashboard widget unavailable.', ['code' => 'dashboard_widget_unavailable', 'widget' => $widget]);
 
             return null;

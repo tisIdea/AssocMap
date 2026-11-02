@@ -36,7 +36,7 @@ class FieldOfficerAssignmentController extends Controller
     {
         try {
             $changed = $service->assign($request, $userProfile, $request->validated());
-        } catch (QueryException $exception) {
+        } catch (QueryException) {
             Log::warning('Field Officer assignment outcome needs review.', ['code' => 'assignment_storage_unavailable']);
             $message = 'Assignments could not be confirmed. Reload the current assignments before retrying.';
             if ($request->expectsJson()) return response()->json(['message' => $message], 503)->header('Cache-Control', 'no-store');

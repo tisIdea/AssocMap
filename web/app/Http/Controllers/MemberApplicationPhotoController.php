@@ -33,7 +33,7 @@ class MemberApplicationPhotoController extends Controller
 
         try {
             $photo = $photos->open($memberApplication->id, $memberApplication->applicant_photo_path);
-        } catch (MemberApplicationPhotoUnavailableException $exception) {
+        } catch (MemberApplicationPhotoUnavailableException) {
             return $this->unavailable(503);
         }
         if ($photo === null) return $this->unavailable(404);
