@@ -17,14 +17,17 @@ class InterfaceIconTest extends TestCase
         $this->withoutVite();
     }
 
-    public function test_public_and_login_branding_identifies_the_prototype_and_keeps_program_context(): void
+    public function test_public_and_login_branding_is_professional_and_keeps_academic_program_context(): void
     {
         $this->get('/')->assertOk()
-            ->assertSee('Independent academic Capstone prototype')
+            ->assertSee('Independent academic Capstone project')
+            ->assertSee('Developed as an independent academic Capstone project.')
+            ->assertDontSee('Capstone Project Prototype')
+            ->assertDontSee('Live services are not connected to this template.')
             ->assertSee('Program context: SAAD Phase II')
             ->assertSee('community livelihood associations under SAAD Phase II')
             ->assertDontSee('BFAR Region VII');
-        $this->get('/login')->assertOk()->assertSee('Capstone Project Prototype')
+        $this->get('/login')->assertOk()->assertSee('Association and project monitoring')->assertDontSee('Capstone Project Prototype')
             ->assertDontSee('SAAD Phase II · Region VII');
     }
 

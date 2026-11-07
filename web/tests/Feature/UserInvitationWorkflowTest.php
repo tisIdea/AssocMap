@@ -16,10 +16,12 @@ use Illuminate\Support\Facades\Schema;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 use Tests\Support\CreatesLifecycleAuditTable;
+use Tests\Support\CreatesAccountLifecycleSchema;
 
 class UserInvitationWorkflowTest extends TestCase
 {
     use CreatesLifecycleAuditTable;
+    use CreatesAccountLifecycleSchema;
 
     private const ADMIN = '11111111-1111-4111-8111-111111111111';
     private const RECIPIENT = '22222222-2222-4222-8222-222222222222';
@@ -48,7 +50,7 @@ class UserInvitationWorkflowTest extends TestCase
         $this->withoutVite();
         $this->schema();
         $this->createLifecycleAuditTable();
-        (require database_path('migrations/2026_10_22_010000_support_association_account_replacement.php'))->up();
+        $this->createAssociationReplacementSchema();
         $this->fixture();
         Http::swap((new Factory)->preventStrayRequests());
         Http::fake([self::PROVIDER.'/auth/v1/*' => function (ProviderRequest $request) {

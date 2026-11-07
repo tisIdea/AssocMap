@@ -60,7 +60,7 @@ class GisLocationService
 
     public function update(string $id, array $data, UserProfile $user, Request $request): array
     {
-        $data = $this->payload($data);
+        $data = $this->payload($data, false);
 
         return DB::transaction(function () use ($id, $data, $user, $request) {
             $actor = $this->access->actor($user);
@@ -78,16 +78,24 @@ class GisLocationService
                 && ($location->project_id !== $data['project_id'] || $location->association_id !== $data['association_id'])) {
                 throw ValidationException::withMessages(['project_id' => 'A finalized project location must retain its existing project and association ownership.']);
             }
-            $this->geometry->validateSpatial($data['geometry']);
+            if (! array_key_exists('geometry', $data) && $data['location_type'] !== $location->location_type) {
+                throw ValidationException::withMessages(['geometry' => 'Supply replacement geometry when changing the geometry type.']);
+            }
+            $geometryChanged = array_key_exists('geometry', $data)
+                && $data['geometry'] != json_decode($location->geometry_json, true, flags: JSON_THROW_ON_ERROR);
+            if ($geometryChanged) $this->geometry->validateSpatial($data['geometry']);
             if ($location->is_published) $this->requirePublicTitle($data['public_title']);
             $old = $this->snapshot($location);
+            $bindings = [$data['association_id'], $data['project_id'], $data['location_type'], $data['site_type_id'], $data['location_name'], $data['address']];
+            $geometrySql = '';
+            if ($geometryChanged) {
+                $geometrySql = ', geom = extensions.ST_SetSRID(extensions.ST_GeomFromGeoJSON(?), 4326)';
+                $bindings[] = json_encode($data['geometry'], JSON_THROW_ON_ERROR);
+            }
+            array_push($bindings, $data['public_title'], $data['public_description'], $data['public_address'], $actor->id, $id);
             DB::update('UPDATE gis_locations SET association_id = ?, project_id = ?, location_type = ?, site_type_id = ?,
-                location_name = ?, address = ?, geom = extensions.ST_SetSRID(extensions.ST_GeomFromGeoJSON(?), 4326),
-                public_title = ?, public_description = ?, public_address = ?, updated_by = ? WHERE id = ?', [
-                $data['association_id'], $data['project_id'], $data['location_type'], $data['site_type_id'], $data['location_name'], $data['address'],
-                json_encode($data['geometry'], JSON_THROW_ON_ERROR), $data['public_title'], $data['public_description'],
-                $data['public_address'], $actor->id, $id,
-            ]);
+                location_name = ?, address = ?'.$geometrySql.',
+                public_title = ?, public_description = ?, public_address = ?, updated_by = ? WHERE id = ?', $bindings);
             $location = $this->locked($id);
             $this->audit('UPDATE', $location, $old, $this->snapshot($location), $actor, $request);
 
@@ -306,9 +314,11 @@ class GisLocationService
         abort_unless(hash_equals($location->version, $version), 409, 'This location changed. Reload it before saving.');
     }
 
-    private function payload(array $data): array
+    private function payload(array $data, bool $requireGeometry = true): array
     {
-        $data['geometry'] = $this->geometry->normalize($data['geometry'], $data['location_type']);
+        if ($requireGeometry || array_key_exists('geometry', $data)) {
+            $data['geometry'] = $this->geometry->normalize($data['geometry'] ?? null, $data['location_type']);
+        }
         foreach (['association_id', 'project_id', 'address', 'public_title', 'public_description', 'public_address'] as $field) {
             $data[$field] = $data[$field] ?? null;
         }

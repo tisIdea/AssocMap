@@ -150,6 +150,105 @@ void main() {
     email: 'synthetic@example.test',
     password: 'test-only-password',
   );
+
+  test(
+    'Member submission 401 invalidates access without refresh or write replay',
+    () async {
+      await login();
+      final authCalls = authRequests.length;
+      apiReply = (_) => json({'message': 'Unauthenticated'}, 401);
+      await expectLater(
+        repository.submitMemberApplication({'first_name': 'Synthetic'}),
+        throwsA(
+          isA<ApiFailure>().having(
+            (e) => e.kind,
+            'kind',
+            ApiFailureKind.unauthenticated,
+          ),
+        ),
+      );
+      expect(
+        apiRequests.where((request) => request.method == 'POST'),
+        hasLength(1),
+      );
+      expect(
+        authRequests
+            .skip(authCalls)
+            .every((request) => request.url.path.endsWith('/logout')),
+        isTrue,
+      );
+      expect(
+        authRequests.where(
+          (request) =>
+              request.url.queryParameters['grant_type'] == 'refresh_token',
+        ),
+        isEmpty,
+      );
+      expect(provider.currentSession, isNull);
+    },
+  );
+
+  test(
+    'Member submission validation keeps the session and retries only on explicit request',
+    () async {
+      await login();
+      apiReply = (_) => json({
+        'errors': {
+          'first_name': ['Required'],
+        },
+      }, 422);
+      await expectLater(
+        repository.submitMemberApplication({}),
+        throwsA(
+          isA<ApiFailure>().having(
+            (e) => e.kind,
+            'kind',
+            ApiFailureKind.validation,
+          ),
+        ),
+      );
+      expect(provider.currentSession, isNotNull);
+      expect(
+        apiRequests.where((request) => request.method == 'POST'),
+        hasLength(1),
+      );
+      apiReply = (_) => json({
+        'data': {'status': 'pending'},
+      }, 201);
+      await repository.submitMemberApplication({'first_name': 'Synthetic'});
+      expect(
+        apiRequests.where((request) => request.method == 'POST'),
+        hasLength(2),
+      );
+    },
+  );
+
+  test(
+    'Logout cancels member submission and rejects a late successful response',
+    () async {
+      await login();
+      final response = Completer<http.Response>();
+      apiReply = (_) => response.future;
+      final pending = repository.submitMemberApplication({
+        'first_name': 'Synthetic',
+      });
+      final rejected = expectLater(pending, throwsA(isA<ApiFailure>()));
+      await Future<void>.delayed(Duration.zero);
+      await repository.signOut();
+      await rejected;
+      response.complete(
+        json({
+          'data': {'status': 'pending'},
+        }, 201),
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(provider.currentSession, isNull);
+      await expectLater(
+        repository.read(config.identityUri!),
+        throwsA(isA<ApiFailure>()),
+      );
+    },
+  );
   Matcher failure(AuthFailureCode code) =>
       isA<AuthFailure>().having((e) => e.code, 'code', code);
   final dashboardUri = Uri.parse(

@@ -108,8 +108,10 @@ class GisFinalizedProjectMaintenanceTest extends TestCase
             $t->timestamp('closed_at')->nullable(); $t->text('closure_remarks')->nullable(); $t->string('closed_by')->nullable();
             $t->timestamp('archived_at')->nullable(); $t->timestamps();
         });
+        Schema::create('gis_site_types', function (Blueprint $t) { $t->id(); $t->string('code', 50)->unique(); $t->string('name', 100); });
         Schema::create('gis_locations', function (Blueprint $t) {
-            $t->string('id')->primary(); $t->string('association_id')->nullable(); $t->string('project_id');
+            $t->string('id')->primary(); $t->string('association_id')->nullable(); $t->string('project_id')->nullable();
+            $t->foreignId('site_type_id')->nullable()->constrained('gis_site_types')->restrictOnDelete();
             $t->string('location_type'); $t->string('location_name'); $t->text('geom');
             foreach (['address', 'public_title', 'public_description', 'public_address', 'published_by', 'created_by', 'updated_by', 'archived_by'] as $column) $t->text($column)->nullable();
             $t->boolean('is_published')->default(false); $t->timestamp('published_at')->nullable(); $t->timestamp('archived_at')->nullable();
@@ -120,7 +122,6 @@ class GisFinalizedProjectMaintenanceTest extends TestCase
             foreach (['actor_user_id', 'action_type', 'module', 'entity_type', 'entity_id', 'old_values', 'new_values', 'ip_address', 'user_agent'] as $column) $t->text($column)->nullable();
             $t->timestamp('performed_at');
         });
-        (require database_path('migrations/2026_10_28_000000_add_gis_site_types.php'))->up();
         foreach ($this->historyTables() as $table) Schema::create($table, function (Blueprint $t) { $t->string('id')->primary(); $t->text('value'); });
     }
 
@@ -129,6 +130,111 @@ class GisFinalizedProjectMaintenanceTest extends TestCase
         return ['monitoring_records', 'monitoring_production', 'monitoring_production_monthly', 'monitoring_income',
             'trainings', 'training_participants', 'program_activity_records', 'project_products', 'project_materials',
             'monitoring_materials', 'monitoring_visit_reports'];
+    }
+
+    #[DataProvider('classificationGeometries')]
+    public function test_classification_maintenance_preserves_geometry_bytes_and_publication(array $geometry, bool $submitGeometry): void
+    {
+        DB::table('gis_site_types')->insert([['id' => 1, 'code' => 'synthetic_one', 'name' => 'Synthetic one'],
+            ['id' => 2, 'code' => 'synthetic_two', 'name' => 'Synthetic two']]);
+        $type = $geometry['type'] === 'Point' ? 'project_point' : 'project_boundary';
+        $user = $this->actor();
+        $request = Request::create('/gis', 'PATCH');
+        $created = $this->gis->store($this->payload(['location_type' => $type, 'geometry' => $geometry]), $user, $request);
+        $id = $created['feature']['id'];
+        $this->gis->lifecycle($id, 'publish', $created['feature']['properties']['version'], $user, $request);
+        $stored = json_encode($geometry, JSON_PRETTY_PRINT | JSON_PRESERVE_ZERO_FRACTION);
+        DB::table('gis_locations')->where('id', $id)->update(['geom' => $stored]);
+        $protected = ['geom', 'association_id', 'project_id', 'location_type', 'is_published', 'published_by', 'published_at'];
+        $before = GisLocation::findOrFail($id)->only($protected);
+        $history = $this->snapshot();
+        Schema::create('media_photos', function (Blueprint $t) { $t->string('id'); $t->string('gis_location_id'); $t->string('state'); });
+        DB::table('media_photos')->insert(['id' => 'synthetic-photo', 'gis_location_id' => $id, 'state' => 'ready']);
+
+        foreach ([1, 2, null] as $siteType) {
+            $payload = $this->payload(['version' => $this->queries->detail($user, $id)['properties']['version'],
+                'location_type' => $type, 'site_type_id' => $siteType, 'geometry' => $geometry]);
+            if (! $submitGeometry) {
+                unset($payload['geometry']);
+            }
+            DB::enableQueryLog();
+            DB::flushQueryLog();
+            $this->gis->update($id, $payload, $user, $request);
+            $updates = array_filter(DB::getQueryLog(), fn ($entry) => str_starts_with($entry['query'], 'UPDATE gis_locations SET'));
+            DB::disableQueryLog();
+            $this->assertCount(1, $updates);
+            foreach ($updates as $entry) $this->assertDoesNotMatchRegularExpression('/\bgeom\s*=/', $entry['query']);
+            $this->assertSame($siteType, GisLocation::findOrFail($id)->site_type_id);
+            $this->assertEquals($before, GisLocation::findOrFail($id)->only($protected));
+            $event = DB::table('audit_logs')->where('entity_id', $id)->where('action_type', 'UPDATE')->orderByDesc('rowid')->first();
+            $this->assertSame($siteType, json_decode($event->new_values, true)['site_type_id']);
+        }
+        $this->assertSame($history, $this->snapshot());
+        $this->assertDatabaseHas('media_photos', ['id' => 'synthetic-photo', 'gis_location_id' => $id, 'state' => 'ready']);
+    }
+
+    public static function classificationGeometries(): array
+    {
+        $outer = [[123, 10], [124, 10], [124, 11], [123, 11], [123, 10]];
+        $hole = [[123.2, 10.2], [123.2, 10.4], [123.4, 10.4], [123.4, 10.2], [123.2, 10.2]];
+        $geometries = [
+            'point' => ['type' => 'Point', 'coordinates' => [123.12345678901234, 10.3]],
+            'polygon with hole' => ['type' => 'Polygon', 'coordinates' => [$outer, $hole]],
+            'multipart with hole' => ['type' => 'MultiPolygon', 'coordinates' => [[$outer, $hole],
+                [[[125, 10], [126, 10], [126, 11], [125, 10]]]]],
+        ];
+        $cases = [];
+        foreach ($geometries as $name => $geometry) {
+            foreach ([false, true] as $submitted) $cases[$name.($submitted ? ' old client' : ' omitted geometry')] = [$geometry, $submitted];
+        }
+
+        return $cases;
+    }
+
+    public function test_metadata_updates_retain_authorization_version_type_and_audit_guards(): void
+    {
+        DB::table('gis_site_types')->insert(['id' => 1, 'code' => 'synthetic', 'name' => 'Synthetic']);
+        $request = Request::create('/gis', 'PATCH');
+        $id = $this->gis->store($this->payload(), $this->actor(), $request)['feature']['id'];
+        $payload = $this->payload(['version' => $this->queries->detail($this->actor(), $id)['properties']['version'], 'site_type_id' => 1]);
+        unset($payload['geometry']);
+        $before = DB::table('gis_locations')->get()->toJson();
+        foreach (['other', 'account'] as $actor) $this->denied(fn () => $this->gis->update($id, $payload, $this->actor($actor), $request));
+        try {
+            $this->gis->update($id, array_replace($payload, ['version' => 'stale']), $this->actor(), $request);
+            $this->fail('A stale classification update must be rejected.');
+        } catch (HttpException $exception) {
+            $this->assertSame(409, $exception->getStatusCode());
+        }
+        try {
+            $this->gis->update($id, array_replace($payload, ['location_type' => 'project_boundary']), $this->actor(), $request);
+            $this->fail('Changing geometry type must require replacement geometry.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('geometry', $exception->errors());
+        }
+        $this->connection->rejectAudit = true;
+        try {
+            $this->gis->update($id, $payload, $this->actor(), $request);
+            $this->fail('Classification maintenance requires a successful audit.');
+        } catch (RuntimeException $exception) {
+            $this->assertSame('Synthetic audit failure.', $exception->getMessage());
+        }
+        $this->assertSame($before, DB::table('gis_locations')->get()->toJson());
+        $this->assertSame(1, DB::table('audit_logs')->count());
+    }
+
+    public function test_metadata_update_does_not_expose_or_convert_a_legacy_association_point(): void
+    {
+        DB::table('gis_locations')->insert(['id' => 'legacy-association-point', 'association_id' => 'association',
+            'project_id' => null, 'location_type' => 'association_point', 'location_name' => 'Legacy point',
+            'geom' => '{"type":"Point","coordinates":[123,10]}']);
+        $before = DB::table('gis_locations')->get()->toJson();
+        $payload = $this->payload(['version' => 'legacy-version']);
+        unset($payload['geometry']);
+        $this->denied(fn () => $this->gis->update('legacy-association-point', $payload, $this->actor(), Request::create('/gis', 'PATCH')));
+        $this->assertFalse($this->queries->scoped($this->actor(), null)->where('g.id', 'legacy-association-point')->exists());
+        $this->assertSame($before, DB::table('gis_locations')->get()->toJson());
+        $this->assertSame(0, DB::table('audit_logs')->count());
     }
 
     #[DataProvider('statusesAndManagers')]

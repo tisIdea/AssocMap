@@ -67,7 +67,7 @@ class UserInvitationResendService
                     : ($uncertain ? 'The resend outcome is uncertain. Do not retry; reconcile the recorded operation first.'
                         : 'Supabase did not accept the resend request. No account information was changed. Review the account before retrying.'),
                 $accepted, $uncertain, $result['reconciliation_auth_user_id'] ?? null);
-        } catch (ValidationException|HttpException $exception) {
+        } catch (ValidationException|HttpException) {
             // Never overwrite a concurrent revocation or claim after the external request.
             return $this->result('reconciliation_required', 'Account eligibility changed after the provider request. Its saved outcome requires review; email delivery is unverified. Do not resend before reconciliation.', 409);
         }

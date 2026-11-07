@@ -3,6 +3,8 @@
 namespace Tests\Feature;
 
 use App\Services\Auth\InvitationActivationContext;
+use App\Http\Middleware\ApiRequestGuard;
+use App\Models\UserProfile;
 use App\Http\Requests\PasswordRecoveryRequest;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Http\Client\ConnectionException;
@@ -13,6 +15,7 @@ use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\MessageBag;
 use Illuminate\Support\ViewErrorBag;
@@ -30,6 +33,8 @@ class PasswordRecoveryTest extends TestCase
     private bool $uncertain = false;
     private bool $wrongIdentity = false;
     private int $writes = 0;
+    private ?string $loginToken = null;
+    private ?\Closure $passwordOutcome = null;
 
     protected function setUp(): void
     {
@@ -52,6 +57,8 @@ class PasswordRecoveryTest extends TestCase
         Schema::create('user_profiles', function (Blueprint $table) {
             $table->uuid('id')->primary(); $table->unsignedBigInteger('role_id'); $table->string('display_name');
             $table->boolean('is_active'); $table->timestamp('activated_at')->nullable(); $table->timestamps();
+            $table->timestampTz('auth_sessions_valid_after')->nullable();
+            $table->string('approved_email')->nullable(); $table->uuid('email_change_hold_id')->nullable();
         });
         Schema::create('user_invitations', function (Blueprint $table) {
             $table->uuid('id')->primary(); $table->uuid('auth_user_id'); $table->string('email'); $table->string('status');
@@ -62,6 +69,9 @@ class PasswordRecoveryTest extends TestCase
         DB::table('user_profiles')->insert(['id' => self::ID, 'role_id' => 1,
             'display_name' => 'Synthetic User', 'is_active' => true, 'activated_at' => now()]);
         Http::fake(function (Request $request) {
+            if (str_contains($request->url(), '/auth/v1/token?') && $this->loginToken !== null) {
+                return Http::response(['access_token' => $this->loginToken, 'refresh_token' => 'synthetic_fresh_refresh', 'user' => $this->identity()]);
+            }
             if (str_contains($request->url(), '/auth/v1/recover?')) return Http::response('{}', 200, ['Content-Type' => 'application/json']);
             if (str_ends_with($request->url(), '/auth/v1/verify')) {
                 $this->assertSame('recovery', $request['type']);
@@ -74,6 +84,7 @@ class PasswordRecoveryTest extends TestCase
             if ($request->method() === 'PUT') {
                 $this->writes++;
                 if ($this->uncertain) throw new ConnectionException('Synthetic private provider failure');
+                if ($this->passwordOutcome !== null && ($outcome = ($this->passwordOutcome)()) !== null) return $outcome;
             }
             return Http::response($this->identity($this->wrongIdentity ? self::OTHER : self::ID));
         });
@@ -106,7 +117,7 @@ class PasswordRecoveryTest extends TestCase
         Http::assertSentCount(1);
     }
 
-    public function test_valid_recovery_changes_only_the_provider_password_and_does_not_log_in(): void
+    public function test_valid_recovery_changes_the_password_and_session_cutoff_without_logging_in(): void
     {
         $before = (array) DB::table('user_profiles')->first();
         $this->verifyLink()->assertRedirect(route('password.reset'))
@@ -118,7 +129,10 @@ class PasswordRecoveryTest extends TestCase
             ->assertRedirect(route('password.forgot'))->assertSessionHas('recovery_completed', true)
             ->assertSessionMissing('password_recovery_context')->assertSessionMissing('supabase_access_token');
         $this->assertSame(1, $this->writes);
-        $this->assertSame($before, (array) DB::table('user_profiles')->first());
+        $after = (array) DB::table('user_profiles')->first();
+        $this->assertNotNull($after['auth_sessions_valid_after']);
+        unset($before['auth_sessions_valid_after'], $after['auth_sessions_valid_after'], $before['updated_at'], $after['updated_at']);
+        $this->assertSame($before, $after);
         $this->remember($this->get('/forgot-password'))->assertOk()->assertViewHas('step', 'success')
             ->assertSee('Password updated successfully. Redirecting you to sign in...')
             ->assertDontSee('name="email"', false)->assertDontSee('Request recovery link')
@@ -153,13 +167,172 @@ class PasswordRecoveryTest extends TestCase
         $this->assertSame(0, $this->writes);
     }
 
-    public function test_an_uncertain_password_write_cannot_be_replayed(): void
+    #[DataProvider('sessionEncryptionModes')]
+    public function test_an_uncertain_password_write_cannot_be_replayed(bool $encrypted): void
     {
+        config(['session.encrypt' => $encrypted]);
+        $before = (array) DB::table('user_profiles')->first();
         $this->verifyLink()->assertRedirect(route('password.reset'));
         $this->uncertain = true;
         $this->remember($this->post('/password-recovery/password', ['password' => self::PASSWORD, 'password_confirmation' => self::PASSWORD]))
             ->assertRedirect(route('password.forgot'))->assertSessionHasErrors('recovery')
             ->assertSessionMissing('_old_input')->assertSessionMissing('password_recovery_context');
+        $this->post('/password-recovery/password', ['password' => self::PASSWORD, 'password_confirmation' => self::PASSWORD]);
+        $this->assertSame(1, $this->writes);
+        $this->assertSame($before, (array) DB::table('user_profiles')->first());
+    }
+
+    #[DataProvider('recoverySessionModes')]
+    public function test_confirmed_recovery_requires_fresh_password_sessions_on_web_and_mobile(string $role, bool $encrypted): void
+    {
+        config(['session.encrypt' => $encrypted]);
+        $this->assertSame($encrypted, app('session.store') instanceof \Illuminate\Session\EncryptedStore);
+        DB::table('roles')->where('id', 1)->update(['code' => $role]);
+        DB::unprepared(<<<'SQL'
+            CREATE TABLE associations (id TEXT PRIMARY KEY, name TEXT, status TEXT, archived_at TEXT);
+            CREATE TABLE association_accounts (id TEXT PRIMARY KEY, user_id TEXT, association_id TEXT, is_active BOOLEAN);
+            ATTACH DATABASE ':memory:' AS auth;
+            CREATE TABLE auth.sessions (id TEXT PRIMARY KEY, user_id TEXT, created_at TEXT);
+            SQL);
+        DB::table('associations')->insert(['id' => self::OTHER, 'name' => 'Retained association', 'status' => 'active']);
+        DB::table('association_accounts')->insert(['id' => self::OTHER, 'user_id' => self::ID, 'association_id' => self::OTHER, 'is_active' => true]);
+        DB::table('user_profiles')->insert(['id' => self::OTHER, 'role_id' => 1, 'display_name' => 'Other account', 'is_active' => true]);
+        $links = DB::table('association_accounts')->get()->toJson();
+        $other = (array) DB::table('user_profiles')->where('id', self::OTHER)->first();
+        Route::middleware(['web', 'supabase.auth'])->get('/_tests/recovery-web', fn () => response('Authorized'));
+        Route::middleware(['api', ApiRequestGuard::class, 'supabase.api.auth'])
+            ->get('/api/v1/_tests/recovery-mobile', fn () => response()->json(['authorized' => true]));
+        $oldProof = now()->subMinute()->timestamp;
+        DB::table('auth.sessions')->insert(['id' => self::ID, 'user_id' => self::ID, 'created_at' => now()->subMinute()]);
+        $old = $this->sessionToken(self::ID, 'password', $oldProof);
+        $this->withSession(['supabase_access_token' => $old])->get('/_tests/recovery-web')->assertOk();
+        $this->withHeader('Authorization', 'Bearer '.$old)->getJson('/api/v1/_tests/recovery-mobile')->assertOk();
+        $this->withSession(['supabase_access_token' => null]);
+        $this->verifyLink()->assertRedirect(route('password.reset'));
+        $this->remember($this->post('/password-recovery/password', ['password' => self::PASSWORD, 'password_confirmation' => self::PASSWORD]))
+            ->assertSessionHas('recovery_completed', true)->assertSessionMissing('supabase_access_token');
+        $this->assertNotNull(UserProfile::findOrFail(self::ID)->auth_sessions_valid_after);
+        $this->withSession(['supabase_access_token' => $old])->get('/_tests/recovery-web')
+            ->assertRedirect(route('login'))->assertSessionMissing('supabase_access_token');
+        $this->withHeader('Authorization', 'Bearer '.$old)->getJson('/api/v1/_tests/recovery-mobile')->assertForbidden();
+        $this->travel(2)->seconds();
+        // New JWT issuance alone must not make an old provider session fresh.
+        $refreshed = $this->sessionToken(self::ID, 'password', $oldProof);
+        $this->withHeader('Authorization', 'Bearer '.$refreshed)->getJson('/api/v1/_tests/recovery-mobile')->assertForbidden();
+        // Even a recent password proof cannot rehabilitate the original session.
+        $this->withHeader('Authorization', 'Bearer '.$this->sessionToken(self::ID, 'password', now()->timestamp))
+            ->getJson('/api/v1/_tests/recovery-mobile')->assertForbidden();
+        DB::table('auth.sessions')->insert(['id' => self::OTHER, 'user_id' => self::ID, 'created_at' => now()]);
+        $recovery = $this->sessionToken(self::OTHER, 'recovery', now()->timestamp);
+        $this->withHeader('Authorization', 'Bearer '.$recovery)->getJson('/api/v1/_tests/recovery-mobile')->assertForbidden();
+        $fresh = $this->sessionToken(self::OTHER, 'password', now()->timestamp);
+        $this->loginToken = $fresh;
+        $this->remember($this->post('/login', ['email' => 'recipient@example.test', 'password' => self::PASSWORD]))
+            ->assertSessionHas('supabase_access_token', $fresh);
+        $this->get('/_tests/recovery-web')->assertOk();
+        $this->withHeader('Authorization', 'Bearer '.$fresh)->getJson('/api/v1/_tests/recovery-mobile')->assertOk();
+        $this->assertSame($links, DB::table('association_accounts')->get()->toJson());
+        $this->assertSame($other, (array) DB::table('user_profiles')->where('id', self::OTHER)->first());
+        $this->assertTrue(UserProfile::findOrFail(self::ID)->is_active);
+        $this->assertSame(1, $this->writes);
+        Http::assertNotSent(fn (Request $request) => str_contains($request->url(), '/logout'));
+    }
+
+    public static function recoverySessionModes(): array
+    {
+        return [['system_admin', false], ['field_officer', false], ['association_account', false],
+            ['system_admin', true], ['field_officer', true], ['association_account', true]];
+    }
+
+    public static function sessionEncryptionModes(): array
+    {
+        return [[false], [true]];
+    }
+
+    private function sessionToken(string $session, string $method, int $proof): string
+    {
+        $claims = ['sub' => self::ID, 'session_id' => $session, 'iss' => 'https://auth.example.test/auth/v1',
+            'role' => 'authenticated', 'aud' => 'authenticated', 'iat' => now()->timestamp, 'exp' => now()->addHour()->timestamp,
+            'amr' => [['method' => $method, 'timestamp' => $proof]]];
+
+        return 'synthetic_header.'.rtrim(strtr(base64_encode(json_encode($claims)), '+/', '-_'), '=').'.synthetic_signature';
+    }
+
+    public function test_confirmed_recovery_never_moves_an_existing_cutoff_backwards(): void
+    {
+        $cutoff = now()->addMinute()->format('Y-m-d H:i:s');
+        DB::table('user_profiles')->where('id', self::ID)->update(['auth_sessions_valid_after' => $cutoff]);
+        $this->verifyLink()->assertRedirect(route('password.reset'));
+        $this->post('/password-recovery/password', ['password' => self::PASSWORD, 'password_confirmation' => self::PASSWORD])
+            ->assertSessionHas('recovery_completed', true);
+        $this->assertSame($cutoff, DB::table('user_profiles')->where('id', self::ID)->value('auth_sessions_valid_after'));
+    }
+
+    #[DataProvider('unconfirmedPasswordOutcomes')]
+    public function test_unconfirmed_password_outcomes_do_not_advance_cutoff_revoke_or_replay(string $outcome): void
+    {
+        DB::table('user_profiles')->where('id', self::ID)->update(['auth_sessions_valid_after' => now()->subDay()]);
+        $before = (array) DB::table('user_profiles')->first();
+        $this->verifyLink()->assertRedirect(route('password.reset'));
+        $this->passwordOutcome = fn () => match ($outcome) {
+            'denied' => Http::response(['error_code' => 'weak_password'], 422),
+            'unavailable' => Http::response('{}', 503),
+            'redirect' => Http::response('{}', 302),
+            'malformed' => Http::response('true', 200, ['Content-Type' => 'application/json']),
+            'wrong identity' => Http::response($this->identity(self::OTHER)),
+            'timeout' => throw new ConnectionException('Synthetic private failure'),
+        };
+        $this->remember($this->post('/password-recovery/password', ['password' => self::PASSWORD, 'password_confirmation' => self::PASSWORD]))
+            ->assertRedirect(route('password.forgot'))->assertSessionHasErrors('recovery')
+            ->assertSessionMissing('recovery_completed')->assertSessionMissing('supabase_access_token')->assertSessionMissing('password_recovery_context');
+        $this->assertSame($before, (array) DB::table('user_profiles')->first());
+        $this->post('/password-recovery/password', ['password' => self::PASSWORD, 'password_confirmation' => self::PASSWORD]);
+        $this->assertSame(1, $this->writes);
+        Http::assertNotSent(fn (Request $request) => str_contains($request->url(), '/logout'));
+    }
+
+    public static function unconfirmedPasswordOutcomes(): array
+    {
+        return array_map(fn ($outcome) => [$outcome], ['denied', 'unavailable', 'redirect', 'malformed', 'wrong identity', 'timeout']);
+    }
+
+    #[DataProvider('eligibilityChanges')]
+    public function test_recovery_never_overrides_a_lifecycle_change_during_the_provider_write(string $change): void
+    {
+        $this->verifyLink()->assertRedirect(route('password.reset'));
+        $this->passwordOutcome = function () use ($change) {
+            match ($change) {
+                'revocation' => DB::table('user_profiles')->update(['is_active' => false]),
+                'role disabled' => DB::table('roles')->update(['is_active' => false]),
+                'email hold' => DB::table('user_profiles')->update(['email_change_hold_id' => self::OTHER]),
+                'email binding' => DB::table('user_profiles')->update(['approved_email' => 'other@example.test']),
+            };
+        };
+        $this->post('/password-recovery/password', ['password' => self::PASSWORD, 'password_confirmation' => self::PASSWORD])
+            ->assertSessionHasErrors('recovery')->assertSessionMissing('recovery_completed');
+        $this->assertNull(UserProfile::findOrFail(self::ID)->auth_sessions_valid_after);
+        $this->assertSame(1, $this->writes);
+        match ($change) {
+            'revocation' => $this->assertFalse(UserProfile::findOrFail(self::ID)->is_active),
+            'role disabled' => $this->assertSame(0, DB::table('roles')->value('is_active')),
+            'email hold' => $this->assertSame(self::OTHER, UserProfile::findOrFail(self::ID)->email_change_hold_id),
+            'email binding' => $this->assertSame('other@example.test', UserProfile::findOrFail(self::ID)->approved_email),
+        };
+    }
+
+    public static function eligibilityChanges(): array
+    {
+        return [['revocation'], ['role disabled'], ['email hold'], ['email binding']];
+    }
+
+    public function test_local_cutoff_failure_after_confirmed_password_write_never_reports_success_or_replays(): void
+    {
+        $this->verifyLink()->assertRedirect(route('password.reset'));
+        DB::unprepared("CREATE TRIGGER reject_cutoff BEFORE UPDATE OF auth_sessions_valid_after ON user_profiles BEGIN SELECT RAISE(ABORT, 'Synthetic boundary failure'); END");
+        $before = (array) DB::table('user_profiles')->first();
+        $this->remember($this->post('/password-recovery/password', ['password' => self::PASSWORD, 'password_confirmation' => self::PASSWORD]))
+            ->assertSessionHasErrors('recovery')->assertSessionMissing('recovery_completed')->assertSessionMissing('password_recovery_context');
+        $this->assertSame($before, (array) DB::table('user_profiles')->first());
         $this->post('/password-recovery/password', ['password' => self::PASSWORD, 'password_confirmation' => self::PASSWORD]);
         $this->assertSame(1, $this->writes);
     }
@@ -256,8 +429,10 @@ class PasswordRecoveryTest extends TestCase
         Http::assertNothingSent();
     }
 
-    public function test_consent_ends_only_the_local_session_and_still_requires_verified_recovery_identity(): void
+    #[DataProvider('sessionEncryptionModes')]
+    public function test_consent_ends_only_the_local_session_and_still_requires_verified_recovery_identity(bool $encrypted): void
     {
+        config(['session.encrypt' => $encrypted]);
         $before = (array) DB::table('user_profiles')->first();
         $this->remember($this->withSession(['supabase_access_token' => 'synthetic_existing_access',
             'supabase_refresh_token' => 'synthetic_existing_refresh', 'user_profile_id' => self::OTHER,
@@ -320,8 +495,10 @@ class PasswordRecoveryTest extends TestCase
         $this->assertSame(0, $this->writes);
     }
 
-    public function test_storage_failure_preserves_the_existing_session_and_does_not_consume_the_link(): void
+    #[DataProvider('sessionEncryptionModes')]
+    public function test_storage_failure_preserves_the_existing_session_and_does_not_consume_the_link(bool $encrypted): void
     {
+        config(['session.encrypt' => $encrypted]);
         Log::spy();
         $storage = Mockery::mock(InvitationActivationContext::class);
         $storage->shouldReceive('checkStorage')->once()->andThrow(new \RuntimeException('Synthetic private storage detail'));

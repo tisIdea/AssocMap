@@ -88,7 +88,7 @@ class WorkspaceHeaderTest extends TestCase
         $this->assertSame(1, $xpath->query('//*[@data-feedback-root]')->length);
         $this->assertSame(1, $xpath->query('//*[@data-feedback-acknowledge]')->length);
         $this->assertSame($prefix === 'admin' ? 1 : 0, $xpath->query('//*[@id="current-context"]')->length);
-        $this->assertSame($prefix === 'admin' ? 1 : 0, $xpath->query($header.'//button[@aria-label="Notifications preview" and @disabled]')->length);
+        $this->assertSame(0, $xpath->query($header.'//button[@aria-label="Notifications preview"]')->length);
         $this->assertSame($prefix === 'admin' ? 'SA' : '', $xpath->evaluate('string('.$header.'//span[@class="avatar"])'));
     }
 
@@ -100,7 +100,7 @@ class WorkspaceHeaderTest extends TestCase
         $this->assertSame(1, $xpath->query($form)->length);
         $this->assertSame(0, $xpath->query($form.'/@onsubmit')->length);
         $this->assertSame('Change email', $xpath->evaluate('string('.$dialog.'//h2)'));
-        $this->assertSame('Email changes are not connected yet.', $xpath->evaluate('string('.$form.'/p)'));
+        $this->assertSame('Email changes are unavailable in this dialog. Use Change Email from the account details page.', $xpath->evaluate('string('.$form.'/p)'));
         $this->assertSame(1, $xpath->query($form.'//input[@name="new_email" and @id="email-change-new_email" and @type="email" and @required]')->length);
         $this->assertSame(1, $xpath->query($form.'//label[@for="email-change-new_email"]')->length);
         $this->assertSame(1, $xpath->query($form.'//button[@type="button" and @data-close-dialog and normalize-space(.)="Cancel"]')->length);
@@ -115,7 +115,7 @@ class WorkspaceHeaderTest extends TestCase
             'association' => ['dashboard', 'member-applications.index', 'projects.index', 'trainings.index', 'program-activities.index', 'monitoring.index', 'gis.index', 'reports.index'],
         ];
         $labels = [
-            'admin' => ['Dashboard', 'Area Management', 'Association Management', 'Member Management', 'Projects', 'Trainings', 'Program Activities', 'Monitoring', 'GIS Mapping', 'Reports & Analytics', 'User Management', 'Audit Log'],
+            'admin' => ['Dashboard', 'Area Management', 'Association Management', 'Registered Members', 'Projects', 'Trainings', 'Program Activities', 'Monitoring', 'GIS Mapping', 'Reports & Analytics', 'User Management', 'Audit Log'],
             'field-officer' => ['Dashboard', 'Assigned Associations', 'Association Officers', 'Member Management', 'Member Applications', 'Projects', 'Trainings', 'Program Activities', 'Monitoring', 'GIS Mapping', 'Reports & Analytics'],
             'association' => ['Dashboard', 'Member Applications', 'Projects', 'Trainings', 'Program Activities', 'Monitoring', 'GIS Mapping', 'Reports & Analytics'],
         ];
@@ -132,7 +132,9 @@ class WorkspaceHeaderTest extends TestCase
             $this->assertSame('AssocMap Information System', $xpath->evaluate('string(//aside/div[@class="sidebar-footer"]//strong)'));
             $this->assertSame(1, $xpath->query('//aside[@data-workspace-sidebar]')->length);
             $this->assertSame(1, $xpath->query('//aside//button[@data-collapse-sidebar and @type="button" and @aria-expanded="true" and @aria-label="Collapse sidebar" and @aria-controls="'.$prefix.'-sidebar"]')->length);
-            $this->assertSame(0, $xpath->query('//aside//*[@data-disclosure or @hidden]')->length);
+            $this->assertSame(0, $xpath->query('//aside//*[@data-disclosure]')->length);
+            $this->assertSame(1, $xpath->query('//aside//*[@hidden]')->length);
+            $this->assertSame(1, $xpath->query('//aside//button[@data-close-workspace-sidebar and @hidden and @type="button" and @aria-controls="'.$prefix.'-sidebar"]')->length);
             $headings = $prefix === 'association'
                 ? ['OVERVIEW', 'MEMBERSHIP', 'PROJECTS & ACTIVITIES', 'MONITORING & INSIGHTS']
                 : ['OVERVIEW', 'ASSOCIATIONS & MEMBERS', 'PROJECTS & ACTIVITIES', 'MONITORING & INSIGHTS'];
@@ -151,7 +153,8 @@ class WorkspaceHeaderTest extends TestCase
                 $this->assertSame(1, $link->getElementsByTagName('svg')->length);
             }
             $this->assertSame(0, $xpath->query('//aside//svg[not(@aria-hidden="true") or not(@focusable="false")]')->length);
-            $this->assertSame('Capstone Project Prototype', $xpath->evaluate('string(//footer[@class="app-footer"]/span[2])'));
+            $this->assertSame(1, $xpath->query('//footer[@class="app-footer"]/span')->length);
+            $this->assertStringContainsString('GIS-Based Program Monitoring Information System', $xpath->evaluate('string(//footer[@class="app-footer"])'));
             $this->assertStringNotContainsString('BFAR', $xpath->evaluate('string(//aside)'));
         }
     }

@@ -53,7 +53,7 @@ class MemberApplicationService
                 $position, $applicationId, &$photoPath, &$callbackCompleted) {
                 // Match account replacement: role, association, account-holder profile, then link.
                 $role = Role::whereKey($currentUser->role_id)->where('code', 'association_account')->sharedLock()->first();
-                abort_unless($role, 403);
+                abort_unless($role !== null, 403);
                 $this->lifecycle->lockOperational([$associationAccount->association_id]);
                 $actor = UserProfile::whereKey($currentUser->id)->lockForUpdate()->first();
                 abort_unless($actor && (string) $actor->role_id === (string) $role->id

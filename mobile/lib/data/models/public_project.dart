@@ -11,6 +11,11 @@ class PublicProject {
     this.location,
     this.boundary,
     this.locationType,
+    this.displayPoint,
+    this.siteTypeId,
+    this.siteTypeCode,
+    this.siteTypeName,
+    this.geometryType,
   });
 
   final String id;
@@ -22,12 +27,26 @@ class PublicProject {
   final GeoPoint? location;
   final GeoBoundary? boundary;
   final String? locationType;
+  final GeoPoint? displayPoint;
+  final int? siteTypeId;
+  final String? siteTypeCode;
+  final String? siteTypeName;
+  final String? geometryType;
+
+  bool get isBoundary => locationType == 'project_boundary';
+  GeoPoint? get publicMarker => isBoundary ? displayPoint : location;
+  List<GeoPoint> get publicDisplayPoints => [?publicMarker];
+  String get siteTypeLabel =>
+      siteTypeName ??
+      (siteTypeId != null || siteTypeCode != null
+          ? 'Unknown classification'
+          : 'Unclassified');
 
   String get filterLabel =>
       category ??
       switch (locationType) {
-        'project_point' => 'Project locations',
-        'project_boundary' => 'Project boundaries',
+        'project_point' => 'Project Point',
+        'project_boundary' => 'Project Boundary',
         _ => 'Public locations',
       };
 

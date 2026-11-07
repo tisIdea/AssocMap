@@ -7,10 +7,11 @@
 @media (max-width: 1020px) {
     .sidebar { transform: translateX(-100%); width: 264px; transition: transform .18s ease; }.main-shell { margin-left: 0; }.mobile-menu { display: inline-flex; }.mobile-menu .icon { width: 20px; }.sidebar-collapse { display: none; }.sidebar-footer { padding-bottom: 24px; }
     body.drawer-open { overflow: hidden; }.drawer-open .sidebar { transform: translateX(0); }.sidebar-backdrop { position: fixed; inset: 0; z-index: 35; background: #16324f80; border: 0; width: 100%; }
+    .sidebar .sidebar-dismiss { display: flex; }
 }
 @media (max-width: 760px) {
     main { padding: 18px 18px 28px; }.topbar { min-height: 65px; padding: 12px 18px; }.context-product, .topbar-context > .icon, .account-copy, .account-divider { display: none; }.topbar-context { gap: 8px; }.topbar-account { gap: 5px; }
-    h1 { font-size: 24px; }.page-header { align-items: flex-start; gap: 10px; margin-bottom: 21px; }.page-header p { font-size: 12px; }.page-header-actions { display: none; }.preview-notice { font-size: 10px; margin-bottom: 20px; }.notice-separator { margin: 0 4px; }
+    h1 { font-size: 24px; }.page-header { align-items: flex-start; gap: 14px; margin-bottom: 21px; }.page-header p { font-size: 13px; }.page-header-actions { width: 100%; }.preview-notice { font-size: 10px; margin-bottom: 20px; }.notice-separator { margin: 0 4px; }
     .stat-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }.stat-card { padding: 18px; }.stat-top { font-size: 11px; }.dashboard-grid { grid-template-columns: 1fr; }.chart-card { min-height: 260px; }.donut-layout { gap: 35px; }.donut { width: 130px; height: 130px; }.donut > div { width: 100px; height: 100px; }.bar-axis { grid-template-columns: 125px 1fr 14px; }.chart-scale { margin-left: 133px; }
     .activity-item { flex-wrap: nowrap; }.activity-item > .badge { margin-left: auto; }.audit-preview { flex-wrap: wrap; }.audit-preview time { margin-left: 45px; }.audit-preview > .badge { margin-left: auto; }
     .table-toolbar { padding: 16px; gap: 9px; }.search-box { flex-basis: 100%; }.sort-control { margin-left: auto; }.sort-control label { display: none; }.table-toolbar > .button-primary { width: 100%; }.filter-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }.filter-panel { padding: 0 16px 16px; }
@@ -22,7 +23,7 @@
 @media (max-width: 480px) {
     .form-grid, .filter-grid, .detail-grid { grid-template-columns: 1fr; }.field-wide { grid-column: auto; }.form-section { padding: 16px; }.repeat-row { padding: 14px; }.repeat-row-heading { align-items: flex-start; }.participant-picker { align-items: stretch; flex-direction: column; }.check-label { margin-top: 5px; }
     .stat-card { padding: 14px; }.stat-top { font-size: 10px; }.stat-icon { width: 28px; height: 28px; }.stat-card > small { font-size: 9px; }.stat-card > strong { font-size: 27px; }
-    .panel-heading { padding: 19px 17px; }.panel-heading h2 { font-size: 13px; }.panel-heading > .badge { display: none; }.activity-item { padding: 5px 17px 20px; flex-wrap: wrap; }.activity-item > .badge { margin-left: 47px; }.audit-preview { padding: 4px 17px 20px; }.audit-preview > .badge { margin-left: 45px; }.audit-preview time { margin-left: 45px; width: 100%; }
+    .panel-heading { padding: 19px 17px; flex-wrap: wrap; }.panel-heading h2 { font-size: 14px; }.activity-item { padding: 5px 17px 20px; flex-wrap: wrap; }.activity-item > .badge { margin-left: 47px; }.audit-preview { padding: 4px 17px 20px; }.audit-preview > .badge { margin-left: 45px; }.audit-preview time { margin-left: 45px; width: 100%; }
     .bar-chart { padding: 20px 17px; }.bar-axis { grid-template-columns: 107px 1fr 10px; }.chart-scale { margin-left: 114px; }.table-footer { padding: 15px; }.filter-panel .panel-heading > span { display: none; }
     .report-document { padding: 18px; }.report-document-header { flex-wrap: wrap; }.report-document-header .badge { margin-left: 0; }.report-stats span { font-size: 9px; }.map-preview-label { left: 12px; font-size: 9px; }.location-panel dl { grid-template-columns: 1fr; }.modal { padding: 20px; }.modal .detail-grid { grid-template-columns: 1fr; }
 }

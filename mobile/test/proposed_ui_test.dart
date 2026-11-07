@@ -27,6 +27,7 @@ import 'package:mobile/features/public_map/public_map_screen.dart';
 import 'association_dashboard_test.dart' show dashboard;
 import 'analytics_report_test.dart' show report;
 import 'support/test_tile_provider.dart';
+import 'support/member_application_fixtures.dart';
 
 final _activeSession = AuthSession(
   userId: '11111111-1111-4111-8111-111111111111',
@@ -168,6 +169,7 @@ class _Public implements ViewportPublicProjectsRepository {
     GisBounds? bounds,
     String query = '',
     String? locationType,
+    String? siteTypeId,
   }) async => PublicGisResult(
     projects: await getPublicProjects(),
     bounds: GisBounds.fromJson([123.25, 9.6, 124.4, 11.4]),
@@ -276,6 +278,7 @@ void main() {
           session: _activeSession,
           dashboard: repository ?? _Dashboard(),
           analytics: reports,
+          memberApplications: TestMemberApplicationsRepository(),
         ),
         scale: scale,
       ),
@@ -393,7 +396,10 @@ void main() {
       await _snapshot(tester, '05-members');
       await tester.tap(find.text('Registrations').last);
       await tester.pumpAndSettle();
-      expect(find.text('Registration records unavailable'), findsOneWidget);
+      await tester.tap(find.text('View my applications'));
+      await tester.pumpAndSettle();
+      expect(find.text('My member applications'), findsNWidgets(2));
+      expect(find.text('Status: pending'), findsOneWidget);
       await _snapshot(tester, '05b-registrations');
       await tab(tester, 2);
       expect(find.text('Tilapia pond project'), findsOneWidget);
@@ -425,7 +431,7 @@ void main() {
               find.widgetWithText(FilledButton, 'Submit for Review'),
             )
             .onPressed,
-        isNull,
+        isNotNull,
       );
       await _snapshot(tester, '09-registration');
       await tester.enterText(find.byType(TextField).first, 'Local-only name');

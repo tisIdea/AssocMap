@@ -3,16 +3,18 @@ import 'leaflet/dist/leaflet.css';
 import { siteSymbol } from './gis-site-symbols.js';
 
 export { L };
-export const locationLabels = { project_point: 'Project point', project_boundary: 'Project boundary' };
+export const locationLabels = { project_point: 'Project Point', project_boundary: 'Project Boundary' };
 const pointIcons = new Map();
 
-function pointIcon(code) {
-    // Bound cache keys to the fixed symbol set, including one generic fallback.
+function pointIcon(code, boundary = false) {
+    // Bound cache keys to fixed artwork and the two existing geometry presentations.
     const html = siteSymbol(code);
-    if (!pointIcons.has(html)) pointIcons.set(html, L.divIcon({
-        html, className: 'gis-site-marker', iconSize: [32, 38], iconAnchor: [16, 37], popupAnchor: [0, -32],
+    const key = html + (boundary ? ':boundary' : ':point');
+    if (!pointIcons.has(key)) pointIcons.set(key, L.divIcon({
+        html, className: 'gis-site-marker' + (boundary ? ' gis-boundary-marker' : ''),
+        iconSize: [44, 44], iconAnchor: [22, 43], popupAnchor: [0, -38],
     }));
-    return pointIcons.get(html);
+    return pointIcons.get(key);
 }
 
 export function createGisMap(element, tileNotice) {
@@ -39,17 +41,17 @@ export function featureLayer(feature, select, publicView = false) {
         rendered = { ...feature, geometry: point };
     }
     const color = feature.properties.location_type === 'project_point' ? '#228855' : '#7444a7';
-    return L.geoJSON(rendered, {
+    const group = L.geoJSON(rendered, {
         pmIgnore: true,
         style: { color, weight: 3, fillOpacity: .16, pmIgnore: true },
-        pointToLayer: (_feature, latlng) => L.marker(latlng, { icon: pointIcon(feature.properties.site_type_code), keyboard: false, pmIgnore: true }),
+        pointToLayer: (_feature, latlng) => L.marker(latlng, { icon: pointIcon(feature.properties.site_type_code, representative), keyboard: false, pmIgnore: true }),
         onEachFeature: (_feature, layer) => {
             const popup = document.createElement('div');
             popup.className = 'gis-popup';
             const title = document.createElement('h3');
             title.textContent = feature.properties.title || 'Location';
             popup.append(title);
-            [locationLabels[feature.properties.location_type], feature.properties.site_type_name || 'Unclassified site', feature.properties.address].filter(Boolean).forEach(value => {
+            [`Geometry type: ${locationLabels[feature.properties.location_type]}`, `Site classification: ${feature.properties.site_type_name || 'Unclassified'}`, feature.properties.address].filter(Boolean).forEach(value => {
                 const text = document.createElement('p'); text.textContent = value; popup.append(text);
             });
             if (representative) {
@@ -63,12 +65,28 @@ export function featureLayer(feature, select, publicView = false) {
                 const path = layer.getElement?.();
                 if (!path) return;
                 path.setAttribute('tabindex', '0'); path.setAttribute('role', 'button');
+                path.setAttribute('aria-pressed', 'false');
                 path.setAttribute('aria-label', `View ${feature.properties.title || 'location'}, ${feature.properties.site_type_name || 'unclassified site'}, ${locationLabels[feature.properties.location_type]}${representative ? ', representative position' : ''}`);
                 path.onkeydown = event => {
                     if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); select(feature); layer.openPopup(); }
                 };
             });
         },
+    });
+    group.gisFeatureId = feature.id;
+    return group;
+}
+
+export function setFeatureSelection(group, id) {
+    group.eachLayer(feature => {
+        const selected = feature.gisFeatureId === id;
+        feature.setStyle?.({ color: selected ? '#174d36' : '#7444a7', weight: selected ? 5 : 3, fillOpacity: selected ? .24 : .16 });
+        feature.eachLayer?.(layer => {
+            const element = layer.getElement?.();
+            element?.classList.toggle('is-selected', selected);
+            element?.setAttribute('aria-pressed', String(selected));
+            if (selected) layer.bringToFront?.();
+        });
     });
 }
 

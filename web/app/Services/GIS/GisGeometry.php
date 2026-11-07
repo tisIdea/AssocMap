@@ -19,7 +19,7 @@ class GisGeometry
             || ! in_array($locationType, GisLocation::TYPES, true)) $this->invalid();
         try {
             if (strlen(json_encode($geometry, JSON_THROW_ON_ERROR)) > self::MAX_BYTES) $this->invalid();
-        } catch (JsonException $exception) {
+        } catch (JsonException) {
             $this->invalid();
         }
         $type = $geometry['type'] ?? null;

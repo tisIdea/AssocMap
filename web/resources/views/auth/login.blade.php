@@ -31,7 +31,7 @@
                         <strong>
                             Assoc<span>Map</span>
                         </strong>
-                        <small>Capstone Project Prototype</small>
+                        <small>Association and project monitoring</small>
                     </span>
                 </a>
             </div>
@@ -43,7 +43,7 @@
                 <h1 id="staff-login-title">Staff Sign In</h1>
 
                 <p class="staff-login-intro">
-                    Sign in to access your authorized AssocMap workspace..
+                    Sign in to access your authorized AssocMap workspace.
                 </p>
 
                 <form

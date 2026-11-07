@@ -5,7 +5,6 @@
     'accountLabel',
     'contextId' => null,
     'avatar' => null,
-    'notificationPreview' => false,
 ])
 
 <header class="topbar workspace-header">
@@ -16,11 +15,6 @@
         <span class="workspace-header-context" @if($contextId) id="{{ $contextId }}" @endif>{{ $context }}</span>
     </div>
     <div class="topbar-account">
-        @if($notificationPreview)
-            <button class="icon-button notification-button" type="button" disabled aria-label="Notifications preview">
-                <x-icon name="bell" />
-            </button>
-        @endif
         <span class="account-divider" aria-hidden="true"></span>
         @if($avatar)
             <span class="avatar">{{ $avatar }}</span>

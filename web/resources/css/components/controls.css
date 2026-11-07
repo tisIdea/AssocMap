@@ -1,11 +1,11 @@
 /* Shared controls, status indicators, and cards. */
 .card { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: var(--radius-md); box-shadow: var(--shadow-sm); min-width: 0; }
-.button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 9px 14px; min-height: 39px; border: 1px solid #dce3eb; border-radius: var(--radius-sm); background: white; color: #435368; font-size: 12px; font-weight: 600; line-height: 1.4; white-space: nowrap; }
+.button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 10px 14px; min-height: 44px; max-width: 100%; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: white; color: #435368; font-size: 13px; font-weight: 600; line-height: 1.4; white-space: normal; text-align: center; overflow-wrap: anywhere; }
 .button:hover { background: #f3f6fa; border-color: #bacada; }
 .button .icon { width: 16px; height: 16px; }
 .button-primary { background: var(--primary); color: white; border-color: var(--primary); }
 .button-primary:hover { background: var(--primary-hover); border-color: var(--primary-hover); }
-.button-outline { border-color: #cadcee; color: var(--primary); background: #f8fbfe; }
+.button-outline { border-color: var(--border-color); color: var(--primary); background: var(--primary-soft); }
 .button-white { color: var(--primary); border-color: transparent; }
 .button-quiet { border-color: transparent; background: transparent; }
 .button-danger { background: var(--danger); border-color: var(--danger); color: white; }
@@ -32,3 +32,6 @@
 .notice-success { background: #eaf6ef; border-color: #d5ecdf; color: #216845; }
 .notice-error { background: #fff0f0; border-color: #f3d4d8; color: #a12233; }
 .notice-error p { color: inherit; }
+.notice { overflow-wrap: anywhere; }
+.notice > .icon { flex-shrink: 0; }
+.notice:not(.notice-error):not(.notice-success) { background: #eef5fc; border-color: #dce9f6; color: #47647f; }

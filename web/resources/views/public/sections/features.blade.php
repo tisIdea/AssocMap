@@ -3,7 +3,7 @@
         <div class="public-section-heading public-features-heading">
             <p class="public-eyebrow">System purpose</p>
             <h2 id="public-features-title">Information that supports program monitoring.</h2>
-            <p>These areas describe the intended system capabilities. Live services are not connected to this template.</p>
+            <p>Authorized workspaces bring association records, program activities, maps, and reports together.</p>
         </div>
         <div class="public-feature-grid">
             <x-public-feature-card title="Association Monitoring" icon="building">Organize association and member information to support program monitoring.</x-public-feature-card>

@@ -5,7 +5,6 @@
     :display-name="$currentUser->display_name"
     :account-label="$currentUser->role->name"
     avatar="SA"
-    :notification-preview="true"
 >
     <x-slot:navigationToggle>
         <button class="icon-button mobile-menu" type="button" data-open-sidebar aria-label="Open navigation" aria-controls="admin-sidebar" aria-expanded="false"><x-icon name="menu" /></button>

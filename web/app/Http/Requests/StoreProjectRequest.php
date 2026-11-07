@@ -14,23 +14,12 @@ class StoreProjectRequest extends FormRequest
 
     protected function prepareForValidation(): void
     {
-        $this->merge([
-            'title' => $this->filled('title')
-                ? trim((string) $this->input('title'))
-                : null,
-
-            'description' => $this->filled('description')
-                ? trim((string) $this->input('description'))
-                : null,
-
-            'remarks' => $this->filled('remarks')
-                ? trim((string) $this->input('remarks'))
-                : null,
-
-            'new_commodity_name' => $this->filled('new_commodity_name')
-                ? trim((string) $this->input('new_commodity_name'))
-                : null,
-        ]);
+        $normalized = [];
+        foreach (['title', 'description', 'remarks', 'new_commodity_name'] as $field) {
+            $value = $this->input($field);
+            $normalized[$field] = is_string($value) ? trim($value) : $value;
+        }
+        $this->merge($normalized);
     }
 
     public function rules(): array

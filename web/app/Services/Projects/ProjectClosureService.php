@@ -4,10 +4,10 @@ namespace App\Services\Projects;
 
 use App\Models\Association;
 use App\Models\Project;
-use App\Models\Role;
 use App\Models\UserProfile;
 use App\Services\Associations\AssociationLifecycleService;
 use App\Services\Audit\AuditLogService;
+use App\Services\Programs\ProgramActorService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -18,7 +18,8 @@ class ProjectClosureService
     private const AUDIT_FIELDS = ['project_id', 'association_id', 'status', 'closed_at', 'closed_by', 'actor_role'];
 
     public function __construct(private ProjectLifecycleService $projects,
-        private AssociationLifecycleService $associations, private AuditLogService $audit) {}
+        private AssociationLifecycleService $associations, private AuditLogService $audit,
+        private ProgramActorService $actors) {}
 
     public function close(Request $request, Project $project, array $data): Project
     {
@@ -43,11 +44,9 @@ class ProjectClosureService
             throw ValidationException::withMessages([$confirmation => 'Type '.$word.' exactly, without surrounding spaces.']);
         }
         return DB::transaction(function () use ($request, $project, $data, $remarks, $outcome) {
-            $expectedRole = $request->attributes->get('current_user')?->role?->code;
-            $actor = UserProfile::whereKey($request->attributes->get('current_user')?->id)->sharedLock()->first();
-            abort_unless($actor, 403);
-            $actor->setRelation('role', Role::whereKey($actor->role_id)->sharedLock()->first());
-            abort_unless($actor->canAccessApplication() && $actor->role?->code === $expectedRole, 403);
+            $identity = $request->attributes->get('current_user');
+            abort_unless($identity instanceof UserProfile, 403);
+            $actor = $this->actors->lock($identity);
             $association = Association::whereKey($project->association_id)->lockForUpdate()->firstOrFail();
             $this->projects->authorize($actor, $association);
             $locked = Project::whereKey($project->id)->lockForUpdate()->firstOrFail();

@@ -23,9 +23,12 @@ use Mockery;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 use Tests\TestCase;
+use Tests\Support\CreatesAccountLifecycleSchema;
 
 class AccountReactivationTest extends TestCase
 {
+    use CreatesAccountLifecycleSchema;
+
     private const ADMIN = '11111111-1111-4111-8111-111111111111';
 
     private const USER = '22222222-2222-4222-8222-222222222222';
@@ -146,7 +149,7 @@ class AccountReactivationTest extends TestCase
             $table->text('new_values')->nullable();
             $table->timestamp('performed_at');
         });
-        (require database_path('migrations/2026_10_22_000000_add_account_reactivation.php'))->up();
+        $this->createReactivationSchema();
         DB::statement("ATTACH DATABASE ':memory:' AS auth");
         DB::statement('CREATE TABLE auth.users (id TEXT PRIMARY KEY, email TEXT)');
         DB::statement('CREATE TABLE auth.sessions (id TEXT PRIMARY KEY, user_id TEXT, created_at TEXT)');

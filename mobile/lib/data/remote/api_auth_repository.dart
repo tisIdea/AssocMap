@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -304,6 +305,54 @@ class ApiAuthRepository implements RestorableAuthRepository {
       // The SDK removes its local session before attempting remote logout.
     }
     if (cleanupFailure != null) throw cleanupFailure;
+  }
+
+  Future<Map<String, dynamic>> submitMemberApplication(
+    Map<String, String> fields, {
+    Uint8List? photo,
+    String? photoName,
+  }) async {
+    if (_approvedUser == null) {
+      throw const ApiFailure(ApiFailureKind.unauthenticated);
+    }
+    final generation = _generation;
+    try {
+      final session = await _session();
+      _checkGeneration(generation);
+      if (session.user.id != _approvedUser) {
+        throw const ApiFailure(ApiFailureKind.unauthenticated);
+      }
+      // Writes are never replayed after a 401 or an uncertain transport outcome.
+      final result = await _api.submitMemberApplication(
+        session.accessToken,
+        fields,
+        photo: photo,
+        photoName: photoName,
+      );
+      _checkGeneration(generation);
+      if (provider?.currentSession?.user.id != session.user.id) {
+        throw const ApiFailure(ApiFailureKind.unauthenticated);
+      }
+      return result;
+    } catch (error) {
+      if (generation != _generation) {
+        throw const ApiFailure(ApiFailureKind.unauthenticated);
+      }
+      final failure = _failure(error);
+      if ([
+        AuthFailureCode.sessionExpired,
+        AuthFailureCode.accountUnavailable,
+      ].contains(failure.code)) {
+        _invalidations.add(failure);
+        await signOut();
+      }
+      if (error is ApiFailure) rethrow;
+      throw ApiFailure(
+        failure.code == AuthFailureCode.sessionExpired
+            ? ApiFailureKind.unauthenticated
+            : ApiFailureKind.offline,
+      );
+    }
   }
 
   Future<void> dispose() async {

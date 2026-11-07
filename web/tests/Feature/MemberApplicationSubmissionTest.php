@@ -9,8 +9,10 @@ use App\Services\Members\MemberApplicationPhotoService;
 use App\Services\Members\MemberApplicationService;
 use App\Services\SupabaseStorageService;
 use App\Exceptions\MemberApplicationPhotoUnavailableException;
+use App\Exceptions\PrivateMediaStorageException;
 use Illuminate\Database\Events\TransactionCommitted;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Filesystem\LocalFilesystemAdapter;
 use Illuminate\Foundation\Bootstrap\HandleExceptions;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
@@ -55,13 +57,13 @@ class MemberApplicationSubmissionTest extends TestCase
     {
         MemberApplication::flushEventListeners();
         try {
-            Http::assertNothingSent();
-        } finally {
             try {
-                parent::tearDown();
+                Http::assertNothingSent();
             } finally {
-                HandleExceptions::flushState($this);
+                parent::tearDown();
             }
+        } finally {
+            HandleExceptions::flushState($this);
         }
     }
 
@@ -77,6 +79,7 @@ class MemberApplicationSubmissionTest extends TestCase
         });
         Schema::create('user_invitations', function (Blueprint $table) {
             $table->uuid('id')->primary(); $table->uuid('auth_user_id')->nullable();
+            $table->string('email')->nullable();
             $table->string('status'); $table->string('last_error_code')->nullable();
             $table->timestamp('accepted_at')->nullable(); $table->timestamp('last_attempt_at')->nullable(); $table->timestamps();
         });
@@ -92,11 +95,13 @@ class MemberApplicationSubmissionTest extends TestCase
         });
         Schema::create('association_positions', function (Blueprint $table) {
             $table->id(); $table->string('code'); $table->string('name');
+            $table->integer('sort_order')->default(0);
             $table->boolean('is_officer'); $table->boolean('is_active'); $table->timestamps();
         });
         Schema::create('members', function (Blueprint $table) {
             $table->uuid('id')->primary(); $table->uuid('association_id'); $table->unsignedBigInteger('position_id');
             $table->string('member_status'); $table->timestamp('archived_at')->nullable();
+            $table->string('fishr_registration_number')->nullable();
             $table->foreign('association_id')->references('id')->on('associations');
             $table->foreign('position_id')->references('id')->on('association_positions');
         });
@@ -149,6 +154,56 @@ class MemberApplicationSubmissionTest extends TestCase
             'sex_id' => 1, 'position_id' => 2, 'classification_ids' => [1], 'endorsement_letter' => 'Private synthetic letter'];
     }
 
+    public static function malformedTextFields(): iterable
+    {
+        foreach (['first_name', 'middle_name', 'last_name', 'suffix', 'contact_number',
+            'fishr_registration_number', 'position_other_text', 'endorsement_letter'] as $field) {
+            foreach (['array' => ['unexpected'], 'empty array' => [], 'integer' => 42, 'false' => false] as $kind => $value) {
+                yield $field.' '.$kind => [$field, $value];
+            }
+        }
+    }
+
+    #[DataProvider('malformedTextFields')]
+    public function test_malformed_text_returns_validation_without_persisting_an_application(string $field, mixed $value): void
+    {
+        $this->postJson(self::URL, array_replace($this->applicationData(), [$field => $value]))
+            ->assertUnprocessable()->assertJsonValidationErrors($field);
+        $this->assertDatabaseCount('member_applications', 0);
+        $this->assertDatabaseCount('member_application_classifications', 0);
+        $this->assertDatabaseCount('members', 0);
+        $this->assertSame([], Storage::disk('member_application_photos')->allFiles());
+    }
+
+    public function test_valid_application_text_is_trimmed_and_optional_blanks_remain_nullable(): void
+    {
+        $this->postJson(self::URL, array_replace($this->applicationData(), [
+            'first_name' => '  Synthetic  ', 'last_name' => '  Applicant  ', 'middle_name' => '  ',
+            'suffix' => null, 'contact_number' => '  09123456789  ', 'fishr_registration_number' => '  REG-1  ',
+            'endorsement_letter' => '  Private synthetic letter  ',
+        ]))->assertRedirect();
+        $application = MemberApplication::sole();
+        $this->assertSame('Synthetic', $application->first_name);
+        $this->assertSame('Applicant', $application->last_name);
+        $this->assertNull($application->middle_name);
+        $this->assertNull($application->suffix);
+        $this->assertSame('09123456789', $application->contact_number);
+        $this->assertSame('REG-1', $application->fishr_registration_number);
+        $this->assertSame('Private synthetic letter', $application->endorsement_letter);
+    }
+
+    private function usePhotoTransport(string $transport): LocalFilesystemAdapter
+    {
+        config(['services.supabase_storage.photo_transport' => $transport]);
+
+        return Storage::fake($transport === 'r2' ? 'media_private' : 'member_application_photos');
+    }
+
+    public static function photoTransports(): array
+    {
+        return ['local' => ['local'], 'R2' => ['r2']];
+    }
+
     public static function readOnlyAssociations(): array
     {
         return ['inactive' => ['inactive', null], 'archived' => ['active', '2026-01-01'],
@@ -170,12 +225,15 @@ class MemberApplicationSubmissionTest extends TestCase
 
     public static function omittedPhotos(): array
     {
-        return ['omitted' => [[]], 'explicit null' => [['applicant_photo' => null]]];
+        return ['local omitted' => [[], 'local'], 'local null' => [['applicant_photo' => null], 'local'],
+            'R2 omitted' => [[], 'r2'], 'R2 null' => [['applicant_photo' => null], 'r2']];
     }
 
     #[DataProvider('omittedPhotos')]
-    public function test_submission_without_photo_stores_null_and_preserves_application_data(array $photo): void
+    public function test_submission_without_photo_stores_null_and_preserves_application_data(array $photo, string $transport): void
     {
+        $this->usePhotoTransport($transport);
+        Storage::shouldReceive('disk')->never();
         $this->from(self::URL)->post(self::URL, array_merge($this->applicationData(), $photo))
             ->assertRedirect(self::URL)->assertSessionHasNoErrors()
             ->assertSessionHas('success', 'Member application submitted successfully.');
@@ -187,25 +245,26 @@ class MemberApplicationSubmissionTest extends TestCase
         $this->assertSame(2, $application->position_id);
         $this->assertSame('Private synthetic letter', $application->endorsement_letter);
         $this->assertSame([1], $application->classifications()->pluck('member_classifications.id')->all());
-        $this->assertSame([], Storage::disk('member_application_photos')->allFiles());
     }
 
     public static function validPhotoExtensions(): array
     {
-        return ['JPEG' => ['jpg'], 'PNG' => ['png']];
+        return ['local JPEG' => ['jpg', 'local'], 'local PNG' => ['png', 'local'],
+            'R2 JPEG' => ['jpg', 'r2'], 'R2 PNG' => ['png', 'r2']];
     }
 
     #[DataProvider('validPhotoExtensions')]
-    public function test_submission_with_valid_photo_preserves_private_upload(string $extension): void
+    public function test_submission_with_valid_photo_preserves_private_upload(string $extension, string $transport): void
     {
+        $disk = $this->usePhotoTransport($transport);
         $photo = UploadedFile::fake()->image('portrait.'.$extension, 32, 48);
         $this->from(self::URL)->post(self::URL, array_merge($this->applicationData(), ['applicant_photo' => $photo]))
             ->assertRedirect(self::URL)->assertSessionHasNoErrors()->assertSessionHas('success');
         $application = MemberApplication::sole();
         $this->assertMatchesRegularExpression('~\Aphotos/'.$application->id.'/[0-9a-f-]{36}\.'.$extension.'\z~',
             $application->applicant_photo_path);
-        Storage::disk('member_application_photos')->assertExists($application->applicant_photo_path);
-        $image = getimagesizefromstring(Storage::disk('member_application_photos')->get($application->applicant_photo_path));
+        $disk->assertExists($application->applicant_photo_path);
+        $image = getimagesizefromstring($disk->get($application->applicant_photo_path));
         $this->assertSame([32, 48], array_slice($image, 0, 2));
         $this->assertArrayNotHasKey('applicant_photo_path', $application->toArray());
     }
@@ -273,9 +332,11 @@ class MemberApplicationSubmissionTest extends TestCase
         $this->assertSame([], Storage::disk('member_application_photos')->allFiles());
     }
 
-    public function test_confirmed_photo_is_discarded_only_after_the_application_transaction_rolls_back(): void
+    #[DataProvider('photoTransports')]
+    public function test_confirmed_photo_is_discarded_only_after_the_application_transaction_rolls_back(string $transport): void
     {
         if (! extension_loaded('gd')) $this->markTestSkipped('PHP GD is required.');
+        $disk = $this->usePhotoTransport($transport);
         $events = [];
         $photos = Mockery::mock(MemberApplicationPhotoService::class, [new SupabaseStorageService])->makePartial();
         $photos->shouldReceive('store')->once()->withArgs(function ($photo, $applicationId) use (&$events) {
@@ -284,19 +345,19 @@ class MemberApplicationSubmissionTest extends TestCase
 
             return $photo instanceof UploadedFile && is_string($applicationId);
         })->passthru();
-        $photos->shouldReceive('discard')->once()->withArgs(function ($path, $applicationId) use (&$events) {
+        $photos->shouldReceive('discard')->once()->withArgs(function ($path, $applicationId) use (&$events, $disk) {
             $events[] = 'discard';
             $this->assertSame(0, DB::transactionLevel());
-            Storage::disk('member_application_photos')->assertExists($path);
+            $disk->assertExists($path);
 
             return str_starts_with($path, 'photos/'.$applicationId.'/');
         })->passthru();
         $this->app->instance(MemberApplicationPhotoService::class, $photos);
         $failure = new RuntimeException('Synthetic application persistence failure');
-        MemberApplication::created(function ($application) use (&$events, $failure) {
+        MemberApplication::created(function ($application) use (&$events, $failure, $disk) {
             $events[] = 'application saved';
             $this->assertSame(1, DB::transactionLevel());
-            Storage::disk('member_application_photos')->assertExists($application->applicant_photo_path);
+            $disk->assertExists($application->applicant_photo_path);
             throw $failure;
         });
         try {
@@ -309,12 +370,14 @@ class MemberApplicationSubmissionTest extends TestCase
         $this->assertSame(['store', 'application saved', 'discard'], $events);
         $this->assertDatabaseCount('member_applications', 0);
         $this->assertDatabaseCount('member_application_classifications', 0);
-        $this->assertSame([], Storage::disk('member_application_photos')->allFiles());
+        $this->assertSame([], $disk->allFiles());
     }
 
-    public function test_failure_after_commit_retains_photo_and_database_history_for_reconciliation(): void
+    #[DataProvider('photoTransports')]
+    public function test_failure_after_commit_retains_photo_and_database_history_for_reconciliation(string $transport): void
     {
         if (! extension_loaded('gd')) $this->markTestSkipped('PHP GD is required.');
+        $disk = $this->usePhotoTransport($transport);
         Log::spy();
         $failure = new RuntimeException('Synthetic post-commit failure');
         Event::listen(TransactionCommitted::class, static function () use ($failure): never { throw $failure; });
@@ -333,7 +396,7 @@ class MemberApplicationSubmissionTest extends TestCase
         $this->assertDatabaseCount('member_applications', 1);
         $this->assertDatabaseCount('member_application_classifications', 1);
         $application = MemberApplication::firstOrFail();
-        Storage::disk('member_application_photos')->assertExists($application->applicant_photo_path);
+        $disk->assertExists($application->applicant_photo_path);
         Log::shouldHaveReceived('warning')->once()->with('Member application submission requires reconciliation.',
             ['application_id' => $application->id, 'code' => 'submission_outcome_uncertain']);
     }
@@ -358,6 +421,29 @@ class MemberApplicationSubmissionTest extends TestCase
         $this->assertSame([], Storage::disk('member_application_photos')->allFiles());
     }
 
+    public function test_r2_lost_upload_response_preserves_object_and_returns_safe_503_without_an_application(): void
+    {
+        $fake = $this->usePhotoTransport('r2');
+        $disk = Mockery::mock($fake);
+        $path = null;
+        $disk->shouldReceive('put')->once()->andReturnUsing(function ($name, $contents, $options) use ($fake, &$path): never {
+            $path = $name;
+            $fake->put($name, $contents, $options);
+            throw new PrivateMediaStorageException('write_unconfirmed');
+        });
+        $disk->shouldNotReceive('delete');
+        Storage::shouldReceive('disk')->once()->with('media_private')->andReturn($disk);
+        Log::spy();
+        $this->postJson(self::URL, $this->applicationData() + ['applicant_photo' => UploadedFile::fake()->image('portrait.png', 8, 8)])
+            ->assertStatus(503)->assertJsonPath('message', 'The photo upload could not be confirmed. No application was submitted. Wait before retrying; contact the administrator if this continues.');
+        $this->assertDatabaseCount('member_applications', 0);
+        $this->assertDatabaseCount('member_application_classifications', 0);
+        $this->assertIsString($path);
+        $fake->assertExists($path);
+        Log::shouldHaveReceived('warning')->once()->with('Member application photo upload requires attention.',
+            ['application_id' => explode('/', $path)[1], 'code' => 'photo_upload_outcome_uncertain']);
+    }
+
     public function test_guest_photo_routes_require_authentication_before_opening_storage(): void
     {
         $application = $this->app->make(MemberApplicationService::class)->submit($this->applicationData(),
@@ -369,5 +455,154 @@ class MemberApplicationSubmissionTest extends TestCase
         foreach (['association', 'field-officer'] as $prefix) {
             $this->get('/'.$prefix.'/member-applications/'.$application->id.'/photo')->assertRedirect(route('login'));
         }
+    }
+
+    private function mobile(): void
+    {
+        $this->flushSession();
+        $auth = Mockery::mock(SupabaseAuthService::class);
+        $auth->shouldReceive('verifyApiIdentity')->with('synthetic-mobile-token')->andReturn([
+            'outcome' => 'verified', 'identity' => ['id' => self::ACCOUNT, 'email' => 'account@example.test'],
+        ]);
+        $this->app->instance(SupabaseAuthService::class, $auth);
+        $this->withToken('synthetic-mobile-token');
+    }
+
+    public function test_mobile_options_are_active_server_catalogs_and_pending_applications_do_not_reserve_positions(): void
+    {
+        $this->mobile();
+        $this->postJson('/api/v1/association/member-applications', $this->applicationData())->assertCreated();
+        DB::table('sex_categories')->insert(['id' => 9, 'name' => 'Inactive', 'is_active' => false]);
+        DB::table('association_positions')->insert(['id' => 9, 'code' => 'INACTIVE', 'name' => 'Inactive', 'is_active' => false, 'is_officer' => false]);
+        DB::table('member_classifications')->insert(['id' => 9, 'code' => 'INACTIVE', 'name' => 'Inactive', 'is_active' => false]);
+        $this->getJson('/api/v1/association/member-applications/options')->assertOk()
+            ->assertJsonPath('data.association.id', self::ASSOCIATION)->assertJsonCount(1, 'data.sex_categories')
+            ->assertJsonCount(1, 'data.positions')->assertJsonCount(1, 'data.classifications')
+            ->assertJsonPath('data.positions.0.occupied', false)->assertDontSee('Inactive');
+        DB::table('members')->insert(['id' => (string) \Illuminate\Support\Str::uuid(), 'association_id' => self::ASSOCIATION,
+            'position_id' => 2, 'member_status' => 'active']);
+        $this->getJson('/api/v1/association/member-applications/options')->assertOk()->assertJsonPath('data.positions.0.occupied', true);
+    }
+
+    public function test_mobile_submission_reuses_pending_workflow_and_private_photo_service_without_creating_a_member(): void
+    {
+        $this->mobile();
+        $response = $this->postJson('/api/v1/association/member-applications', $this->applicationData() + [
+            'applicant_photo' => UploadedFile::fake()->image('applicant.png', 8, 8),
+        ])->assertCreated()->assertJsonPath('data.association_id', self::ASSOCIATION)
+            ->assertJsonPath('data.application.status', 'pending')->assertJsonPath('data.application.has_photo', true)
+            ->assertHeader('Cache-Control', 'max-age=0, no-store, private');
+        $application = MemberApplication::findOrFail($response->json('data.application.id'));
+        $this->assertSame(self::ACCOUNT, $application->submitted_by_user_id);
+        $this->assertSame('Private synthetic letter', $application->endorsement_letter);
+        $this->assertSame([1], $application->classifications()->pluck('member_classifications.id')->all());
+        Storage::disk('member_application_photos')->assertExists($application->applicant_photo_path);
+        $this->assertDatabaseCount('members', 0);
+        $this->assertNull($application->reviewed_at);
+        $response->assertDontSee($application->applicant_photo_path)->assertDontSee('Private synthetic letter');
+    }
+
+    public function test_mobile_validation_has_field_errors_and_rejects_scope_or_review_injection(): void
+    {
+        $this->mobile();
+        foreach (['association_id' => self::ASSOCIATION, 'submitted_by_user_id' => self::ACCOUNT,
+            'status' => 'approved', 'applicant_photo_path' => 'private/path'] as $field => $value) {
+            $this->postJson('/api/v1/association/member-applications', $this->applicationData() + [$field => $value])
+                ->assertUnprocessable()->assertJsonValidationErrors($field)->assertJsonPath('error.code', 'validation_failed');
+        }
+        $data = $this->applicationData();
+        $data['birth_date'] = '2999-01-01';
+        $data['endorsement_letter'] = ' ';
+        $this->postJson('/api/v1/association/member-applications', $data)->assertUnprocessable()
+            ->assertJsonValidationErrors(['birth_date', 'endorsement_letter']);
+        $this->assertDatabaseCount('member_applications', 0);
+        $this->assertDatabaseCount('members', 0);
+    }
+
+    public function test_mobile_list_is_paginated_filtered_and_limited_to_current_account_and_association(): void
+    {
+        $this->mobile();
+        $id = $this->postJson('/api/v1/association/member-applications', $this->applicationData())->assertCreated()->json('data.application.id');
+        DB::table('member_applications')->where('id', $id)->update(['status' => 'rejected', 'rejection_reason' => 'Synthetic review reason', 'reviewed_at' => now()]);
+        DB::table('user_profiles')->insert(['id' => '99999999-9999-4999-8999-999999999999', 'role_id' => 1,
+            'display_name' => 'Other synthetic holder', 'is_active' => true]);
+        $other = (array) DB::table('member_applications')->where('id', $id)->first();
+        $other['id'] = (string) \Illuminate\Support\Str::uuid();
+        $other['submitted_by_user_id'] = '99999999-9999-4999-8999-999999999999';
+        $other['first_name'] = 'Withheld other submitter';
+        DB::table('member_applications')->insert($other);
+        $this->getJson('/api/v1/association/member-applications?status=rejected')->assertOk()
+            ->assertJsonPath('data.total', 1)->assertJsonPath('data.page', 1)->assertJsonPath('data.last_page', 1)
+            ->assertJsonPath('data.applications.0.id', $id)->assertJsonPath('data.applications.0.rejection_reason', 'Synthetic review reason')
+            ->assertDontSee('Withheld')->assertDontSee('endorsement_letter')->assertDontSee('applicant_photo_path')
+            ->assertDontSee('birth_date')->assertDontSee('contact_number');
+        $this->getJson('/api/v1/association/member-applications?status=pending')->assertOk()->assertJsonCount(0, 'data.applications');
+        $this->getJson('/api/v1/association/member-applications?association_id='.self::ASSOCIATION)->assertUnprocessable();
+        $this->getJson('/api/v1/association/member-applications?page=0')->assertUnprocessable();
+    }
+
+    public function test_mobile_unavailable_submission_is_safe_and_never_returns_a_success_receipt(): void
+    {
+        $this->mobile();
+        $service = Mockery::mock(MemberApplicationService::class);
+        $service->shouldReceive('submit')->once()->andThrow(new RuntimeException('Private SQL or provider diagnostic'));
+        $this->app->instance(MemberApplicationService::class, $service);
+        $this->postJson('/api/v1/association/member-applications', $this->applicationData())->assertStatus(503)
+            ->assertJsonPath('error.code', 'service_unavailable')->assertDontSee('Private SQL')->assertDontSee('data');
+        $this->assertDatabaseCount('member_applications', 0);
+    }
+
+    public function test_mobile_submission_requires_bearer_identity_even_with_a_web_session(): void
+    {
+        $this->postJson('/api/v1/association/member-applications', $this->applicationData())->assertUnauthorized();
+        $this->mobile();
+        DB::table('association_accounts')->update(['is_active' => false]);
+        $this->postJson('/api/v1/association/member-applications', $this->applicationData())->assertForbidden();
+        $this->assertDatabaseCount('member_applications', 0);
+    }
+
+    public function test_mobile_fishr_duplicate_is_rejected_by_the_existing_business_rule(): void
+    {
+        $this->mobile();
+        $data = $this->applicationData() + ['fishr_registration_number' => 'SYNTHETIC-FISHR'];
+        $this->postJson('/api/v1/association/member-applications', $data)->assertCreated();
+        $this->postJson('/api/v1/association/member-applications', $data)->assertUnprocessable()
+            ->assertJsonValidationErrors('fishr_registration_number');
+        $this->assertDatabaseCount('member_applications', 1);
+        $this->assertDatabaseCount('members', 0);
+    }
+
+    public function test_mobile_list_paginates_and_excludes_records_in_another_association(): void
+    {
+        $this->mobile();
+        $id = $this->postJson('/api/v1/association/member-applications', $this->applicationData())->assertCreated()->json('data.application.id');
+        $row = (array) DB::table('member_applications')->where('id', $id)->first();
+        for ($i = 0; $i < 25; $i++) {
+            $row['id'] = (string) \Illuminate\Support\Str::uuid();
+            DB::table('member_applications')->insert($row);
+        }
+        $other = '88888888-8888-4888-8888-888888888888';
+        DB::table('associations')->insert(['id' => $other, 'name' => 'Other association', 'status' => 'active']);
+        $row['id'] = (string) \Illuminate\Support\Str::uuid();
+        $row['association_id'] = $other;
+        $row['first_name'] = 'Withheld other association';
+        DB::table('member_applications')->insert($row);
+        $this->getJson('/api/v1/association/member-applications')->assertOk()->assertJsonCount(25, 'data.applications')
+            ->assertJsonPath('data.total', 26)->assertJsonPath('data.last_page', 2)->assertDontSee('Withheld');
+        $this->getJson('/api/v1/association/member-applications?page=2')->assertOk()->assertJsonCount(1, 'data.applications')
+            ->assertJsonPath('data.page', 2)->assertDontSee('Withheld');
+    }
+
+    public function test_mobile_empty_catalog_does_not_create_defaults_and_staff_cannot_submit(): void
+    {
+        $this->mobile();
+        foreach (['sex_categories', 'association_positions', 'member_classifications'] as $table) {
+            DB::table($table)->update(['is_active' => false]);
+        }
+        $this->getJson('/api/v1/association/member-applications/options')->assertOk()
+            ->assertJsonCount(0, 'data.sex_categories')->assertJsonCount(0, 'data.positions')->assertJsonCount(0, 'data.classifications');
+        DB::table('roles')->update(['code' => 'field_officer']);
+        $this->postJson('/api/v1/association/member-applications', $this->applicationData())->assertForbidden();
+        $this->assertDatabaseCount('member_applications', 0);
     }
 }

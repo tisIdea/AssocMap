@@ -35,7 +35,7 @@ class InvitationRestartController extends Controller
     {
         try {
             $restart->verify($request, $reference, $request->validated('token_hash'));
-        } catch (Throwable $exception) {
+        } catch (Throwable) {
             return redirect()->route('invitation.restart')->withErrors(['restart' =>
                 'Recovery could not be completed. Request a fresh link if no password was submitted. If a password was submitted or its outcome is uncertain, contact an Administrator before trying again.']);
         }

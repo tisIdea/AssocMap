@@ -21,6 +21,11 @@ class PublicGisController extends Controller
         return response()->json($gis->features(null, $request->validated()));
     }
 
+    public function siteTypes(GisQueryService $gis): JsonResponse
+    {
+        return response()->json(['data' => $gis->siteTypes()]);
+    }
+
     public function associations(GisParentRequest $request, GisQueryService $gis): JsonResponse
     {
         abort_unless($request->validated('kind') === 'association', 422);

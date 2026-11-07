@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\PasswordRecoveryRequest;
+use App\Models\Role;
 use App\Models\UserProfile;
 use App\Services\Auth\PasswordRecoveryContext;
 use App\Services\Auth\SupabasePasswordRecoveryProvider;
@@ -12,6 +13,7 @@ use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\View\View;
 use RuntimeException;
@@ -160,7 +162,7 @@ class PasswordRecoveryController extends Controller
                 $this->contexts->consume($request, $context);
                 $updated = $this->provider->update($context['access_token'], $request->validated('password'));
                 if (! $this->sameIdentity($updated, $context)) throw new RuntimeException('recovery_identity_mismatch');
-                $this->assertEligible($context);
+                $this->excludeExistingSessions($context);
                 $this->contexts->forget($request);
                 $request->session()->forget(['recovery_request', 'recovery_requested', 'recovery_completed']);
                 $request->session()->regenerate(true);
@@ -189,6 +191,27 @@ class PasswordRecoveryController extends Controller
         if (! $profile?->canAccessApplication(['id' => $context['auth_user_id'], 'email' => $context['email']], true)) {
             throw new RuntimeException('recovery_account_unavailable');
         }
+    }
+
+    private function excludeExistingSessions(array $context): void
+    {
+        // The provider write is confirmed before changing the local session boundary.
+        DB::transaction(function () use ($context) {
+            $roleId = UserProfile::query()->useWritePdo()->whereKey($context['auth_user_id'])->value('role_id');
+            $role = Role::query()->whereKey($roleId)->sharedLock()->first();
+            $profile = UserProfile::query()->whereKey($context['auth_user_id'])->lockForUpdate()->first();
+            if (! $profile || (string) $profile->role_id !== (string) $roleId) {
+                throw new RuntimeException('recovery_account_unavailable');
+            }
+            $profile->setRelation('role', $role);
+            if (! $profile->canAccessApplication(['id' => $context['auth_user_id'], 'email' => $context['email']], true)) {
+                throw new RuntimeException('recovery_account_unavailable');
+            }
+            $cutoff = now()->utc();
+            if ($profile->auth_sessions_valid_after === null || $profile->auth_sessions_valid_after->lt($cutoff)) {
+                $profile->forceFill(['auth_sessions_valid_after' => $cutoff])->save();
+            }
+        });
     }
 
     private function sameIdentity(array $identity, array $context): bool

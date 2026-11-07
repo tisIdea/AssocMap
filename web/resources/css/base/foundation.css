@@ -2,6 +2,7 @@
 
 :root {
     --sidebar-bg: #0b427b; --sidebar-active: #35679d; --primary: #0b4c8c; --primary-hover: #083b70;
+    --primary-soft: #edf4fb; --surface-subtle: #f8fafc;
     --page-bg: #f5f7fa; --card-bg: #fff; --border-color: #e2e8f0; --text-primary: #1f2937;
     --text-secondary: #64748b; --success: #17734c; --warning: #956010; --danger: #b42335;
     --shadow-sm: 0 2px 5px rgb(23 48 77 / 3%); --radius-sm: 6px; --radius-md: 12px; --sidebar-width: 264px;
@@ -15,7 +16,7 @@ button, summary, select { cursor: pointer; }
 button { color: inherit; }
 button:disabled { cursor: default; opacity: .55; }
 a { color: var(--primary); text-decoration: none; }
-:focus-visible { outline: 3px solid #4998db; outline-offset: 3px; }
+:focus-visible { outline: 3px solid var(--primary); outline-offset: 3px; }
 h1, h2, h3, p { margin: 0; }
 h1 { font-size: 28px; letter-spacing: -.7px; font-weight: 700; line-height: 1.3; }
 h2 { font-size: 16px; font-weight: 650; line-height: 1.4; }

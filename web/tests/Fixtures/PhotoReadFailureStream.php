@@ -6,6 +6,7 @@ final class PhotoReadFailureStream
 {
     public mixed $context;
     public static int $closes = 0;
+    public static bool $stall = false;
 
     public function stream_open(string $path, string $mode, int $options, ?string &$openedPath): bool
     {
@@ -14,6 +15,7 @@ final class PhotoReadFailureStream
 
     public function stream_read(int $count): string
     {
+        if (self::$stall) return '';
         throw new \RuntimeException('Synthetic photo read failure');
     }
 

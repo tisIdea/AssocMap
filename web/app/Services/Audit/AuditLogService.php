@@ -31,7 +31,7 @@ class AuditLogService
         'project_termination' => ['project_id', 'association_id', 'status', 'closed_at', 'closed_by', 'actor_role'],
         'member' => ['association_id', 'member_status', 'archived_at', 'archived_by', 'changed_fields'],
         'member_officer_position' => ['association_id', 'position_id', 'member_status', 'archived_at'],
-        'gis_location' => ['association_id', 'project_id', 'location_type', 'location_name', 'address',
+        'gis_location' => ['association_id', 'project_id', 'location_type', 'site_type_id', 'location_name', 'address',
             'public_title', 'public_description', 'public_address', 'is_published', 'published_by',
             'published_at', 'archived_at', 'archived_by', 'geometry'],
     ];
@@ -107,7 +107,7 @@ class AuditLogService
                 JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
 
             return ['json' => $json, 'message' => $json === null ? 'No permitted change fields were recorded.' : null];
-        } catch (InvalidArgumentException|JsonException $exception) {
+        } catch (InvalidArgumentException|JsonException) {
             return ['json' => null, 'message' => 'The saved snapshot cannot be displayed within the supported limits.'];
         }
     }

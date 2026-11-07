@@ -10,6 +10,11 @@ class PublicGisFeature {
     required this.description,
     this.point,
     this.boundary,
+    this.displayPoint,
+    this.siteTypeId,
+    this.siteTypeCode,
+    this.siteTypeName,
+    this.geometryType,
   });
 
   final String id;
@@ -19,6 +24,11 @@ class PublicGisFeature {
   final String? description;
   final GeoPoint? point;
   final GeoBoundary? boundary;
+  final GeoPoint? displayPoint;
+  final int? siteTypeId;
+  final String? siteTypeCode;
+  final String? siteTypeName;
+  final String? geometryType;
 
   factory PublicGisFeature.fromJson(Map<String, dynamic> json) {
     final id = json['id'];
@@ -26,7 +36,9 @@ class PublicGisFeature {
     final geometry = json['geometry'];
     if (json['type'] != 'Feature' ||
         id is! String ||
-        !RegExp(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$').hasMatch(id) ||
+        !RegExp(
+          r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+        ).hasMatch(id) ||
         properties is! Map<String, dynamic> ||
         geometry is! Map<String, dynamic>) {
       throw const FormatException('Invalid public GIS feature.');
@@ -49,13 +61,40 @@ class PublicGisFeature {
       final text = (value as String?)?.trim();
       return text == null || text.isEmpty ? null : text;
     }
+
     final address = optionalText('address');
     final description = optionalText('description');
+    final siteTypeId = properties['site_type_id'];
+    final siteTypeCode = properties['site_type_code'];
+    final siteTypeName = properties['site_type_name'];
+    if ((siteTypeId != null && (siteTypeId is! int || siteTypeId <= 0)) ||
+        (siteTypeCode != null &&
+            (siteTypeCode is! String ||
+                !RegExp(r'^[a-z][a-z0-9_]{0,49}$').hasMatch(siteTypeCode))) ||
+        (siteTypeName != null &&
+            (siteTypeName is! String ||
+                siteTypeName.trim().isEmpty ||
+                siteTypeName.runes.length > 100))) {
+      throw const FormatException('Invalid public site classification.');
+    }
+    final display = properties['display_point'];
+    GeoPoint? displayPoint;
+    if (display != null) {
+      if (display is! Map<String, dynamic> ||
+          display['type'] != 'Point' ||
+          display['coordinates'] is! List ||
+          (display['coordinates'] as List).length != 2) {
+        throw const FormatException('Invalid representative point.');
+      }
+      displayPoint = GeoPoint.fromGeoJson(display['coordinates']);
+    }
     final geometryType = geometry['type'];
     if ((type == 'project_point' && geometryType != 'Point') ||
         (type == 'project_boundary' &&
             !const ['Polygon', 'MultiPolygon'].contains(geometryType))) {
-      throw const FormatException('Unsupported or mismatched public GIS geometry.');
+      throw const FormatException(
+        'Unsupported or mismatched public GIS geometry.',
+      );
     }
     var positions = 0;
     void validatePositions(Object? value, [int depth = 0]) {
@@ -75,6 +114,7 @@ class PublicGisFeature {
         GeoPoint.fromGeoJson(value);
       }
     }
+
     validatePositions(geometry['coordinates']);
     return PublicGisFeature(
       id: id,
@@ -82,6 +122,11 @@ class PublicGisFeature {
       title: title.trim(),
       address: address,
       description: description,
+      siteTypeId: siteTypeId as int?,
+      siteTypeCode: siteTypeCode as String?,
+      siteTypeName: (siteTypeName as String?)?.trim(),
+      displayPoint: displayPoint,
+      geometryType: geometryType as String,
       point: geometryType == 'Point'
           ? GeoPoint.fromGeoJson(geometry['coordinates'])
           : null,
@@ -99,6 +144,11 @@ class PublicGisFeature {
     locationType: locationType,
     location: point,
     boundary: boundary,
+    displayPoint: displayPoint,
+    siteTypeId: siteTypeId,
+    siteTypeCode: siteTypeCode,
+    siteTypeName: siteTypeName,
+    geometryType: geometryType,
   );
 }
 

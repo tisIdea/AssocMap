@@ -13,37 +13,13 @@ class StoreMemberApplicationRequest extends FormRequest
 
     protected function prepareForValidation(): void
     {
-        $this->merge([
-            'endorsement_letter' => is_string($this->endorsement_letter)
-                ? trim($this->endorsement_letter)
-                : $this->endorsement_letter,
-
-            'first_name' => trim((string) $this->first_name),
-
-            'middle_name' => $this->middle_name
-                ? trim((string) $this->middle_name)
-                : null,
-
-            'last_name' => trim((string) $this->last_name),
-
-            'suffix' => $this->suffix
-                ? trim((string) $this->suffix)
-                : null,
-
-            'contact_number' => $this->contact_number
-                ? trim((string) $this->contact_number)
-                : null,
-
-            'fishr_registration_number' =>
-                $this->fishr_registration_number
-                    ? trim((string) $this->fishr_registration_number)
-                    : null,
-
-            'position_other_text' =>
-                $this->position_other_text
-                    ? trim((string) $this->position_other_text)
-                    : null,
-        ]);
+        $normalized = [];
+        foreach (['endorsement_letter', 'first_name', 'middle_name', 'last_name', 'suffix',
+            'contact_number', 'fishr_registration_number', 'position_other_text'] as $field) {
+            $value = $this->input($field);
+            $normalized[$field] = is_string($value) ? trim($value) : $value;
+        }
+        $this->merge($normalized);
     }
 
     public function rules(): array

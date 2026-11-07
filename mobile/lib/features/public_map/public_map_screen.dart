@@ -8,9 +8,11 @@ import '../../core/widgets/feedback_panel.dart';
 import '../../core/widgets/assocmap_widgets.dart';
 import '../../data/models/public_gis_feature.dart';
 import '../../data/models/public_project.dart';
+import '../../data/models/gis_site_type.dart';
 import '../../data/repositories/public_projects_repository.dart';
 import 'public_map_view.dart';
 import 'public_project_details.dart';
+import 'gis_site_symbols.dart';
 
 class PublicMapScreen extends StatefulWidget {
   const PublicMapScreen({
@@ -39,11 +41,16 @@ class _PublicMapScreenState extends State<PublicMapScreen> {
   String? _category;
   String? _selectedId;
   bool _showBoundaries = true;
+  String? _siteTypeId;
+  List<GisSiteType> _siteTypes = const [];
+  bool _catalogLoading = false;
+  bool _catalogFailed = false;
 
   @override
   void initState() {
     super.initState();
     _projects = _loadProjects();
+    if (_live) _loadSiteTypes();
   }
 
   @override
@@ -62,6 +69,7 @@ class _PublicMapScreenState extends State<PublicMapScreen> {
           bounds: _requestedBounds,
           query: _search.text,
           locationType: _category,
+          siteTypeId: _siteTypeId,
         );
       }
       return PublicGisResult(projects: await repository.getPublicProjects());
@@ -69,6 +77,31 @@ class _PublicMapScreenState extends State<PublicMapScreen> {
     // Attach an error handler before FutureBuilder's next frame.
     future.ignore();
     return future;
+  }
+
+  Future<void> _loadSiteTypes() async {
+    setState(() {
+      _catalogLoading = true;
+      _catalogFailed = false;
+    });
+    try {
+      final repository = widget.repository;
+      if (repository is! GisSiteTypesRepository) {
+        throw const FormatException('Site catalog unavailable.');
+      }
+      final types = await repository.getSiteTypes();
+      if (!mounted) return;
+      setState(() {
+        _siteTypes = types;
+        _catalogLoading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _catalogFailed = true;
+        _catalogLoading = false;
+      });
+    }
   }
 
   void _reload({bool resetView = false}) => setState(() {
@@ -85,6 +118,7 @@ class _PublicMapScreenState extends State<PublicMapScreen> {
     setState(() {
       _search.clear();
       _category = null;
+      _siteTypeId = null;
       _selectedId = null;
     });
     if (_live) {
@@ -173,7 +207,7 @@ class _PublicMapScreenState extends State<PublicMapScreen> {
               Navigator.of(context).pushNamed(AppRoutes.associationAccess),
         ),
         IconButton(
-          tooltip: 'Reload public projects',
+          tooltip: 'Reload public locations',
           icon: const Icon(Icons.refresh),
           onPressed: () => _reload(),
         ),
@@ -201,14 +235,18 @@ class _PublicMapScreenState extends State<PublicMapScreen> {
                 future: _projects,
                 builder: (context, snapshot) {
                   if (snapshot.connectionState != ConnectionState.done) {
-                    return const Center(
+                    return Center(
                       child: SingleChildScrollView(
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            CircularProgressIndicator(),
-                            SizedBox(height: 16),
-                            Text('Loading public projects…'),
+                            const CircularProgressIndicator(),
+                            const SizedBox(height: 16),
+                            Text(
+                              _live
+                                  ? 'Loading public locations…'
+                                  : 'Loading public projects…',
+                            ),
                           ],
                         ),
                       ),
@@ -231,7 +269,9 @@ class _PublicMapScreenState extends State<PublicMapScreen> {
                   if (result.projects.isEmpty && result.bounds == null) {
                     return FeedbackPanel(
                       icon: Icons.map_outlined,
-                      title: 'No public projects yet',
+                      title: _live
+                          ? 'No public locations found'
+                          : 'No public projects yet',
                       message: _emptyMessage(result.emptyReason),
                       actionLabel: _live ? 'Clear filters' : 'Reload',
                       onAction: _live ? _clearFilters : () => _reload(),
@@ -432,7 +472,7 @@ class _PublicMapScreenState extends State<PublicMapScreen> {
             _selectedId = null;
           }),
           decoration: InputDecoration(
-            labelText: 'Search public projects',
+            labelText: 'Search public locations',
             hintText: 'Location, address, or description',
             counterText: '',
             prefixIcon: const Icon(Icons.search),
@@ -464,7 +504,9 @@ class _PublicMapScreenState extends State<PublicMapScreen> {
                 child: Row(
                   children: [
                     FilterChip(
-                      label: Text(_live ? 'All' : 'All projects'),
+                      label: Text(
+                        _live ? 'All geometry types' : 'All projects',
+                      ),
                       selected: _category == null,
                       onSelected: (_) => _setCategory(null),
                     ),
@@ -475,8 +517,8 @@ class _PublicMapScreenState extends State<PublicMapScreen> {
                       const SizedBox(width: 8),
                       FilterChip(
                         label: Text(switch (category) {
-                          'project_point' => 'Locations',
-                          'project_boundary' => 'Areas',
+                          'project_point' => 'Project Point',
+                          'project_boundary' => 'Project Boundary',
                           _ => category,
                         }),
                         selected: _category == category,
@@ -489,16 +531,7 @@ class _PublicMapScreenState extends State<PublicMapScreen> {
               ),
             ),
             const SizedBox(width: 8),
-            if (_live)
-              IconButton(
-                tooltip: 'Toggle boundaries',
-                isSelected: _showBoundaries,
-                onPressed: () =>
-                    setState(() => _showBoundaries = !_showBoundaries),
-                icon: const Icon(Icons.layers_outlined),
-                selectedIcon: const Icon(Icons.layers),
-              )
-            else
+            if (!_live)
               FilterChip(
                 label: const Text('Boundaries'),
                 avatar: const Icon(Icons.layers_outlined, size: 18),
@@ -510,6 +543,7 @@ class _PublicMapScreenState extends State<PublicMapScreen> {
           ],
         ),
       ),
+      if (_live) _siteFilters(),
       if (_live)
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -526,7 +560,9 @@ class _PublicMapScreenState extends State<PublicMapScreen> {
                 onPressed: () => _reload(resetView: true),
                 child: const Text('Show all locations'),
               ),
-              if (_search.text.isNotEmpty || _category != null)
+              if (_search.text.isNotEmpty ||
+                  _category != null ||
+                  _siteTypeId != null)
                 TextButton(
                   onPressed: _clearFilters,
                   child: const Text('Clear filters'),
@@ -537,12 +573,108 @@ class _PublicMapScreenState extends State<PublicMapScreen> {
     ],
   );
 
+  Widget _siteFilters() => Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        DropdownButtonFormField<String>(
+          key: ValueKey('site-type-filter-${_siteTypeId ?? 'all'}'),
+          initialValue: _siteTypeId ?? 'all',
+          isExpanded: true,
+          decoration: const InputDecoration(labelText: 'Site classification'),
+          items: [
+            const DropdownMenuItem(
+              value: 'all',
+              child: Text('All site classifications'),
+            ),
+            const DropdownMenuItem(
+              value: 'unclassified',
+              child: Text('Unclassified'),
+            ),
+            for (final type in _siteTypes)
+              DropdownMenuItem(
+                value: type.id.toString(),
+                child: Text(
+                  type.name,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+          ],
+          onChanged: (value) {
+            setState(() => _siteTypeId = value == 'all' ? null : value);
+            _reload(resetView: true);
+          },
+        ),
+        if (_catalogLoading) const Text('Loading site classifications…'),
+        if (_catalogFailed) ...[
+          const Text(
+            'Site classifications unavailable. Location search and Unclassified remain available.',
+          ),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton(
+              onPressed: _loadSiteTypes,
+              child: const Text('Retry site classifications'),
+            ),
+          ),
+        ] else if (!_catalogLoading && _siteTypes.isEmpty)
+          const Text(
+            'No site classifications configured. Unclassified remains available.',
+          ),
+        ExpansionTile(
+          tilePadding: EdgeInsets.zero,
+          title: const Text('Map legend'),
+          subtitle: const Text(
+            'Circle: Project Point · Square: Project Boundary',
+          ),
+          children: [
+            const ListTile(
+              dense: true,
+              leading: Icon(Icons.circle_outlined, color: gisPointColor),
+              title: Text('Project Point'),
+            ),
+            const ListTile(
+              dense: true,
+              leading: Icon(Icons.crop_square, color: gisBoundaryColor),
+              title: Text('Project Boundary representative marker'),
+            ),
+            const Text(
+              'Project Boundaries use a representative marker within the actual project site, not an administrative area. Green outline: selected location.',
+            ),
+            for (final type in _siteTypes)
+              ListTile(
+                dense: true,
+                leading: Icon(
+                  gisSiteSymbol(type.code),
+                  color: gisSiteColor(type.code),
+                ),
+                title: Text(type.name),
+              ),
+            const ListTile(
+              dense: true,
+              leading: Icon(
+                Icons.location_on_outlined,
+                color: gisUnclassifiedColor,
+              ),
+              title: Text('Unclassified / unknown symbol'),
+            ),
+          ],
+        ),
+      ],
+    ),
+  );
+
   Widget _projectList(List<PublicProject> projects) => ListView.separated(
     key: const ValueKey('public-project-list'),
     itemCount: projects.length,
     separatorBuilder: (_, _) => const SizedBox(height: 6),
     itemBuilder: (context, index) {
       final project = projects[index];
+      final color = _live
+          ? gisSiteColor(project.siteTypeCode)
+          : projectColor(project.category);
       return Card(
         margin: EdgeInsets.zero,
         color: Colors.white,
@@ -553,14 +685,14 @@ class _PublicMapScreenState extends State<PublicMapScreen> {
             vertical: 6,
           ),
           leading: CircleAvatar(
-            backgroundColor: projectColor(
-              project.category,
-            ).withValues(alpha: .12),
+            backgroundColor: color.withValues(alpha: .12),
             child: Icon(
-              project.location == null
+              _live
+                  ? gisSiteSymbol(project.siteTypeCode)
+                  : project.location == null
                   ? Icons.crop_free
                   : Icons.location_on_outlined,
-              color: projectColor(project.category),
+              color: color,
             ),
           ),
           title: Text(
@@ -571,13 +703,21 @@ class _PublicMapScreenState extends State<PublicMapScreen> {
             [
               if (project.associationName != null) project.associationName!,
               project.filterLabel,
+              if (_live) 'Site classification: ${project.siteTypeLabel}',
+              if (_live && project.isBoundary && project.displayPoint == null)
+                'Representative marker unavailable',
               if (project.areaLabel != null) project.areaLabel!,
             ].join('\n'),
           ),
           trailing: const Icon(Icons.chevron_right),
+          selected: _selectedId == project.id,
+          selectedTileColor: gisSelectionColor.withValues(alpha: .08),
           isThreeLine: true,
           onTap: () {
-            final points = project.geometryPoints.map(mapPoint).toList();
+            final points =
+                (_live ? project.publicDisplayPoints : project.geometryPoints)
+                    .map(mapPoint)
+                    .toList();
             if (points.length == 1) {
               _mapController.move(points.single, 13);
             } else if (points.isNotEmpty) {

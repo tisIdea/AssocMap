@@ -3,6 +3,7 @@
 namespace Tests\Unit;
 
 use App\Http\Controllers\MemberApplicationPhotoController;
+use App\Exceptions\PrivateMediaStorageException;
 use App\Models\MemberApplication;
 use App\Models\Role;
 use App\Models\UserProfile;
@@ -16,8 +17,12 @@ use Illuminate\Database\Query\Builder;
 use Illuminate\Database\Query\Grammars\PostgresGrammar;
 use Illuminate\Database\Query\Processors\PostgresProcessor;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Storage;
 use Mockery;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Tests\TestCase;
@@ -55,6 +60,7 @@ class MemberApplicationPhotoControllerTest extends TestCase
 
     private function actor(string $role, bool $accessible = true): UserProfile
     {
+        /** @var UserProfile&\Mockery\MockInterface $actor */
         $actor = Mockery::mock(UserProfile::class)->makePartial();
         $actor->setRawAttributes(['id' => self::ACTOR_ID]);
         $actor->setRelation('role', new Role(['code' => $role]));
@@ -107,7 +113,7 @@ class MemberApplicationPhotoControllerTest extends TestCase
             new MemberApplicationPhotoService(new SupabaseStorageService));
     }
 
-    private function assertPrivatePhoto(Response $response): void
+    private function assertPrivatePhoto(Response $response, string $contents = 'synthetic image bytes'): void
     {
         $this->assertInstanceOf(StreamedResponse::class, $response);
         $this->assertSame(200, $response->getStatusCode());
@@ -119,7 +125,7 @@ class MemberApplicationPhotoControllerTest extends TestCase
         ob_start();
         try {
             $response->sendContent();
-            $this->assertSame('synthetic image bytes', ob_get_contents());
+            $this->assertSame($contents, ob_get_contents());
         } finally {
             ob_end_clean();
         }
@@ -227,6 +233,62 @@ class MemberApplicationPhotoControllerTest extends TestCase
             $this->assertFalse(is_resource($stream));
         } finally {
             if (is_resource($stream)) fclose($stream);
+        }
+        Http::assertNothingSent();
+    }
+
+    public static function authorizedR2Actors(): array
+    {
+        return ['submitting account' => ['association_account'], 'assigned officer' => ['field_officer']];
+    }
+
+    #[DataProvider('authorizedR2Actors')]
+    public function test_authorized_r2_photo_is_validated_before_private_delivery(string $role): void
+    {
+        config(['services.supabase_storage.photo_transport' => 'r2']);
+        $bindings = $role === 'association_account' ? [self::ACTOR_ID, self::ASSOCIATION_ID, true] : [self::ASSOCIATION_ID, self::ACTOR_ID];
+        $this->scope($bindings, [true], $role === 'association_account' ? 'association_accounts' : 'associations');
+        Storage::fake('media_private');
+        $contents = UploadedFile::fake()->image('portrait.png', 8, 8)->getContent();
+        Storage::disk('media_private')->put(self::PATH, $contents);
+        $this->assertPrivatePhoto($this->response($this->actor($role)), $contents);
+        Http::assertNothingSent();
+    }
+
+    public function test_r2_access_denial_never_resolves_storage(): void
+    {
+        config(['services.supabase_storage.photo_transport' => 'r2']);
+        Storage::shouldReceive('disk')->never();
+        $this->assertSame(403, $this->response(null)->getStatusCode());
+        $this->assertSame(403, $this->response($this->actor('field_officer', false))->getStatusCode());
+        $this->assertSame(404, $this->response($this->actor('system_admin'))->getStatusCode());
+        $this->assertSame(404, $this->response($this->actor('association_account'),
+            $this->application('55555555-5555-4555-8555-555555555555'))->getStatusCode());
+        $this->scope([self::ASSOCIATION_ID, self::ACTOR_ID], [false], 'associations');
+        $this->assertSame(404, $this->response($this->actor('field_officer'))->getStatusCode());
+        $this->scope([self::ACTOR_ID, self::ASSOCIATION_ID, true], [false], 'association_accounts');
+        $this->assertSame(404, $this->response($this->actor('association_account'))->getStatusCode());
+        Http::assertNothingSent();
+    }
+
+    public function test_r2_missing_object_and_storage_failure_return_private_404_and_503(): void
+    {
+        config(['services.supabase_storage.photo_transport' => 'r2']);
+        $this->scope([self::ASSOCIATION_ID, self::ACTOR_ID], [true, true], 'associations');
+        $disk = Mockery::mock(Filesystem::class);
+        Storage::shouldReceive('disk')->twice()->with('media_private')->andReturn($disk);
+        $disk->shouldReceive('exists')->once()->ordered()->with(self::PATH)->andReturn(false);
+        $disk->shouldReceive('exists')->once()->ordered()->with(self::PATH)->andThrow(new PrivateMediaStorageException('exists_failed'));
+        $disk->shouldNotReceive('readStream');
+        $actor = $this->actor('field_officer');
+        $missing = $this->response($actor);
+        $unavailable = $this->response($actor);
+        $this->assertSame(404, $missing->getStatusCode());
+        $this->assertSame(503, $unavailable->getStatusCode());
+        foreach ([$missing, $unavailable] as $response) {
+            $this->assertStringContainsString('no-store', $response->headers->get('Cache-Control'));
+            $this->assertSame('nosniff', $response->headers->get('X-Content-Type-Options'));
+            $this->assertStringNotContainsString('exists_failed', $response->getContent());
         }
         Http::assertNothingSent();
     }

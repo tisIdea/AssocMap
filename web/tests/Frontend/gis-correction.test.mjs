@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { runInNewContext } from 'node:vm';
+import { siteSymbol } from '../../resources/js/pages/gis-site-symbols.js';
 
 const read = path => readFileSync(new URL('../../resources/js/pages/' + path, import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 const editor = read('gis-editor.js');
@@ -70,7 +71,8 @@ test('historical parents expose correction without general edit, publication, ar
         const actions = { children: [], replaceChildren() { this.children = []; }, append(child) { this.children.push(child); } };
         const details = { replaceChildren() {} };
         const root = { querySelector: selector => selector === '[data-gis-record-actions]' ? actions : ['[data-gis-details]', '[data-gis-history-details]'].includes(selector) ? details : {} };
-        const context = { root, manager: true, publicView: false, base: '/admin/gis', selected: null, gallery: null,
+        const context = { root, manager: true, publicView: false, base: '/admin/gis', selected: null, gallery: null, siteSymbol,
+            features: {}, selection: {}, setFeatureSelection() {},
             locationLabels: { project_point: 'Project point' }, addDetail() {}, actorName: value => value,
             confirmAction: () => assert.fail('No general history mutation should be exposed.'),
             document: { createElement: () => ({ addEventListener() {} }) } };

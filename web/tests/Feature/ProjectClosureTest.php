@@ -199,6 +199,219 @@ class ProjectClosureTest extends TestCase
             'program_year' => 2026, 'implementation_start_date' => '2026-01-01', 'status' => 'ongoing', 'remarks' => 'Retain original remarks.'];
     }
 
+    public static function staleFinalizationActors(): iterable
+    {
+        foreach (['completed', 'terminated'] as $outcome) {
+            foreach ([self::ADMIN, self::OFFICER] as $actor) {
+                foreach (['revoked', 'session_cutoff', 'advanced_cutoff', 'changed_role', 'inactive_role', 'email_hold'] as $state) {
+                    yield $outcome.' '.$actor.' '.$state => [$outcome, $actor, $state];
+                }
+            }
+        }
+    }
+
+    #[DataProvider('staleFinalizationActors')]
+    public function test_finalization_rejects_changed_authenticated_state_without_history_or_audit_writes(string $outcome, string $id, string $state): void
+    {
+        Schema::table('user_profiles', function (Blueprint $table) {
+            $table->timestampTz('auth_sessions_valid_after')->nullable();
+            $table->uuid('email_change_hold_id')->nullable();
+        });
+        if ($state === 'advanced_cutoff') {
+            DB::table('user_profiles')->where('id', $id)->update(['auth_sessions_valid_after' => '2026-01-01 00:00:00']);
+        }
+        $request = $this->requestFor($id);
+        $project = Project::findOrFail(self::PROJECT);
+        $data = $this->payload($outcome);
+        $this->assertTrue($request->attributes->get('current_user')->canAccessApplication());
+        match ($state) {
+            'revoked' => DB::table('user_profiles')->where('id', $id)->update(['is_active' => false]),
+            'session_cutoff', 'advanced_cutoff' => DB::table('user_profiles')->where('id', $id)->update(['auth_sessions_valid_after' => '2026-02-01 00:00:00']),
+            'changed_role' => DB::table('user_profiles')->where('id', $id)->update(['role_id' => $id === self::ADMIN ? 2 : 1]),
+            'inactive_role' => DB::table('roles')->where('id', $id === self::ADMIN ? 1 : 2)->update(['is_active' => false]),
+            'email_hold' => DB::table('user_profiles')->where('id', $id)->update(['email_change_hold_id' => self::CHILD]),
+        };
+        $request->merge(['auth_sessions_valid_after' => '2026-02-01 00:00:00']);
+        $before = $this->transferHistory();
+        try {
+            $service = app(ProjectClosureService::class);
+            $outcome === 'completed' ? $service->close($request, $project, $data) : $service->terminate($request, $project, $data);
+            $this->fail('A changed authenticated actor must not finalize a project.');
+        } catch (\Symfony\Component\HttpKernel\Exception\HttpExceptionInterface $exception) {
+            $this->assertSame(403, $exception->getStatusCode());
+        }
+        $this->assertSame($before, $this->transferHistory());
+    }
+
+    #[DataProvider('authorizedActors')]
+    public function test_finalization_with_unchanged_session_cutoff_reads_role_before_profile(string $id, string $prefix, string $outcome): void
+    {
+        Schema::table('user_profiles', function (Blueprint $table) { $table->timestampTz('auth_sessions_valid_after')->nullable(); });
+        DB::table('user_profiles')->where('id', $id)->update(['auth_sessions_valid_after' => '2026-01-01 00:00:00']);
+        $request = $this->requestFor($id);
+        $project = Project::findOrFail(self::PROJECT);
+        $data = $this->payload($outcome);
+        DB::connection()->enableQueryLog();
+        DB::connection()->flushQueryLog();
+        try {
+            $service = app(ProjectClosureService::class);
+            $result = $outcome === 'completed' ? $service->close($request, $project, $data) : $service->terminate($request, $project, $data);
+            $queries = DB::connection()->getQueryLog();
+        } finally {
+            DB::connection()->disableQueryLog();
+        }
+        $actorReads = array_values(array_filter($queries, fn ($query) => str_starts_with($query['query'], 'select')
+            && (str_contains($query['query'], 'from "roles"') || str_contains($query['query'], 'from "user_profiles"'))));
+        $this->assertStringContainsString('from "roles"', $actorReads[0]['query']);
+        $this->assertStringContainsString('from "user_profiles"', $actorReads[1]['query']);
+        $this->assertSame($outcome, $result->status);
+        $this->assertDatabaseCount('audit_logs', 1);
+    }
+
+    private function transferDestination(): string
+    {
+        $id = '88888888-8888-4888-8888-888888888888';
+        DB::table('associations')->insert(['id' => $id, 'name' => 'Synthetic destination',
+            'status' => 'active', 'primary_field_officer_id' => self::OFFICER]);
+
+        return $id;
+    }
+
+    private function transferHistory(): array
+    {
+        $history = [];
+        foreach (['projects', 'project_products', 'project_materials', 'trainings', 'training_participants',
+            'program_activity_records', 'monitoring_records', 'monitoring_production',
+            'monitoring_production_monthly', 'monitoring_income', 'monitoring_materials',
+            'monitoring_visit_reports', 'audit_logs'] as $table) {
+            $history[$table] = DB::table($table)->orderBy('id')->get()->toJson();
+        }
+
+        return $history;
+    }
+
+    public static function transferLinks(): iterable
+    {
+        foreach (['admin' => self::ADMIN, 'officer' => self::OFFICER] as $role => $actor) {
+            foreach (['trainings', 'program_activity_records', 'monitoring_records'] as $table) {
+                foreach ($table === 'monitoring_records' ? [false] : [false, true] as $archived) {
+                    yield $role.' '.$table.($archived ? ' archived' : '') => [$actor, $table, $archived];
+                }
+            }
+        }
+    }
+
+    #[DataProvider('transferLinks')]
+    public function test_association_transfer_preserves_and_rejects_linked_history(string $actor, string $table, bool $archived): void
+    {
+        $destination = $this->transferDestination();
+        $service = app(ProjectService::class);
+        $project = $service->create($this->projectData(), $this->actor($actor));
+        $column = $table === 'monitoring_records' ? 'project_id' : 'related_project_id';
+        $changes = [$column => $project->id];
+        if ($archived) {
+            $changes['archived_at'] = now();
+        }
+        DB::table($table)->where('id', self::CHILD)->update($changes);
+        $before = $this->transferHistory();
+        try {
+            $service->update($project, array_replace($this->projectData(), ['association_id' => $destination]), $this->actor($actor));
+            $this->fail('Association-bound history must prevent a transfer.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('association_id', $exception->errors());
+        }
+        $this->assertSame($before, $this->transferHistory());
+        $this->assertSame(self::ASSOCIATION, $project->fresh()->association_id);
+    }
+
+    public function test_project_without_association_bound_history_can_transfer_and_linked_project_can_still_be_edited(): void
+    {
+        $destination = $this->transferDestination();
+        $service = app(ProjectService::class);
+        $project = $service->create($this->projectData(), $this->actor(self::OFFICER));
+        $before = $this->transferHistory();
+        $updated = $service->update($project, array_replace($this->projectData(), ['association_id' => $destination]), $this->actor(self::OFFICER));
+        $this->assertSame($destination, $updated->association_id);
+        $after = $this->transferHistory();
+        unset($before['projects'], $after['projects']);
+        $this->assertSame($before, $after);
+        $edited = $service->update(Project::findOrFail(self::PROJECT),
+            array_replace($this->projectData(), ['title' => 'Permitted same-association edit']), $this->actor());
+        $this->assertSame('Permitted same-association edit', $edited->title);
+    }
+
+    public function test_transfer_rechecks_links_inside_the_mutation_transaction(): void
+    {
+        $destination = $this->transferDestination();
+        $service = app(ProjectService::class);
+        $project = $service->create($this->projectData(), $this->actor());
+        $before = $this->transferHistory();
+        $injected = false;
+        DB::listen(function ($query) use (&$injected, $project): void {
+            if ($injected === false && DB::transactionLevel() > 0 && str_contains($query->sql, 'select')
+                && str_contains($query->sql, '"associations"')) {
+                $injected = true;
+                DB::table('trainings')->where('id', self::CHILD)->update(['related_project_id' => $project->id]);
+            }
+        });
+        try {
+            $service->update($project, array_replace($this->projectData(), ['association_id' => $destination]), $this->actor());
+            $this->fail('A link appearing after preflight must block the transfer.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('association_id', $exception->errors());
+        }
+        $this->assertTrue($injected);
+        $this->assertSame($before, $this->transferHistory());
+    }
+
+    public function test_valid_project_text_is_trimmed_and_optional_blanks_remain_nullable(): void
+    {
+        $this->withSession(['supabase_access_token' => 'synthetic-session'])
+            ->postJson(route('admin.projects.store'), array_replace($this->projectData(), [
+                'title' => '  Trimmed project  ', 'description' => '  Description  ', 'remarks' => '  ',
+                'new_commodity_name' => null,
+            ]))->assertRedirect()->assertSessionHasNoErrors();
+        $project = Project::where('title', 'Trimmed project')->sole();
+        $this->assertSame('Description', $project->description);
+        $this->assertNull($project->remarks);
+        $this->assertNull($project->commodity_id);
+    }
+
+    public function test_linked_project_transfer_returns_an_understandable_http_validation_error(): void
+    {
+        $destination = $this->transferDestination();
+        $project = app(ProjectService::class)->create($this->projectData(), $this->actor());
+        DB::table('trainings')->where('id', self::CHILD)->update(['related_project_id' => $project->id]);
+        $before = $this->transferHistory();
+        $this->withSession(['supabase_access_token' => 'synthetic-session'])
+            ->patchJson(route('admin.projects.update', $project), array_replace($this->projectData(), ['association_id' => $destination]))
+            ->assertUnprocessable()->assertJsonValidationErrors('association_id')
+            ->assertJsonPath('errors.association_id.0', 'The association cannot be changed because this project has linked training or program activity records. Their association history must be preserved.');
+        $this->assertSame($before, $this->transferHistory());
+    }
+
+    public static function malformedProjectText(): iterable
+    {
+        foreach (['title', 'description', 'remarks', 'new_commodity_name'] as $field) {
+            foreach (['array' => ['unexpected'], 'empty array' => [], 'integer' => 42, 'false' => false] as $kind => $value) {
+                yield $field.' '.$kind => [$field, $value];
+            }
+        }
+    }
+
+    #[DataProvider('malformedProjectText')]
+    public function test_malformed_project_text_returns_validation_without_database_changes(string $field, mixed $value): void
+    {
+        $before = $this->transferHistory();
+        $this->withSession(['supabase_access_token' => 'synthetic-session'])
+            ->postJson(route('admin.projects.store'), array_replace($this->projectData(), [$field => $value]))
+            ->assertUnprocessable()->assertJsonValidationErrors($field);
+        $this->patchJson(route('admin.projects.update', self::PROJECT), array_replace($this->projectData(), [$field => $value]))
+            ->assertUnprocessable()->assertJsonValidationErrors($field);
+        $this->assertSame($before, $this->transferHistory());
+        $this->assertDatabaseCount('commodities', 0);
+    }
+
     private function linkedData(string $module): array
     {
         return ['association_id' => self::ASSOCIATION, 'related_project_id' => self::PROJECT, 'title' => 'Historical '.$module,

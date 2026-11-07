@@ -137,6 +137,68 @@ class ReportAuthorizationTest extends TestCase
         return $request;
     }
 
+    public static function changedReportActors(): iterable
+    {
+        foreach ([1, 2, 3] as $role) {
+            foreach (['revoked', 'session_cutoff', 'advanced_cutoff', 'changed_role', 'inactive_role', 'email_hold'] as $state) {
+                yield $role.' '.$state => [$role, $state];
+            }
+        }
+    }
+
+    #[DataProvider('changedReportActors')]
+    public function test_report_release_rejects_changes_to_the_original_authenticated_actor(int $role, string $state): void
+    {
+        Schema::table('user_profiles', function (Blueprint $table) {
+            $table->timestampTz('auth_sessions_valid_after')->nullable();
+            $table->uuid('email_change_hold_id')->nullable();
+        });
+        DB::table('user_profiles')->where('id', self::USER)->update(['role_id' => $role,
+            'auth_sessions_valid_after' => $state === 'advanced_cutoff' ? '2026-01-01 00:00:00' : null]);
+        if ($role === 3) {
+            DB::table('association_accounts')->insert(['id' => self::OWN, 'user_id' => self::USER, 'association_id' => self::OWN, 'is_active' => true]);
+        }
+        $request = $this->request();
+        $scope = app(ReportScope::class);
+        $ids = $scope->ids($scope->actor($request), []);
+        match ($state) {
+            'revoked' => DB::table('user_profiles')->where('id', self::USER)->update(['is_active' => false]),
+            'session_cutoff', 'advanced_cutoff' => DB::table('user_profiles')->where('id', self::USER)->update(['auth_sessions_valid_after' => '2026-02-01 00:00:00']),
+            'changed_role' => DB::table('user_profiles')->where('id', self::USER)->update(['role_id' => $role === 1 ? 2 : 1]),
+            'inactive_role' => DB::table('roles')->where('id', $role)->update(['is_active' => false]),
+            'email_hold' => DB::table('user_profiles')->where('id', self::USER)->update(['email_change_hold_id' => self::OTHER]),
+        };
+        $request->merge(['auth_sessions_valid_after' => '2026-02-01 00:00:00']);
+        $this->forbidden(fn () => $scope->recheck($request, [], $ids));
+        $this->assertSame($role, $request->attributes->get('current_user')->role_id);
+    }
+
+    public function test_filter_options_do_not_release_calculated_data_after_a_session_cutoff_change(): void
+    {
+        Schema::table('user_profiles', function (Blueprint $table) { $table->timestampTz('auth_sessions_valid_after')->nullable(); });
+        $request = $this->request();
+        $datasets = Mockery::mock(ReportDataset::class);
+        $datasets->shouldReceive('options')->once()->andReturnUsing(function (): array {
+            DB::table('user_profiles')->where('id', self::USER)->update(['auth_sessions_valid_after' => '2026-02-01 00:00:00']);
+
+            return ['associations' => ['Private calculated options']];
+        });
+        $this->app->instance(ReportDataset::class, $datasets);
+        $this->forbidden(fn () => app(ReportService::class)->options($request, []));
+        $this->assertNull($request->attributes->get('current_user')->auth_sessions_valid_after);
+    }
+
+    public function test_report_recheck_accepts_an_unchanged_authenticated_cutoff(): void
+    {
+        Schema::table('user_profiles', function (Blueprint $table) { $table->timestampTz('auth_sessions_valid_after')->nullable(); });
+        DB::table('user_profiles')->where('id', self::USER)->update(['auth_sessions_valid_after' => '2026-01-01 00:00:00']);
+        $request = $this->request();
+        $scope = app(ReportScope::class);
+        $ids = $scope->ids($scope->actor($request), []);
+        $scope->recheck($request, [], $ids);
+        $this->assertSame([self::OWN], $ids);
+    }
+
     private function forbidden(callable $operation): void
     {
         try {
@@ -500,6 +562,7 @@ class ReportAuthorizationTest extends TestCase
     public function test_mobile_reports_use_bearer_eligibility_and_deny_cross_association_scope(): void
     {
         $this->webIdentity(3);
+        /** @var SupabaseAuthService&\Mockery\MockInterface $auth */
         $auth=$this->app->make(SupabaseAuthService::class);
         $auth->shouldReceive('verifyApiIdentity')->andReturn(['outcome'=>'verified',
             'identity'=>['id'=>self::USER,'email'=>'synthetic-report@example.test']]);

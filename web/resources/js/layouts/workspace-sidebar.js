@@ -13,6 +13,7 @@ export function initWorkspaceSidebar() {
     const backdrop = $('.sidebar-backdrop');
     const collapse = $('[data-collapse-sidebar]', sidebar);
     const collapseLabel = $('[data-sidebar-collapse-label]', collapse);
+    const dismiss = $('[data-close-workspace-sidebar]', sidebar);
     const mobile = window.matchMedia('(max-width: 1020px)');
     let desktopCollapsed = false;
     let drawerOpen = false;
@@ -32,6 +33,7 @@ export function initWorkspaceSidebar() {
         drawerOpen = Boolean(open && mobile.matches);
         body.classList.toggle('drawer-open', drawerOpen);
         backdrop.hidden = !drawerOpen;
+        if (dismiss) dismiss.hidden = !drawerOpen;
         opener.setAttribute('aria-expanded', String(drawerOpen));
         sidebar.inert = mobile.matches && !drawerOpen;
         shell.inert = drawerOpen;
@@ -41,6 +43,7 @@ export function initWorkspaceSidebar() {
 
     opener.addEventListener('click', () => setDrawer(true));
     backdrop.addEventListener('click', () => setDrawer(false));
+    dismiss?.addEventListener('click', () => setDrawer(false));
     collapse.addEventListener('click', () => {
         if (mobile.matches) return;
         desktopCollapsed = !desktopCollapsed;

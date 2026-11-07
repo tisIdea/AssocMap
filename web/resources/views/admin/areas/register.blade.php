@@ -11,7 +11,7 @@
             ['key' => 'inactive_barangays', 'label' => 'Inactive Barangays', 'icon' => 'archive', 'tab' => 'barangays', 'status' => 'inactive'],
         ];
     @endphp
-    <nav class="area-summary-grid" aria-label="Geographic record groups">
+    <nav class="area-summary-grid summary-cards" aria-label="Geographic record groups">
         @foreach($cards as $card)
             @php
                 $navigation = $card['key'] === 'associations';
