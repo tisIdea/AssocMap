@@ -1,54 +1,6 @@
-<section
-    id="access"
-    class="public-section public-access-section"
-    aria-labelledby="public-access-title"
->
-    <div class="public-container">
-        <div class="public-access-panel">
-
-            <div class="public-section-heading">
-                <p class="public-eyebrow">Get started</p>
-
-                <h2 id="public-access-title">
-                    Access AssocMap
-                </h2>
-
-                <p>
-                    One staff sign-in for System Administrators and Field Officers.
-                    A separate public map is available for published program locations.
-                </p>
-            </div>
-
-            <div>
-                <div class="public-actions">
-
-                    <a
-                        href="{{ route('login') }}"
-                        class="public-button public-button-primary"
-                    >
-                        Staff Sign In
-                        <x-icon name="arrow" />
-                    </a>
-
-                    <a
-                        href="{{ route('public.gis') }}"
-                        class="public-button public-button-outline"
-                    >
-                        <x-icon name="map" />
-                        View Public Map
-                    </a>
-
-                </div>
-
-                <p
-                    id="public-access-note"
-                    class="public-template-note"
-                >
-                    Staff access requires an authorized AssocMap account.
-                    The public map displays only published information.
-                </p>
-            </div>
-
-        </div>
+<section id="access" class="public-access-section" aria-labelledby="public-access-title">
+    <div class="public-container public-access-panel" data-public-reveal>
+        <div><p class="public-eyebrow">Your next perspective</p><h2 id="public-access-title">Explore the places.<br>Understand the progress.</h2></div>
+        <div><a href="{{ route('public.gis') }}" class="public-button public-button-light">Explore GIS Map <x-icon name="arrow" /></a><p>Working with AssocMap? <a href="{{ route('login') }}">Sign in to your workspace</a></p></div>
     </div>
 </section>

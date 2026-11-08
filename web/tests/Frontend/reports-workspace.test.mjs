@@ -112,12 +112,12 @@ function fixture({ account = false, result = undefined, script = source, analyti
 test('filter disclosure and export Escape preserve focus and issue no requests', async () => {
     const f = fixture();
     assert.equal(f.requests.length, 0);
-    assert.equal(f.panel.hidden, true);
-    assert.equal(f.toggle.hidden, false);
-    assert.equal(f.toggle.getAttribute('aria-expanded'), 'false');
-    await f.toggle.fire('click');
     assert.equal(f.panel.hidden, false);
+    assert.equal(f.toggle.hidden, false);
     assert.equal(f.toggle.getAttribute('aria-expanded'), 'true');
+    await f.toggle.fire('click');
+    assert.equal(f.panel.hidden, true);
+    assert.equal(f.toggle.getAttribute('aria-expanded'), 'false');
     await f.panel.fire('keydown', { key: 'Escape' });
     assert.equal(f.panel.hidden, true);
     assert.equal(f.toggle.focused, true);
@@ -235,8 +235,9 @@ test('changing report type clears irrelevant periods and requests options once w
 
 test('association account initializes the same presentation without geographic or export controls', async () => {
     const f = fixture({ account: true });
-    await f.toggle.fire('click');
     assert.equal(f.panel.hidden, false);
+    await f.toggle.fire('click');
+    assert.equal(f.panel.hidden, true);
     assert.equal(f.preview.querySelectorAll('table').length, 1);
     assert.equal(f.exportForm, null);
     assert.equal(f.requests.length, 0);

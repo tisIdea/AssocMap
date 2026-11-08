@@ -62,12 +62,16 @@ export function createGisPhotos(root, { base, manager, csrf }) {
     const render = gallery => {
         if (!Array.isArray(gallery.photos)) throw new Error('Gallery response unavailable.');
         photos = gallery.photos; slots = gallery.used_slots || 0; canManage = manager && gallery.can_manage === true;
-        find('[data-photo-count]').textContent = manager ? `${slots} / 5 slots` : `${photos.length} approved photo(s)`;
+        root.dataset.photoState = photos.length ? 'ready' : 'empty';
+        find('[data-photo-count]').textContent = manager ? `${slots} / 5 slots` : `${photos.length} approved ${photos.length === 1 ? 'photo' : 'photos'}`;
         const existing = new Map(Array.from(grid.children, node => [node.dataset.photoId, node]));
         grid.replaceChildren(...photos.map((photo, index) => {
             const previous = existing.get(photo.id);
             const figure = document.createElement('figure'); figure.dataset.photoId = photo.id;
             const open = button('View photo ' + (index + 1), () => openPhoto(photo, open));
+            open.classList.add('gis-photo-open');
+            const caption = document.createElement('span'); caption.textContent = 'View photo ' + (index + 1);
+            open.replaceChildren(caption);
             const image = previous?.querySelector('img') || document.createElement('img');
             if (!image.getAttribute('src')) image.src = photo.thumbnail_url;
             image.alt = 'Location photo ' + (index + 1); image.loading = 'lazy'; image.decoding = 'async';
@@ -99,7 +103,7 @@ export function createGisPhotos(root, { base, manager, csrf }) {
             if (canManage && photo.status !== 'deleting') item.append(button('Remove pending photo', event => remove(photo.id, event.currentTarget)));
             pending.append(item);
         });
-        message(photos.length ? 'Gallery updated.' : (manager ? 'No ready photos. Pending uploads appear below.' : 'No approved photos are available.'));
+        message(photos.length ? '' : (manager ? 'No ready photos. Pending uploads appear below.' : 'No approved photos are available for this location.'));
         controls();
     };
     const load = async context => {
@@ -108,9 +112,9 @@ export function createGisPhotos(root, { base, manager, csrf }) {
     };
     const refresh = async () => {
         if (!current || busy) return;
-        const context = current; busy = true; controls(); message('Loading photos...');
+        const context = current; busy = true; root.dataset.photoState = 'loading'; controls(); message('Loading photos...');
         try { await load(context); } catch (error) {
-            if (current === context) { grid.replaceChildren(); display.removeAttribute('src'); viewer.close(); canManage = false; message(error.message); }
+            if (current === context) { root.dataset.photoState = 'unavailable'; grid.replaceChildren(); display.removeAttribute('src'); viewer.close(); canManage = false; message(error.message); }
         } finally { if (current === context) { busy = false; controls(); } }
     };
     const mutate = async (action, success) => {

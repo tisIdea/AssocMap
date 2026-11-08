@@ -1,9 +1,8 @@
 <section class="gis-photos" data-gis-photos hidden aria-label="Location photos">
-    <div class="gis-panel-heading"><h3>Location photos</h3><span data-photo-count></span></div>
-    <p data-photo-status role="status" aria-live="polite"></p>
-    <button type="button" class="button" data-photo-refresh>Refresh photos</button>
+    <div class="gis-photos-heading"><div><h3>Photo gallery</h3><span data-photo-count></span></div><button type="button" class="button" data-photo-refresh aria-label="Refresh location photos">Refresh</button></div>
+    <p class="gis-photo-status" data-photo-status role="status" aria-live="polite"></p>
     @if($gisManager)
-        <p>Private by default. Approve each photo explicitly for a published, eligible location. Finalized project evidence is read-only.</p>
+        <p class="gis-photo-policy">Private by default. Approve each photo explicitly for a published, eligible location. Finalized project evidence is read-only.</p>
         <form data-photo-upload>
             <label for="gis-photo-file">JPEG or PNG, at most 5 MiB</label>
             <input id="gis-photo-file" type="file" accept="image/jpeg,image/png,.jpg,.jpeg,.png" required>
@@ -11,7 +10,7 @@
             <button type="submit" class="button button-primary">Upload photo</button>
         </form>
     @else
-        <p>Only approved photos of published, eligible locations are available.</p>
+        <p class="gis-photo-policy">Approved photos of published locations.</p>
     @endif
     <div class="gis-photo-grid" data-photo-grid></div>
     <ul data-photo-pending></ul>

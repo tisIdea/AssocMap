@@ -684,7 +684,7 @@ class ReportAuthorizationTest extends TestCase
         $this->mockUiReport($result);
         $html = $this->get('/'.$prefix.'/reports?report_type=projects&program_year=2026')->assertOk()->getContent();
         $query = $this->htmlQuery($html);
-        foreach (['Reporting scope and period', 'Summary indicators', 'Visual analytics', 'Data interpretation and quality', 'Detailed data tables'] as $label) {
+        foreach (['Reporting scope and period', 'At a glance', 'Visual analytics', 'Data interpretation and quality', 'Detailed records'] as $label) {
             $this->assertStringContainsString($label, $html);
         }
         $this->assertSame(1, $query->query('//*[@id="report-scope"]')->length);

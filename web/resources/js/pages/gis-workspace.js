@@ -21,10 +21,42 @@ export async function initGis(root) {
     const selection = L.featureGroup().addTo(map);
     const dialog = root.querySelector('[data-gis-confirm]');
     const retry = root.querySelector('[data-gis-retry]');
+    const detailsPanel = root.querySelector('#gis-location-panel');
+    const detailsDrawer = root.querySelector('[data-gis-details-drawer]');
+    const detailsHome = detailsPanel.parentElement;
+    const compactView = window.matchMedia('(max-width: 1100px)');
     let view = 'map', page = 1, lastPage = 1, selected = null, requestController, optionController;
     let pendingAction = null, opener = null, mutating = false, fitting = false, retryFit = false;
     let viewportTimer, searchTimer;
 
+    function openDetails() {
+        if (compactView.matches && !detailsDrawer.open) {
+            detailsDrawer.showModal();
+            document.documentElement.classList.add('gis-details-drawer-open');
+        }
+        root.querySelector('[data-gis-selection-title]').focus();
+    }
+
+    function placeDetails() {
+        detailsPanel.querySelectorAll('dialog[open]').forEach(dialog => dialog.close());
+        if (detailsDrawer.open) detailsDrawer.close();
+        (compactView.matches ? root.querySelector('[data-gis-drawer-content]') : detailsHome).append(detailsPanel);
+        const trigger = root.querySelector('[data-gis-open-details]');
+        trigger.setAttribute('aria-controls', compactView.matches ? 'gis-details-drawer' : 'gis-location-panel');
+        if (compactView.matches) trigger.setAttribute('aria-haspopup', 'dialog');
+        else trigger.removeAttribute('aria-haspopup');
+        fitting = true;
+        try { map.invalidateSize({ animate: false }); }
+        finally { fitting = false; }
+    }
+
+    detailsDrawer.addEventListener('close', () => {
+        document.documentElement.classList.remove('gis-details-drawer-open');
+        if (compactView.matches && selected) root.querySelector('[data-gis-open-details]').focus({ preventScroll: true });
+    });
+    detailsDrawer.addEventListener('click', event => { if (event.target === detailsDrawer) detailsDrawer.close(); });
+    root.querySelector('[data-gis-close-details]').addEventListener('click', () => detailsDrawer.close());
+    compactView.addEventListener('change', placeDetails);
 
     function actorName(name, recorded = true) {
         if (!recorded) return null;
@@ -32,24 +64,30 @@ export async function initGis(root) {
     }
 
     function clearSelection() {
+        if (detailsDrawer.open) detailsDrawer.close();
+        detailsPanel.classList.remove('has-selection');
         gallery?.clear();
         selected = null; selection.clearLayers();
         setFeatureSelection(features, null);
         map.closePopup();
         root.querySelector('[data-gis-details]').replaceChildren();
         root.querySelector('[data-gis-record-actions]').replaceChildren();
-        root.querySelector('[data-gis-selection-title]').textContent = 'No location selected';
+        root.querySelector('[data-gis-selection-title]').textContent = 'A closer look starts here';
+        root.querySelector('[data-gis-selection-eyebrow]').textContent = 'Explore the map';
+        root.querySelector('[data-gis-selection-badges]').hidden = true;
         root.querySelector('[data-gis-selection-symbol]').innerHTML = siteSymbol(null);
         root.querySelector('[data-gis-dismiss]').disabled = true;
         root.querySelector('[data-gis-open-details]').disabled = true;
         const history = root.querySelector('[data-gis-history]');
         if (history) { history.hidden = true; history.open = false; root.querySelector('[data-gis-history-details]').replaceChildren(); }
-        root.querySelector('[data-gis-selection-note]').textContent = 'Select a map feature or a location from the list.';
+        root.querySelector('[data-gis-selection-note]').textContent = 'Choose a marker or a list result to explore its details and photos.';
     }
 
-    function selectFeature(feature) {
+    function selectFeature(feature, reveal = true) {
+        const changed = selected?.id !== feature.id;
         gallery?.select(feature.id, feature.properties.version);
         selected = feature;
+        detailsPanel.classList.add('has-selection');
         setFeatureSelection(features, feature.id);
         setFeatureSelection(selection, feature.id);
         const details = root.querySelector('[data-gis-details]');
@@ -57,35 +95,63 @@ export async function initGis(root) {
         details.replaceChildren(); actions.replaceChildren();
         const p = feature.properties;
         root.querySelector('[data-gis-selection-title]').textContent = p.title || 'Location';
+        root.querySelector('[data-gis-selection-eyebrow]').textContent = 'Selected location';
         root.querySelector('[data-gis-selection-symbol]').innerHTML = siteSymbol(p.site_type_code);
+        root.querySelector('[data-gis-selection-badges]').hidden = false;
+        root.querySelector('[data-gis-classification]').textContent = p.site_type_name || 'Unclassified';
+        root.querySelector('[data-gis-geometry]').textContent = locationLabels[p.location_type];
         root.querySelector('[data-gis-dismiss]').disabled = false;
         root.querySelector('[data-gis-open-details]').disabled = false;
         root.querySelector('[data-gis-selection-note]').textContent = feature.geometry
-            ? `${p.title || 'Location'} selected. ${manager ? 'Available actions follow your current permissions.' : 'Read-only location. Geographic changes are unavailable in this viewer.'}`
-            : `${p.title || 'Location'} selected. Geometry is unavailable or exceeds the supported limit.`;
-        addDetail(details, 'Location', p.title);
-        addDetail(details, 'Geometry type', locationLabels[p.location_type]);
-        if (p.location_type === 'project_boundary') addDetail(details, 'Boundary meaning', 'Actual project-site area; not barangay, municipality or association coverage.');
-        addDetail(details, 'Site classification', p.site_type_name || 'Unclassified');
-        if (publicView && p.location_type === 'project_boundary') {
-            addDetail(details, 'Marker position', 'Calculated representative position within the boundary, not a surveyed site coordinate.');
-        }
-        addDetail(details, publicView ? 'Public address' : 'Project Site Address', p.address);
+            ? (publicView ? 'Published location' : 'Project site information')
+            : 'Geometry is unavailable or exceeds the supported limit.';
+
+        const section = (title, className = '') => {
+            const container = document.createElement('section'); container.className = `gis-detail-section ${className}`.trim();
+            const heading = document.createElement('h4'); heading.textContent = title;
+            const list = document.createElement('dl'); container.append(heading, list); details.append(container);
+            return list;
+        };
+        const note = (list, text) => {
+            const paragraph = document.createElement('p'); paragraph.className = 'gis-detail-note'; paragraph.textContent = text;
+            list.parentElement.append(paragraph);
+        };
+        const location = section('About this location');
+        addDetail(location, publicView ? 'Public address' : 'Project site address', p.address || 'Address not supplied');
+        addDetail(location, 'Description', p.description || 'No description has been provided.');
         if (!publicView) {
-            [['Association', p.association], ['Project', p.project], ['Registered municipality', p.municipality], ['Registered barangay', p.barangay],
-                ['Registered Area reference', p.area], ['Program year', p.program_year]].forEach(([label, value]) => addDetail(details, label, value));
-            addDetail(details, 'Address context',
-                "Geography refers to the association's registration, not spatial containment of the project site. Saved site-address verification is not recorded; legacy values may be area fallbacks and require review.");
+            const project = section('Project & association');
+            [['Project', p.project], ['Association', p.association], ['Program year', p.program_year]]
+                .forEach(([label, value]) => addDetail(project, label, value));
+            const geography = section('Registered geography');
+            [['Municipality', p.municipality], ['Barangay', p.barangay], ['Specific area', p.area]]
+                .forEach(([label, value]) => addDetail(geography, label, value));
+            note(geography, "Association registration geography does not verify site containment. Site-address verification is not recorded; legacy area fallbacks may require review.");
         }
-        addDetail(details, 'Public description', p.description);
-        if (feature.geometry?.type === 'Point') {
-            addDetail(details, 'Longitude', feature.geometry.coordinates[0]); addDetail(details, 'Latitude', feature.geometry.coordinates[1]);
+        const position = section('Map position', 'gis-position-section');
+        const representative = publicView && p.location_type === 'project_boundary';
+        const point = representative ? p.display_point : feature.geometry;
+        if (point?.type === 'Point' && Array.isArray(point.coordinates) && point.coordinates.length === 2
+            && point.coordinates.every(Number.isFinite)) {
+            const format = (value, positive, negative) => `${Math.abs(value).toFixed(6)}° ${value < 0 ? negative : positive}`;
+            addDetail(position, 'Latitude', format(point.coordinates[1], 'N', 'S'));
+            addDetail(position, 'Longitude', format(point.coordinates[0], 'E', 'W'));
+            [...position.querySelectorAll('dd')].forEach((value, index) => {
+                value.title = String(point.coordinates[index === 0 ? 1 : 0]);
+            });
+            note(position, representative ? 'Calculated representative position within the boundary, not a surveyed site coordinate.' : 'WGS 84 · decimal degrees');
+        } else {
+            addDetail(position, 'Geometry', feature.geometry?.type || 'Unavailable');
+        }
+        if (p.location_type === 'project_boundary') {
+            note(position, 'Actual project-site area; not barangay, municipality or association coverage.');
         }
         if (manager) {
-            if (p.association_archived_at) addDetail(details, 'Association lifecycle', 'Archived; operational records are read-only.');
-            if (p.project_archived_at) addDetail(details, 'Project lifecycle', 'Archived');
-            addDetail(details, 'Publication', p.is_published ? 'Published' : 'Unpublished');
-            addDetail(details, 'GIS lifecycle', p.archived_at ? 'Archived; regular editing is unavailable.' : 'Active');
+            const lifecycle = section('Record status');
+            if (p.association_archived_at) addDetail(lifecycle, 'Association lifecycle', 'Archived; operational records are read-only.');
+            if (p.project_archived_at) addDetail(lifecycle, 'Project lifecycle', 'Archived');
+            addDetail(lifecycle, 'Publication', p.is_published ? 'Published' : 'Unpublished');
+            addDetail(lifecycle, 'GIS lifecycle', p.archived_at ? 'Archived; regular editing is unavailable.' : 'Active');
             const history = root.querySelector('[data-gis-history]');
             const historyDetails = root.querySelector('[data-gis-history-details]');
             history.hidden = false;
@@ -97,12 +163,16 @@ export async function initGis(root) {
                 ['Archived by', actorName(p.archived_by_name, Boolean(p.archived_at || p.archived_by))]]
                 .forEach(([label, value]) => addDetail(historyDetails, label, value));
             if (p.project_finalized && !p.can_correct_geometry) {
-                addDetail(details, 'Project status', p.project_status === 'terminated' ? 'Terminated'
+                addDetail(lifecycle, 'Project status', p.project_status === 'terminated' ? 'Terminated'
                     : (p.project_status === 'completed' ? 'Completed' : p.project_status));
-                addDetail(details, 'Lifecycle', 'Operational history is read-only. GIS details and publication may be maintained; ownership and deletion are protected.');
+                note(lifecycle, 'Operational history is read-only. GIS details and publication may be maintained; ownership and deletion are protected.');
             }
             renderRecordActions(feature, actions);
         }
+        if (changed) {
+            root.querySelector('.gis-location-content').scrollTop = 0;
+        }
+        if (compactView.matches && reveal) openDetails();
     }
 
     function renderRecordActions(feature, actions) {
@@ -235,7 +305,7 @@ export async function initGis(root) {
             } else showList(data);
             if (selected) {
                 const fresh = data.features.find(feature => feature.id === selected.id);
-                fresh ? selectFeature(fresh) : clearSelection();
+                fresh ? selectFeature(fresh, false) : clearSelection();
             }
             const message = data.features.length ? `${data.features.length} locations loaded.` : emptyMessage(data.meta.empty_reason);
             showStatus(status, message + (data.meta.truncated ? ' The map limit was reached. Zoom, filter, or use the register for additional records.' : ''));
@@ -383,7 +453,7 @@ export async function initGis(root) {
 
     root.querySelectorAll('[data-gis-view]').forEach(button => button.addEventListener('click', () => setView(button.dataset.gisView)));
     root.querySelector('[data-gis-dismiss]').addEventListener('click', () => { clearSelection(); root.querySelector(`[data-gis-view="${view}"]`).focus(); });
-    root.querySelector('[data-gis-open-details]').addEventListener('click', () => root.querySelector('[data-gis-selection-title]').focus());
+    root.querySelector('[data-gis-open-details]').addEventListener('click', openDetails);
     root.querySelector('[data-gis-reload]').addEventListener('click', event => { clearSelection(); loadOptions(); load({ fit: true, notifyFailure: true, returnFocus: event.currentTarget }); });
     retry.addEventListener('click', () => load({ fit: retryFit, notifyFailure: true, returnFocus: retry }));
     form.addEventListener('submit', event => { event.preventDefault(); page = 1; clearSelection(); load({ fit: true }); });
@@ -414,5 +484,6 @@ export async function initGis(root) {
         clearTimeout(viewportTimer);
         viewportTimer = setTimeout(() => { if (view === 'map') load(); }, 450);
     });
+    placeDetails();
     await Promise.all([loadOptions(), load({ fit: true })]);
 }

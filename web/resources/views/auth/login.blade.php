@@ -4,8 +4,9 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="color-scheme" content="light">
+    @include('partials.favicon')
 
-    <title>Staff Sign In · AssocMap</title>
+    <title>Account Sign In · AssocMap</title>
 
     @vite([
         'resources/css/app.css',
@@ -20,19 +21,11 @@
             <div class="staff-login-brand">
                 <a
                     href="{{ route('home') }}"
-                    class="public-brand"
+                    class="public-brand public-brand-official"
                     aria-label="AssocMap home"
                 >
-                    <span class="public-brand-mark">
-                        <x-assocmap-mark />
-                    </span>
-
-                    <span>
-                        <strong>
-                            Assoc<span>Map</span>
-                        </strong>
-                        <small>Association and project monitoring</small>
-                    </span>
+                    <x-assocmap-logo />
+                    <small>Association and project monitoring</small>
                 </a>
             </div>
 
@@ -40,7 +33,7 @@
                 class="staff-login-card"
                 aria-labelledby="staff-login-title"
             >
-                <h1 id="staff-login-title">Staff Sign In</h1>
+                <h1 id="staff-login-title">Account Sign In</h1>
 
                 <p class="staff-login-intro">
                     Sign in to access your authorized AssocMap workspace.
@@ -146,7 +139,7 @@
 
             <p class="staff-login-access">
                 <x-icon name="shield" />
-                Authorized staff access only.
+                Authorized Account access only.
             </p>
 
         </div>

@@ -1,7 +1,7 @@
 @if($geography)
     @php $total = collect(collect($result['sections'])->firstWhere('key', 'associations')['measures'] ?? [])->firstWhere('label', 'Distinct associations')['value'] ?? null; @endphp
-    <section class="report-geography" id="report-geography">
-        <h3>{{ $geography['title'] }}</h3>
+    <details class="report-geography" id="report-geography" tabindex="-1">
+        <summary>{{ $geography['title'] }}</summary>
         <p class="field-help">Distinct authorized associations · current snapshot · archived associations retained</p>
         @if($geography['rows'])
             <div class="report-table-scroll" role="region" tabindex="0" aria-label="{{ $geography['title'] }}">
@@ -19,5 +19,5 @@
                 </table>
             </div>
         @else<p class="report-empty">No recorded associations in this scope.</p>@endif
-    </section>
+    </details>
 @endif
