@@ -1,0 +1,1 @@
+<img {{ $attributes->class(['assocmap-logo']) }} src="{{ asset('images/brand/assocmap-logo-128.png') }}" srcset="{{ asset('images/brand/assocmap-logo-128.png') }} 1x, {{ asset('images/brand/assocmap-logo-256.png') }} 2x" width="128" height="128" alt="AssocMap" decoding="async" draggable="false">

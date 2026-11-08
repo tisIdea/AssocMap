@@ -1,4 +1,4 @@
-const palette = ['#155a9c', '#187c78', '#a86117', '#7050a0', '#b5445a', '#58717f', '#776320', '#3e6792'];
+const palette = ['#0b427b', '#63876e', '#b07835', '#796a99', '#ad5968', '#6c8295', '#897c48', '#35679d'];
 const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const statusColors = { active: palette[1], inactive: palette[5], planned: palette[2], ongoing: palette[0], completed: palette[1], suspended: palette[3], cancelled: palette[4], terminated: '#743949' };
 const categoryColor = label => statusColors[label] || palette[[...label].reduce((sum, character) => sum + character.charCodeAt(0), 0) % palette.length];
@@ -144,6 +144,12 @@ function plotLabel(plot, text, x, y, width, anchor = 'middle') {
         span.textContent = line.trim() + (index === 2 && words.length > 3 ? '…' : ''); label.append(span);
     });
     const title = svg('title', {}); title.textContent = text; label.append(title); plot.append(label);
+    return Math.min(words.length, 3);
+}
+function plotWidth(container) {
+    const style = typeof getComputedStyle === 'function' ? getComputedStyle(container) : null;
+    const padding = style ? parseFloat(style.paddingLeft) + parseFloat(style.paddingRight) : 48;
+    return Math.max(200, (container.clientWidth || 608) - padding);
 }
 function plotRegion(plot, chart, container) {
     const scroll = node('div', undefined, 'report-plot-scroll');
@@ -160,43 +166,75 @@ function seriesLegend(chart, container) {
     });
     container.append(legend);
 }
+function horizontalBars(chart, container, width, ticks) {
+    const left = 12, right = width - 12, top = ticks.at(-1);
+    const plot = svg('svg', { class: 'report-stat-chart report-horizontal-bars', 'aria-hidden': 'true', focusable: 'false' });
+    chart.orientation = 'horizontal';
+    ticks.forEach(tick => plotText(plot, axisValue(tick), left + tick / top * (right - left), 18,
+        { 'text-anchor': tick === 0 ? 'start' : tick === top ? 'end' : 'middle', 'font-size': 11 }));
+    let cursor = 52;
+    chart.points.forEach(point => {
+        const label = `${point.rank ? `${point.rank}. ` : ''}${point.label}`;
+        const lines = plotLabel(plot, label, left, cursor, Math.max(20, Math.floor((right - left) / 7)), 'start');
+        cursor += lines * 14 + 8;
+        point.values.forEach((value, series) => {
+            if (chart.series.length > 1) plotText(plot, chart.series[series], left, cursor, { 'font-size': 11 });
+            plotText(plot, formatReportValue(value), right, cursor, { 'text-anchor': 'end', fill: '#203348', 'font-size': 11 });
+            const y = cursor + 9;
+            plot.append(svg('rect', { x: left, y, width: right - left, height: 12, fill: '#edf2f6', rx: 3 }));
+            for (const tick of ticks) {
+                const x = left + tick / top * (right - left);
+                plot.append(svg('path', { d: `M ${x} ${y} v 12`, stroke: '#dfe7ee', fill: 'none' }));
+            }
+            if (numeric(value)) {
+                const bar = svg('rect', { x: left, y, width: Number(value) / top * (right - left), height: 12, fill: palette[series], rx: 3 });
+                const tooltip = svg('title', {}); tooltip.textContent = `${label} · ${chart.series[series]}: ${formatReportValue(value, chart.unit)}`;
+                bar.append(tooltip); plot.append(bar);
+                if (Number(value) === 0) plot.append(svg('circle', { cx: left + 2, cy: y + 6, r: 3, fill: palette[series] }));
+            }
+            cursor += 36;
+        });
+        cursor += 24;
+    });
+    plot.setAttribute('viewBox', `0 0 ${width} ${cursor}`);
+    container.append(node('p', `Value (${chart.unit}) · zero-based scale`, 'report-chart-axis'));
+    seriesLegend(chart, container); plotRegion(plot, chart, container);
+}
 function barPlot(chart, container) {
     const maximum = Math.max(0, ...chart.points.flatMap(point => point.values.filter(numeric).map(Number)));
     const ticks = reportScale(maximum, chart.unit !== 'PHP' && chart.kind !== 'grouped');
     const top = ticks.at(-1);
-    const horizontal = chart.points.length > 8 || chart.points.some(point => point.label.length > 22) || chart.unit === 'PHP';
-    const available = container.clientWidth ? container.clientWidth - (globalThis.matchMedia?.('(max-width: 600px)').matches ? 28 : 40) : 580;
-    const width = horizontal ? Math.max(540, available) : Math.max(280, available, chart.points.length * 70);
-    const rowHeight = Math.max(58, chart.series.length * 24 + 12);
-    const height = horizontal ? chart.points.length * rowHeight + 70 : 340;
-    const left = horizontal ? 180 : 54, right = width - (horizontal ? 145 : 24), bottom = horizontal ? height - 42 : 254;
-    const plot = svg('svg', { viewBox: `0 0 ${width} ${height}`, class: `report-stat-chart report-${horizontal ? 'horizontal' : 'vertical'}-bars`, 'aria-hidden': 'true', focusable: 'false' });
-    plot.style.minWidth = `${width}px`;
-    chart.orientation = horizontal ? 'horizontal' : 'vertical';
+    const available = plotWidth(container);
+    const horizontal = chart.kind === 'grouped' || chart.points.length > Math.floor(available / 85)
+        || chart.points.some(point => point.label.length > 22) || chart.unit === 'PHP';
+    if (horizontal) { horizontalBars(chart, container, available, ticks); return; }
+    const width = available;
+    const height = 340, left = 54, right = width - 24, bottom = 254;
+    const plot = svg('svg', { viewBox: `0 0 ${width} ${height}`, class: 'report-stat-chart report-vertical-bars', 'aria-hidden': 'true', focusable: 'false' });
+    chart.orientation = 'vertical';
     for (const tick of ticks) {
-        const x = left + tick / top * (right - left), y = bottom - tick / top * (bottom - 32);
-        plot.append(svg('path', { d: horizontal ? `M ${x} 20 V ${bottom}` : `M ${left} ${y} H ${right}`, stroke: '#e2e8f0', fill: 'none' }));
-        plotText(plot, axisValue(tick), horizontal ? x : left - 10, horizontal ? bottom + 22 : y + 4, { 'text-anchor': horizontal ? 'middle' : 'end' });
+        const y = bottom - tick / top * (bottom - 32);
+        plot.append(svg('path', { d: `M ${left} ${y} H ${right}`, stroke: '#e2e8f0', fill: 'none' }));
+        plotText(plot, axisValue(tick), left - 10, y + 4, { 'text-anchor': 'end' });
     }
     plot.append(svg('path', { d: `M ${left} 20 V ${bottom} H ${right}`, stroke: '#94a3b8', fill: 'none' }));
     chart.points.forEach((point, index) => {
         const categoryWidth = (right - left) / chart.points.length;
         const center = left + (index + 0.5) * categoryWidth;
         const label = `${point.rank ? `${point.rank}. ` : ''}${point.label}`;
-        plotLabel(plot, label, horizontal ? left - 16 : center, horizontal ? 40 + index * rowHeight : bottom + 24, horizontal ? 23 : 13, horizontal ? 'end' : 'middle');
+        plotLabel(plot, label, center, bottom + 24, Math.max(6, Math.floor(categoryWidth / 7)));
         point.values.forEach((value, series) => {
             const barWidth = Math.min(44, categoryWidth * 0.65 / chart.series.length);
-            const x = horizontal ? left : center - barWidth * chart.series.length / 2 + series * barWidth;
+            const x = center - barWidth * chart.series.length / 2 + series * barWidth;
             const size = numeric(value) ? Number(value) / top : 0;
-            const y = horizontal ? 26 + index * rowHeight + series * 24 : bottom - size * (bottom - 32);
+            const y = bottom - size * (bottom - 32);
             if (value !== null) {
-                const rect = svg('rect', { x, y, width: horizontal ? size * (right - left) : Math.max(1, barWidth - 3),
-                    height: horizontal ? 16 : size * (bottom - 32), fill: palette[series], rx: 2 });
+                const rect = svg('rect', { x, y, width: Math.max(1, barWidth - 3), height: size * (bottom - 32), fill: palette[series], rx: 4 });
                 const tooltip = svg('title', {}); tooltip.textContent = `${label} · ${chart.series[series]}: ${formatReportValue(value, chart.unit)}`; rect.append(tooltip); plot.append(rect);
-                if (Number(value) === 0) plot.append(svg('circle', { cx: horizontal ? left : x + barWidth / 2, cy: horizontal ? y + 8 : bottom, r: 3, fill: palette[series] }));
+                if (Number(value) === 0) plot.append(svg('circle', { cx: x + barWidth / 2, cy: bottom, r: 3, fill: palette[series] }));
             }
-            plotText(plot, formatReportValue(value), horizontal ? right + 12 : x + barWidth / 2, horizontal ? y + 13 : (value === null ? bottom - 10 : y - 8),
-                { 'text-anchor': horizontal ? 'start' : 'middle', fill: value === null ? '#64748b' : '#0f172a', 'font-size': 12 });
+            plotText(plot, formatReportValue(value), x + barWidth / 2, value === null ? bottom - 10 : y - 8,
+                { 'text-anchor': 'middle', fill: value === null ? '#64748b' : '#0f172a', 'font-size': 12 });
         });
     });
     seriesLegend(chart, container); plotRegion(plot, chart, container);
@@ -205,20 +243,25 @@ function barPlot(chart, container) {
 function doughnutPlot(chart, container) {
     const total = chart.points.reduce((sum, point) => sum + Number(point.values[0]), 0);
     const plot = svg('svg', { viewBox: '0 0 200 200', class: 'report-doughnut', 'aria-hidden': 'true', focusable: 'false' });
+    plot.append(svg('circle', { cx: 100, cy: 100, r: 70, fill: 'none', stroke: '#edf2f6', 'stroke-width': 25 }));
     let offset = 0;
     for (const point of chart.points) {
         const proportion = Number(point.values[0]) / total * 100;
-        plot.append(svg('circle', { cx: 100, cy: 100, r: 70, fill: 'none', stroke: categoryColor(point.label), 'stroke-width': 28,
-            pathLength: 100, 'stroke-dasharray': `${proportion} ${100 - proportion}`, 'stroke-dashoffset': -offset, transform: 'rotate(-90 100 100)' }));
+        const segment = svg('circle', { cx: 100, cy: 100, r: 70, fill: 'none', stroke: categoryColor(point.label), 'stroke-width': 25,
+            pathLength: 100, 'stroke-dasharray': `${proportion} ${100 - proportion}`, 'stroke-dashoffset': -offset, transform: 'rotate(-90 100 100)' });
+        const tooltip = svg('title', {}); tooltip.textContent = `${point.label}: ${formatReportValue(point.values[0])} ${chart.unit}`;
+        segment.append(tooltip); plot.append(segment);
         offset += proportion;
     }
+    plotText(plot, formatReportValue(total), 100, 101, { 'text-anchor': 'middle', fill: palette[0], 'font-size': String(total).length > 7 ? 18 : 27, 'font-weight': 700 });
+    plotText(plot, chart.unit, 100, 122, { 'text-anchor': 'middle', 'font-size': 11 });
     const legend = node('ol', undefined, 'report-chart-legend');
-    chart.points.forEach((point, index) => {
+    chart.points.forEach(point => {
         const item = node('li');
         const swatch = node('span', undefined, 'report-chart-swatch');
         swatch.style.backgroundColor = categoryColor(point.label);
         swatch.setAttribute('aria-hidden', 'true');
-        item.append(swatch, node('span', `${index + 1}. ${point.label}`), node('strong', formatReportValue(point.values[0])));
+        item.append(swatch, node('span', point.label), node('strong', formatReportValue(point.values[0])));
         legend.append(item);
     });
     const layout = node('div', undefined, 'report-doughnut-layout');
@@ -229,32 +272,45 @@ function doughnutPlot(chart, container) {
 function linePlot(chart, container) {
     const maximum = Math.max(...chart.points.filter(point => numeric(point.values[0])).map(point => Number(point.values[0])));
     const ticks = reportScale(maximum), top = ticks.at(-1);
-    const plot = svg('svg', { viewBox: '0 0 840 310', class: 'report-stat-chart report-line-chart', 'aria-hidden': 'true', focusable: 'false' });
+    const width = plotWidth(container);
+    const left = width < 400 ? 48 : 64, right = width - 24;
+    const labelStep = Math.max(1, Math.ceil((chart.points.length - 1) / Math.max(1, Math.floor((right - left) / 48))));
+    const plot = svg('svg', { viewBox: `0 0 ${width} 310`, class: 'report-stat-chart report-line-chart', 'aria-hidden': 'true', focusable: 'false' });
     for (const value of ticks) {
         const y = 246 - value / top * 208;
-        plot.append(svg('path', { d: `M 64 ${y} H 810`, stroke: '#e2e8f0', fill: 'none' }));
-        plotText(plot, axisValue(value), 54, y + 4, { 'text-anchor': 'end' });
+        plot.append(svg('path', { d: `M ${left} ${y} H ${right}`, stroke: '#e2e8f0', fill: 'none', 'stroke-dasharray': '3 5' }));
+        plotText(plot, axisValue(value), left - 8, y + 4, { 'text-anchor': 'end', 'font-size': width < 400 ? 10 : 12 });
     }
-    plot.append(svg('path', { d: 'M 64 28 V 246 H 810', stroke: '#94a3b8', fill: 'none' }));
+    plot.append(svg('path', { d: `M ${left} 28 V 246 H ${right}`, stroke: '#94a3b8', fill: 'none' }));
     let path = '', connected = false;
     chart.points.forEach((point, index) => {
-        const x = 80 + index * 714 / Math.max(1, chart.points.length - 1);
-        plotText(plot, point.label, x, 273, { 'text-anchor': 'middle' });
+        const x = left + 8 + index * (right - left - 16) / Math.max(1, chart.points.length - 1);
+        const last = index === chart.points.length - 1;
+        if (last || index % labelStep === 0 && chart.points.length - 1 - index >= labelStep / 2) {
+            plotText(plot, point.label, x, 273, { 'text-anchor': 'middle', 'font-size': 11 });
+        }
         if (point.values[0] === null) { connected = false; return; }
         const y = 246 - Number(point.values[0]) / top * 208;
         path += `${connected ? ' L' : ' M'} ${x} ${y}`;
         connected = true;
-        plot.append(svg('circle', { cx: x, cy: y, r: 4, fill: palette[0], stroke: 'white', 'stroke-width': 1 }));
-        plotText(plot, formatReportValue(point.values[0]), x, y - 12, { 'text-anchor': 'middle', fill: '#0f172a' });
+        const pointNode = svg('circle', { cx: x, cy: y, r: 5, fill: palette[0], stroke: 'white', 'stroke-width': 2 });
+        const tooltip = svg('title', {}); tooltip.textContent = `${point.label}: ${formatReportValue(point.values[0])} ${chart.unit}`;
+        pointNode.append(tooltip); plot.append(pointNode);
+        if (width / chart.points.length >= 85) plotText(plot, formatReportValue(point.values[0]), x, y - 12, { 'text-anchor': 'middle', fill: '#0f172a' });
     });
     plot.append(svg('path', { d: path, fill: 'none', stroke: palette[0], 'stroke-width': 2 }));
     container.append(node('p', `Quantity (${chart.unit}) · recorded month`, 'report-chart-axis'));
     plotRegion(plot, chart, container);
+    if (width / chart.points.length < 85) container.append(node('p', 'Point tooltips and the chart values table show every recorded value. Missing months break the line.', 'report-chart-context'));
 }
 
-function chartTable(chart, container) {
+function chartTable(chart, container, scope, filters) {
     const details = node('details', undefined, 'report-chart-data');
-    details.append(node('summary', 'View chart values'));
+    details.append(node('summary', 'Chart values & interpretation'));
+    details.append(node('p', chart.explanation, 'report-chart-explanation'));
+    details.append(node('p', `Scope: ${scope}. Period: ${reportPeriod(filters, chart.snapshot)} Unit: ${chart.unit}.`, 'report-chart-context'));
+    if (chart.ranking) details.append(node('p', 'Equal counts share competition rank (1, 1, 3). Ties are ordered by label, then canonical source order. Top 5 may cut a tie; full detail retains every row.', 'report-chart-explanation'));
+    for (const note of chart.notes) details.append(node('p', note, 'report-chart-explanation'));
     const scroll = node('div', undefined, 'report-table-scroll');
     scroll.tabIndex = 0;
     scroll.setAttribute('role', 'region');
@@ -281,8 +337,8 @@ export function renderReportGeography(result, container) {
     const section = result.sections.find(section => section.key === 'association_geography');
     if (!section) return;
     const total = result.sections.find(section => section.key === 'associations')?.measures.find(measure => measure.label === 'Distinct associations')?.value;
-    const card = node('section', undefined, 'report-geography'); card.id = 'report-geography';
-    card.append(node('h3', section.title), node('p', 'Distinct authorized associations · current snapshot · archived associations retained', 'field-help'));
+    const card = node('details', undefined, 'report-geography'); card.id = 'report-geography'; card.tabIndex = -1;
+    card.append(node('summary', section.title), node('p', 'Distinct authorized associations · current snapshot · archived associations retained', 'field-help'));
     if (!section.rows.length) { card.append(node('p', 'No recorded associations in this scope.', 'report-empty')); container.append(card); return; }
     const scroll = node('div', undefined, 'report-table-scroll');
     scroll.tabIndex = 0; scroll.setAttribute('role', 'region'); scroll.setAttribute('aria-label', section.title);
@@ -312,40 +368,37 @@ export function renderReportGeography(result, container) {
 }
 
 export function renderReportAnalytics(result, container) {
-    container.replaceChildren(node('h3', 'Visual analytics'));
+    const heading = node('div', undefined, 'report-section-heading'), copy = node('div');
+    const title = node('h3', 'Visual analytics'); title.id = 'report-analytics-title';
+    copy.append(title, node('p', 'Compare recorded values and explore the detail behind each chart.'));
+    heading.append(copy); container.replaceChildren(heading);
     const charts = buildReportCharts(result);
     if (!charts.length) container.append(node('p', 'No suitable recorded chart data for this selection. Review the summary indicators and detailed tables below.', 'report-empty'));
     const grid = node('div', undefined, 'report-chart-grid');
-    const more = node('details', undefined, 'report-more-charts'), secondary = node('div', undefined, 'report-chart-grid');
     const priority = result.meta.filters.report_type === 'comprehensive' ? ['association_geography', 'project_status', 'income_periods', 'production'] : ['monthly_production'];
     charts.sort((a, b) => (priority.includes(a.key) ? priority.indexOf(a.key) : 100) - (priority.includes(b.key) ? priority.indexOf(b.key) : 100));
-    const figures = charts.map((chart, index) => {
+    const figures = charts.map(chart => {
         const figure = node('figure', undefined, 'report-chart-card');
         figure.dataset.chartKind = chart.kind;
-        (index < 4 ? grid : secondary).append(figure);
+        grid.append(figure);
         return figure;
     });
     container.append(grid);
-    if (charts.length > 4) { more.append(node('summary', `More charts (${charts.length - 4})`), secondary); container.append(more); }
     charts.forEach((chart, index) => {
         const figure = figures[index];
         const title = node('figcaption', chart.title);
         title.id = `report-chart-${index}`;
         figure.setAttribute('aria-labelledby', title.id);
         const scope = result.meta.scope.length === 1 ? result.meta.scope[0] : `${result.meta.scope.length} authorized associations (see Reporting scope)`;
-        figure.append(title, node('p', `${chart.unit} · ${chart.snapshot ? 'Current snapshot' : reportPeriod(result.meta.filters)}`, 'report-chart-context'));
+        figure.append(node('span', chart.kind === 'doughnut' ? 'Distribution' : chart.kind === 'line' ? 'Recorded history' : 'Comparison', 'report-chart-type'), title,
+            node('p', `${chart.unit} · ${chart.snapshot ? reportPeriod(result.meta.filters, true) : reportPeriod(result.meta.filters)}`, 'report-chart-context'));
         if (chart.kind === 'doughnut') doughnutPlot(chart, figure);
         else if (chart.kind === 'line') linePlot(chart, figure);
         else barPlot(chart, figure);
         if (chart.ranking) figure.append(node('p', `Top ${chart.points.length} of ${chart.total} · ranked by recorded count`, 'report-ranking-caption'));
         else if (chart.total > chart.points.length) figure.append(node('p', `First ${chart.points.length} of ${chart.total} observations · full detail below`, 'field-help'));
-        const info = node('details', undefined, 'report-chart-info'); info.append(node('summary', 'About this chart'));
-        info.append(node('p', chart.explanation), node('p', `Scope: ${scope}. Period: ${reportPeriod(result.meta.filters, chart.snapshot)} Unit: ${chart.unit}.`, 'report-chart-context'));
-        if (chart.ranking) info.append(node('p', 'Equal counts share competition rank (1, 1, 3). Ties are ordered by label, then canonical source order. Top 5 may cut a tie; full detail retains every row.'));
-        for (const note of chart.notes) info.append(node('p', note));
-        figure.append(info);
-        chartTable(chart, figure);
-        const link = node('a', 'Open detailed data table', 'report-table-link');
+        chartTable(chart, figure, scope, result.meta.filters);
+        const link = node('a', 'Explore detailed records →', 'report-table-link');
         link.href = chart.key === 'association_geography' ? '#report-geography' : `#report-table-${chart.key}`;
         figure.append(link);
         figure.dataset.chartKind = chart.kind;
@@ -354,9 +407,7 @@ export function renderReportAnalytics(result, container) {
     });
     renderReportGeography(result, container);
     if (result.sections.some(section => section.key === 'monthly_production') && !charts.some(chart => chart.kind === 'line')) {
-        const guidance = node('details', undefined, 'report-chart-guidance');
-        guidance.append(node('summary', 'When is a monthly line available?'), node('p', 'Choose Production Performance and select one project and product, one consistent unit and at least two recorded months. Missing or ambiguous series remain in detailed tables.'));
-        container.append(guidance);
+        container.append(node('p', 'Monthly trend unavailable for this selection. Choose Production Performance and select one project and product, one consistent unit and at least two recorded months. Missing or ambiguous series remain in detailed tables.', 'report-chart-guidance'));
     }
     container.removeAttribute('aria-busy');
 }

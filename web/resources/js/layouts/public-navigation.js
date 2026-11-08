@@ -37,6 +37,39 @@ export function initPublicNavigation() {
         });
         smallScreen.addEventListener('change', syncMenu);
         syncMenu();
+        publicNavbar.classList.add('is-enhanced');
+
+        const sections = [...document.querySelectorAll('.public-main section[id]')];
+        const sectionLinks = [...navigation.querySelectorAll('a[href*="#"]')];
+        if (sections.length && 'IntersectionObserver' in window) {
+            const updateCurrent = () => {
+                const current = sections.findLast(section => section.getBoundingClientRect().top <= window.innerHeight * 0.45) ?? sections[0];
+                sectionLinks.forEach(link => {
+                    if (link.hash === `#${current.id}`) link.setAttribute('aria-current', 'location');
+                    else link.removeAttribute('aria-current');
+                });
+            };
+            const sectionObserver = new IntersectionObserver(updateCurrent, {
+                rootMargin: '-90px 0px -55% 0px',
+            });
+            sections.forEach(section => sectionObserver.observe(section));
+            updateCurrent();
+        }
     }
 
+    // Reveals move visible content; a missing observer or script never hides it.
+    if (!document.body.classList.contains('public-page') || !('IntersectionObserver' in window)) return;
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+    if (reducedMotion.matches) return;
+    const revealObserver = new IntersectionObserver(entries => {
+        entries.forEach(entry => {
+            if (!entry.isIntersecting) return;
+            entry.target.classList.add('is-revealed');
+            revealObserver.unobserve(entry.target);
+        });
+    }, { threshold: 0.12 });
+    document.querySelectorAll('[data-public-reveal]').forEach(element => revealObserver.observe(element));
+    reducedMotion.addEventListener('change', event => {
+        if (event.matches) revealObserver.disconnect();
+    });
 }

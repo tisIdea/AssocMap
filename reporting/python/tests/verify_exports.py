@@ -44,15 +44,22 @@ def verify(directory):
                             elif column["key"] in ("year","program_year","quarter","month"):
                                 assert cell.number_format=="0", "Reporting periods use a grouped count format."
             summary=workbook["Summary"]
+            assert workbook.sheetnames[0]=="Summary", "The report summary must be the first worksheet."
             measures=[(section,item) for section in result["sections"] for item in section["measures"]]
-            assert summary.max_row==len(measures)+1
-            for index,(section,item) in enumerate(measures,2):
+            header=next(row[0].row for row in summary if row[0].value=="Section" and row[1].value=="Measure")
+            assert summary.max_row==max(7,len(measures)+header)
+            assert summary.freeze_panes==f"A{header+1}"
+            assert result["title"] in summary.cell(1,1).value
+            for index,(section,item) in enumerate(measures,header+1):
                 assert summary.cell(index,1).value==section["title"] and summary.cell(index,2).value==item["label"]
                 value=item["value"]
                 if isinstance(value,str): assert Decimal(str(summary.cell(index,4).value))==Decimal(value)
                 elif value is None: assert summary.cell(index,3).value is None and summary.cell(index,4).value is None
                 else: assert summary.cell(index,3).value==value
             assert not any(cell.data_type=="f" for sheet in workbook for row in sheet for cell in row), "Unexpected executable Excel formula."
+            for sheet in workbook:
+                assert not sheet.sheet_view.showGridLines
+                assert sheet.print_title_rows and sheet.page_setup.fitToWidth==1 and sheet.page_setup.fitToHeight==0
             results.append({"test":source.stem+" XLSX canonical cells, summary, types and formula safety","status":"PASS","sheets":len(workbook.worksheets)})
         finally:
             workbook.close()
@@ -61,10 +68,24 @@ def verify(directory):
         assert not reader.is_encrypted and len(reader.pages)>0
         text="\n".join(page.extract_text() or "" for page in reader.pages)
         normalized=" ".join(text.split())
+        compact="".join(text.split())
         assert result["title"] in normalized and "Asia/Manila" in normalized
         assert "PHP (Philippine peso)" in normalized
         for section in result["sections"]:
             assert " ".join(section["title"].split()) in normalized, "PDF section missing."
+            for item in section["measures"]:
+                assert "".join(item["label"].split()) in compact, "PDF indicator missing."
+                value=item["value"]
+                expected="Unobserved" if value is None else format(Decimal(value),",.2f") if isinstance(value,str) else format(value,",")
+                assert expected in text, "PDF indicator value missing."
+            for row in section["rows"]:
+                for column in section["columns"]:
+                    value=row[column["key"]]
+                    expected="Unobserved / not applicable" if value is None else format(Decimal(value),",.2f") if column["type"]=="decimal" else \
+                        format(value,",") if column["type"]=="integer" and column["key"] not in ("year","program_year","quarter","month") else str(value)
+                    assert "".join(expected.split()) in compact, "PDF canonical detail value missing."
+        for value in [*result["meta"]["scope"], *map(str,result["meta"]["filters"].values()),result["meta"]["generated_at"],result["meta"]["scope_basis"]]:
+            assert "".join(value.split()) in compact, "PDF scope, filter or generation context missing."
         if any("Peñafrancia" in name for name in result["meta"]["scope"]): assert "Peñafrancia" in normalized
         with pdfplumber.open(pdf) as document:
             for page in document.pages:

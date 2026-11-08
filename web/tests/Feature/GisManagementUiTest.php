@@ -288,7 +288,17 @@ class GisManagementUiTest extends TestCase
         $dom = new \DOMDocument();
         @$dom->loadHTML($page->getContent());
         $xpath = new \DOMXPath($dom);
-        $this->assertSame(3, $xpath->query('//a[@href="'.route('public.gis').'"]')->length);
+        foreach ([
+            '//nav[@aria-label="Public navigation"]//a[contains(., "GIS Map")]',
+            '//section[@id="home"]//a[contains(., "Explore GIS Map")]',
+            '//section[@id="public-gis"]//a[contains(., "Open the public map")]',
+            '//section[@id="access"]//a[contains(., "Explore GIS Map")]',
+            '//nav[@aria-label="Footer navigation"]//a[contains(., "Public GIS Map")]',
+        ] as $selector) {
+            $links = $xpath->query($selector);
+            $this->assertSame(1, $links->length);
+            $this->assertSame(route('public.gis'), $links->item(0)->getAttribute('href'));
+        }
         $this->assertSame(0, $xpath->query('//button[@disabled and contains(., "View Public Map")]')->length);
     }
 

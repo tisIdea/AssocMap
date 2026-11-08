@@ -21,13 +21,11 @@
     }
 @endphp
 <div class="reports-layout" data-report-workspace data-data-url="{{ route($prefix.'.data') }}" data-options-url="{{ route($prefix.'.options') }}">
-    <header class="card report-page-header">
-        <div class="report-page-heading">
-            <p class="eyebrow">Reporting workspace</p>
-            <h1 tabindex="-1">Reports &amp; Analytics</h1>
-            <p>Recorded program data and reporting coverage.</p>
+    @component('partials.page-header', ['headingCard' => true, 'headingClass' => 'report-page-header', 'title' => 'Reports & Analytics', 'description' => 'A clear view of your associations, recorded activity, and program performance.', 'eyebrow' => 'Program insights'])
+        @slot('headerContext')
             <span class="report-access-label"><x-icon name="shield" />{{ match ($role) { 'system_admin' => 'Organizational reporting', 'field_officer' => 'Current assigned associations', default => 'Your association · View only' } }}</span>
-        </div>
+        @endslot
+        @slot('actions')
         <div class="report-toolbar" role="group" aria-label="Report actions">
             <button class="button" type="button" data-report-filter-toggle aria-controls="report-filter-panel" aria-expanded="true" hidden><x-icon name="filter" />Filters<span class="report-filter-count" data-report-filter-count @if(!$activeFilterCount) hidden @endif>{{ $activeFilterCount }}</span><x-icon name="chevron-down" /></button>
             @if($canExport)
@@ -43,9 +41,10 @@
                 </details>
             @endif
         </div>
-    </header>
+        @endslot
+    @endcomponent
     <section id="report-filter-panel" class="card report-configuration" aria-labelledby="report-filter-title">
-        <div class="section-heading"><span class="stat-icon"><x-icon name="filter" /></span><div><h2 id="report-filter-title">Report filters</h2><p>Set the scope and reporting period</p></div><span class="report-filter-indicator" data-report-filter-status role="status">{{ $activeFilterCount ? $activeFilterCount.' active filter(s)' : 'Default filters' }}</span></div>
+        <div class="section-heading"><div><h2 id="report-filter-title">Build your report</h2><p>Choose a report, narrow the scope, and apply your selection.</p></div><span class="report-filter-indicator" data-report-filter-status role="status">{{ $activeFilterCount ? $activeFilterCount.' active filter(s)' : 'Default filters' }}</span></div>
         <form data-report-form method="GET" action="{{ route($prefix.'.index') }}">
             <noscript><p>Choose a report type below before setting its filters:</p><ul>@foreach($types as $value => $label)<li><a href="{{ route($prefix.'.index', ['report_type' => $value]) }}">{{ $label }}</a></li>@endforeach</ul></noscript>
             <div class="field"><label for="report-type">Report type</label><select id="report-type" name="report_type" required>
@@ -85,7 +84,7 @@
             <p class="field-help">Reporting periods apply to recorded events. Association/member counts remain current snapshots. Month filters use recorded details only.</p>
             <div class="report-filter-actions">
                 <a class="button button-quiet" href="{{ route($prefix.'.index') }}">Reset filters</a>
-                <button class="button button-primary" type="submit" data-report-submit>Apply filters</button>
+                <button class="button button-primary" type="submit" data-report-submit><x-icon name="chart" />Apply filters</button>
             </div>
         </form>
     </section>
@@ -96,6 +95,7 @@
                 @class(['notice-error' => $unavailable || isset($sizeLimitMessage)])>{{ $sizeLimitMessage ?? ($unavailable ? 'Reporting is temporarily unavailable. Please try again later.' : 'Report loaded from authorized records.') }}</p>
             <div data-report-result>
                 @if($result)
+                    <nav class="report-section-nav" aria-label="Report sections"><a href="#report-summary">Overview</a><a href="#report-analytics">Charts</a><a href="#report-details">Detailed records <x-icon name="arrow" /></a></nav>
                     <h2>{{ $result['title'] }}</h2>
                     <section class="report-context-card" id="report-scope" aria-labelledby="report-scope-title">
                         <h3 id="report-scope-title">Reporting scope and period</h3>
@@ -109,8 +109,8 @@
                         </details>
                     </section>
                     @if($result['empty'])<p class="notice">No recorded results match the selected report and filters.</p>@endif
-                    <section class="report-summary" aria-labelledby="report-summary-title">
-                        <h3 id="report-summary-title">Summary indicators</h3>
+                    <section class="report-summary" id="report-summary" tabindex="-1" aria-labelledby="report-summary-title">
+                        <div class="report-section-heading"><div><h3 id="report-summary-title">At a glance</h3><p>Recorded indicators within the applied scope. Unobserved values are not zero.</p></div></div>
                         <dl class="report-measures report-primary-measures" data-report-kpis>@foreach($primaryMeasures as $measure)<div><dt>{{ $measure['label'] }}</dt><dd>{{ $measureValue($measure['value']) }}</dd></div>@endforeach</dl>
                         <details class="report-all-measures"><summary>All report measures</summary>
                         <p class="field-help">Recorded values within the applied scope. Unobserved values are not zero.</p>
@@ -122,7 +122,7 @@
                         @endforeach
                         </details>
                     </section>
-                    <section class="report-analytics" aria-labelledby="report-analytics-title">
+                    <section class="report-analytics" id="report-analytics" tabindex="-1" aria-labelledby="report-analytics-title">
                         <h3 id="report-analytics-title">Visual analytics</h3>
                         <p class="field-help">Enable JavaScript for charts. All measures and detailed tables remain available. Chart images are HTML-only.</p>
                         @include('admin.reports.partials.geography', ['geography' => collect($result['sections'])->firstWhere('key', 'association_geography')])
@@ -133,7 +133,7 @@
                             @if($section['notes'])<h4>{{ $section['title'] }}</h4><ul>@foreach($section['notes'] as $note)<li>{{ $note }}</li>@endforeach</ul>@endif
                         @endforeach
                     </details>
-                    <details class="report-detailed-data"><summary>Detailed data tables ({{ count($result['sections']) }})</summary>
+                    <details class="report-detailed-data" id="report-details" tabindex="-1"><summary>Detailed records <span class="report-detail-count">{{ count($result['sections']) }} sections</span></summary>
                     @foreach($result['sections'] as $section)
                         <section class="report-section report-data-section" id="report-table-{{ $section['key'] ?? $loop->index }}" tabindex="-1"><h4>{{ $section['title'] }}</h4>
                             @if($section['rows'])

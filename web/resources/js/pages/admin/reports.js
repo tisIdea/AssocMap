@@ -24,7 +24,7 @@ function initReportControls(root, form, readFilters, defaultYear) {
     }
 
     toggle.hidden = false;
-    setOpen(false);
+    setOpen(true);
     toggle.addEventListener('click', () => setOpen(panel.hidden));
     panel.addEventListener('keydown', event => {
         if (event.key === 'Escape') { event.preventDefault(); setOpen(false, true); }
@@ -58,9 +58,10 @@ export function initReports() {
     initReportDownloads(exportForm);
     const initial = JSON.parse(root.querySelector('[data-report-initial]').textContent);
     root.addEventListener('click', event => {
-        const link = event.target.closest?.('a[href^="#report-table-"]');
+        const link = event.target.closest?.('a[href^="#report-"]');
         const target = link && preview.querySelector(link.hash);
         if (!target) return;
+        if (target.tagName === 'DETAILS') target.open = true;
         for (let parent = target.parentElement; parent && parent !== preview; parent = parent.parentElement) {
             if (parent.tagName === 'DETAILS') parent.open = true;
         }
@@ -251,7 +252,12 @@ export function initReports() {
     }
 
     function render(result) {
-        preview.replaceChildren(element('h2', result.title));
+        const navigation = element('nav', undefined, 'report-section-nav');
+        navigation.setAttribute('aria-label', 'Report sections');
+        for (const [label, target] of [['Overview', 'report-summary'], ['Charts', 'report-analytics'], ['Detailed records →', 'report-details']]) {
+            const link = element('a', label); link.href = `#${target}`; navigation.append(link);
+        }
+        preview.replaceChildren(navigation, element('h2', result.title));
         const scope = element('section', undefined, 'report-context-card');
         scope.id = 'report-scope';
         const applied = result.meta.filters;
@@ -274,7 +280,12 @@ export function initReports() {
         preview.append(scope);
         if (result.empty) preview.append(element('p', 'No recorded results match the selected report and filters.', 'notice'));
         const summary = element('section', undefined, 'report-summary');
-        summary.append(element('h3', 'Summary indicators'));
+        summary.id = 'report-summary'; summary.tabIndex = -1;
+        summary.setAttribute('aria-labelledby', 'report-summary-title');
+        const summaryHeading = element('div', undefined, 'report-section-heading'), summaryCopy = element('div');
+        const summaryTitle = element('h3', 'At a glance'); summaryTitle.id = 'report-summary-title';
+        summaryCopy.append(summaryTitle, element('p', 'Recorded indicators within the applied scope. Unobserved values are not zero.'));
+        summaryHeading.append(summaryCopy); summary.append(summaryHeading);
         const primary = element('dl', undefined, 'report-measures report-primary-measures');
         primary.setAttribute('data-report-kpis', '');
         for (const [key, label] of initial.primaryMeasureMap?.[applied.report_type] || []) {
@@ -300,8 +311,11 @@ export function initReports() {
         summary.append(allMeasures);
         preview.append(summary);
         const analytics = element('section', undefined, 'report-analytics');
+        analytics.id = 'report-analytics'; analytics.tabIndex = -1;
+        analytics.setAttribute('aria-labelledby', 'report-analytics-title');
         analytics.setAttribute('aria-busy', 'true');
-        analytics.append(element('h3', 'Visual analytics'), element('p', 'Loading charts. Summary indicators and detailed data remain available.', 'field-help'));
+        const analyticsTitle = element('h3', 'Visual analytics'); analyticsTitle.id = 'report-analytics-title';
+        analytics.append(analyticsTitle, element('p', 'Loading charts. Summary indicators and detailed data remain available.', 'field-help'));
         preview.append(analytics);
         // Load presentation code only on report pages; never request a dataset per chart.
         import('../../components/report-analytics.js').then(({ renderReportAnalytics }) => {
@@ -311,7 +325,8 @@ export function initReports() {
         }).catch(() => {
             if (!preview.contains(analytics)) return;
             analytics.removeAttribute('aria-busy');
-            analytics.replaceChildren(element('h3', 'Visual analytics'), element('p', 'Charts are unavailable. Summary indicators and detailed data tables remain available.', 'report-empty'));
+            const title = element('h3', 'Visual analytics'); title.id = 'report-analytics-title';
+            analytics.replaceChildren(title, element('p', 'Charts are unavailable. Summary indicators and detailed data tables remain available.', 'report-empty'));
         });
         const quality = element('details', undefined, 'report-quality');
         quality.append(element('summary', 'Data interpretation and quality'));
@@ -326,7 +341,10 @@ export function initReports() {
         }
         preview.append(quality);
         const detailed = element('details', undefined, 'report-detailed-data');
-        detailed.append(element('summary', `Detailed data tables (${result.sections.length})`));
+        detailed.id = 'report-details'; detailed.tabIndex = -1;
+        const detailedHeading = element('summary', 'Detailed records ');
+        detailedHeading.append(element('span', `${result.sections.length} sections`, 'report-detail-count'));
+        detailed.append(detailedHeading);
         result.sections.forEach((section, index) => {
             const container = element('section', undefined, 'report-section report-data-section');
             container.id = `report-table-${section.key || index}`;

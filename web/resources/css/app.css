@@ -26,3 +26,5 @@
 @import './pages/monitoring-management.css';
 
 @import './pages/project-cover.css';
+@import './components/branding.css';
+@import './components/page-heading.css';

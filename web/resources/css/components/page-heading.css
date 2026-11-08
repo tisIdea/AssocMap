@@ -1,0 +1,9 @@
+/* Card variant of the shared header used by the management workspaces. */
+.workspace-page-heading { padding: 24px; border-top: 3px solid var(--primary); }
+.workspace-page-heading > .page-header { margin: 0; }
+.workspace-page-heading > .page-header > div:first-child { flex: 1 1 260px; }
+.workspace-page-heading .page-header p { max-width: 760px; }
+.workspace-page-heading .page-header-actions { align-items: center; max-width: 100%; }
+@media (max-width: 760px) {
+    .workspace-page-heading { padding: 18px; }
+}

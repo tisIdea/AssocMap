@@ -95,9 +95,10 @@ class Element {
     all(tag) { return this.children.flatMap(child => [...(child.tagName === tag ? [child] : []), ...child.all(tag)]); }
 }
 
-function render(input) {
+function render(input, width = 608) {
     const previous = globalThis.document;
-    globalThis.document = { createElement: tag => new Element(tag), createElementNS: (_namespace, tag) => new Element(tag) };
+    const create = tag => Object.assign(new Element(tag), { clientWidth: width });
+    globalThis.document = { createElement: create, createElementNS: (_namespace, tag) => create(tag) };
     try { const container = new Element('section'); renderReportAnalytics(input, container); return container; }
     finally { globalThis.document = previous; }
 }
@@ -135,7 +136,7 @@ test('geography ranking uses canonical municipality IDs and subtotals without co
     assert.equal(chart.key, 'association_geography'); assert.deepEqual(chart.points.map(p => p.values[0]), [3, 1]);
     assert.equal(buildReportCharts(input).length, 1, 'Old geography sections remain data-only.');
     const output = render(input);
-    const geography = output.all('section').find(section => section.id === 'report-geography');
+    const geography = output.all('details').find(section => section.id === 'report-geography');
     assert.deepEqual(geography.all('tbody').map(body => body.dataset.municipalityId), ['m1', 'm2']);
     assert.deepEqual(geography.all('tr').filter(row => row.dataset.barangayId).map(row => row.dataset.barangayId), ['b1', 'b2', 'b3']);
     assert.equal(geography.all('tfoot')[0].all('td')[0].textContent, '4');
@@ -165,13 +166,13 @@ test('numeric scales contain zero, cover actual maxima and retain integer count 
     }
 });
 
-test('main dashboard bounds chart cards and keeps methodology closed and secondary charts available', () => {
+test('dashboard retains every available chart and consolidates values and interpretation in closed disclosures', () => {
     const input = result(['members', 'project_component', 'training_component', 'production_coverage', 'activity_component', 'monitoring_status'].map(key => distribution(key)));
     const output = render(input), grid = output.children.find(node => node.className === 'report-chart-grid');
-    assert.equal(grid.all('figure').length, 4);
-    const more = output.all('details').find(node => node.className === 'report-more-charts');
-    assert.equal(more.all('figure').length, 2); assert.notEqual(more.open, true);
-    assert.ok(output.all('details').filter(node => node.className === 'report-chart-info').every(node => !node.open));
+    assert.equal(grid.all('figure').length, 6);
+    const values = output.all('details').filter(node => node.className === 'report-chart-data');
+    assert.equal(values.length, 6);
+    assert.ok(values.every(node => !node.open && node.all('table').length === 1 && node.all('p').length > 0));
     assert.ok(output.all('table').some(table => table.all('th').some(th => th.textContent === 'Rank')));
 });
 
@@ -195,5 +196,30 @@ test('monthly line connects adjacent recorded months and restarts after a missin
 test('status colors remain stable when other categories are filtered away', () => {
     const all = render(result([distribution('association_status')]));
     const one = render(result([distribution('association_status', [{ label: 'inactive', count: 2 }])]));
-    assert.equal(all.all('circle')[1].attributes.get('stroke'), one.all('circle')[0].attributes.get('stroke'));
+    const inactive = output => output.all('circle').find(circle => circle.all('title').some(title => title.textContent.startsWith('inactive:')));
+    assert.equal(inactive(all).attributes.get('stroke'), inactive(one).attributes.get('stroke'));
+});
+
+test('narrow comparison charts fit their card and retain exact zero and missing values', () => {
+    const input = result([section('production', [production({ target: '0.00', actual: null })])]);
+    const snapshot = structuredClone(input);
+    const output = render(input, 288), plot = output.all('svg')[0];
+    assert.equal(Number(plot.attributes.get('viewBox').split(' ')[2]), 240);
+    assert.equal(plot.style.minWidth, undefined);
+    assert.match(plot.attributes.get('class'), /horizontal-bars/);
+    assert.ok(output.all('td').some(cell => cell.textContent === '0.00'));
+    assert.ok(output.all('td').some(cell => cell.textContent === 'Unobserved'));
+    assert.deepEqual(input, snapshot);
+});
+
+test('dense monthly plots reduce axis labels without dropping points, tooltips or table values', () => {
+    const rows = Array.from({ length: 12 }, (_, index) => monthly(index + 1, `${index}.00`));
+    const input = result([section('monthly_production', rows)], selected);
+    const output = render(input, 288), plot = output.all('svg')[0];
+    assert.equal(Number(plot.attributes.get('viewBox').split(' ')[2]), 240);
+    assert.equal(plot.style.minWidth, undefined);
+    assert.equal(output.all('circle').length, 12);
+    assert.equal(output.all('circle').filter(circle => circle.all('title').length).length, 12);
+    assert.equal(output.all('tbody')[0].all('tr').length, 12);
+    assert.ok(plot.all('text').filter(label => /^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)$/.test(label.textContent)).length <= 5);
 });
