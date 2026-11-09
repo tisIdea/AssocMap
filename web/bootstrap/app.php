@@ -19,11 +19,10 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->prepend(\App\Http\Middleware\ProtectInvitationActivation::class);
         $middleware->prepend(\App\Http\Middleware\ProtectPasswordRecovery::class);
         $middleware->prepend(\App\Http\Middleware\LocalRequestTiming::class);
-        // Trust the local Cloudflare Tunnel reverse proxy.
+        // Recognize HTTPS when running behind Railway's router.
         $middleware->trustProxies(
-            at: ['127.0.0.1', '::1'],
+            at: env('RAILWAY_PROJECT_ID') ? '*' : ['127.0.0.1', '::1'],
             headers: Request::HEADER_X_FORWARDED_FOR
-                | Request::HEADER_X_FORWARDED_HOST
                 | Request::HEADER_X_FORWARDED_PORT
                 | Request::HEADER_X_FORWARDED_PROTO,
         );

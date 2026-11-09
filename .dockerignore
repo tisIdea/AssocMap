@@ -1,0 +1,25 @@
+# Include only the application and deployment files.
+**
+!Dockerfile
+!deploy/
+!deploy/**
+!web/
+!web/**
+!reporting/
+!reporting/**
+
+# Keep credentials, local uploads, and generated files out.
+**/.env
+**/.env.*
+**/.git
+**/node_modules
+**/vendor
+**/__pycache__
+**/*.pyc
+**/.venv
+web/tests
+web/storage
+web/bootstrap/cache/*.php
+web/public/build
+web/public/hot
+web/public/storage
