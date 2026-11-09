@@ -24,5 +24,10 @@ php artisan config:cache
 php artisan view:cache
 chown -R www-data:www-data storage bootstrap/cache
 
+# Prepare Apache's settings and working folders.
+export APACHE_CONFDIR=/etc/apache2
 . /etc/apache2/envvars
+mkdir -p "$APACHE_RUN_DIR" "$APACHE_LOCK_DIR"
+
+apache2 -t
 exec apache2 -D FOREGROUND
