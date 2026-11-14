@@ -160,7 +160,22 @@
 .public-page .public-access-panel p a { display: inline-block; padding-block: 4px; color: #fff; text-decoration: underline; text-underline-offset: 4px; }
 .public-page .public-footer { background: #f6f8fa; padding-block: 58px 25px; }
 .public-page .public-footer-content { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 60px; padding-bottom: 48px; }
-.public-page .public-footer-identity p { margin-top: 20px; font-size: 13px; line-height: 1.8; }
+.public-page .public-footer-identity { align-self: center; max-width: 460px; }
+.public-page .public-footer-identity .public-brand { gap: 16px; }
+.public-page .public-footer-identity .public-brand-mark { width: 84px; height: 84px; }
+.public-page .public-footer-identity .public-brand strong { font-size: 44px; }
+.public-page .public-footer-identity .public-brand:hover { text-decoration: none; }
+.public-page .public-footer-identity p { max-width: 440px; margin-top: 22px; color: var(--public-ink); font-size: 16px; line-height: 1.7; }
+@media (max-width: 760px) {
+    .public-page .public-footer-identity .public-brand-mark { width: 64px; height: 64px; }
+    .public-page .public-footer-identity .public-brand strong { font-size: 34px; }
+    .public-page .public-footer-identity p { font-size: 16px; }
+}
+@media (prefers-reduced-motion: no-preference) {
+    .public-page .public-footer-identity .public-brand-mark, .public-page .public-footer-identity .public-brand strong { transition: transform 220ms ease, color 220ms ease; }
+    .public-page .public-footer-identity .public-brand:hover .public-brand-mark, .public-page .public-footer-identity .public-brand:focus-visible .public-brand-mark { transform: translateY(-3px) rotate(-6deg); }
+    .public-page .public-footer-identity .public-brand:hover strong, .public-page .public-footer-identity .public-brand:focus-visible strong { transform: translateX(3px); color: var(--public-secondary); }
+}
 .public-page .public-footer nav { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
 .public-page .public-footer-label { margin-bottom: 13px; font-size: 11px; font-weight: 650; letter-spacing: .8px; color: var(--public-ink); }
 .public-page .public-footer nav a { display: inline-flex; align-items: center; gap: 10px; min-height: 35px; padding-block: 5px; font-size: 12px; color: var(--public-muted); }
@@ -168,8 +183,15 @@
 .public-page .public-footer nav .icon { width: 13px; height: 13px; transform: rotate(-35deg); }
 .public-page .public-footer-bottom { display: flex; align-items: center; justify-content: space-between; gap: 30px; border-top: 1px solid var(--public-border); padding-top: 23px; }
 .public-page .public-footer-bottom p { font-size: 10px; line-height: 1.8; }
-.public-page .public-footer-bottom > a { display: inline-flex; align-items: center; gap: 20px; min-height: 44px; font-size: 12px; }
+.public-page .public-footer-bottom > a { display: inline-flex; align-items: center; justify-content: center; gap: 14px; min-height: 44px; padding: 8px 14px; border: 1px solid var(--public-border); border-radius: 6px; background: #fff; color: var(--public-primary); font-size: 12px; }
+.public-page .public-footer-bottom > a:hover { border-color: var(--public-secondary); background: #edf4fa; color: var(--public-primary); text-decoration: none; }
 .public-page .public-footer-bottom .icon { transform: rotate(-90deg); width: 16px; height: 16px; }
+@media (prefers-reduced-motion: no-preference) {
+    .public-page .public-footer-bottom > a { transition: background 200ms, border-color 200ms, box-shadow 200ms, transform 200ms; }
+    .public-page .public-footer-bottom > a:hover, .public-page .public-footer-bottom > a:focus-visible { transform: translateY(-2px); box-shadow: 0 10px 22px -12px #123e6538; }
+    .public-page .public-footer-bottom > a .icon { transition: transform 200ms; }
+    .public-page .public-footer-bottom > a:hover .icon, .public-page .public-footer-bottom > a:focus-visible .icon { transform: translateY(-3px) rotate(-90deg); }
+}
 .public-page .public-policy { max-width: 900px; }
 .public-page .public-policy h1 { font-size: clamp(36px, 4vw, 58px); font-weight: 500; line-height: 1.14; letter-spacing: -2px; }
 .public-page .public-policy-content { display: grid; gap: 32px; margin-top: 48px; }
