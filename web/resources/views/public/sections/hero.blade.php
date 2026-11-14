@@ -27,7 +27,6 @@
         <div class="public-hero-bottom">
             <a href="#about" class="public-scroll-link"><span class="public-scroll-icon"><x-icon name="chevron-down" /></span> Explore the bigger picture</a>
             <div class="public-hero-meta">
-                <p class="public-hero-credit">Photo by <a href="https://unsplash.com/@hectorjp" target="_blank" rel="noopener noreferrer">Hector John Periquin<span class="sr-only"> (opens in a new tab)</span></a> on <a href="https://unsplash.com/photos/man-riding-row-boat-on-sea-HbDEhWpouM8" target="_blank" rel="noopener noreferrer">Unsplash<span class="sr-only"> (opens in a new tab)</span></a></p>
                 <p>Community livelihood information <span>&middot; SAAD Phase II program context</span></p>
             </div>
         </div>
