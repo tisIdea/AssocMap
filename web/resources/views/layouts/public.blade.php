@@ -9,7 +9,7 @@
     <title>@yield('title', 'AssocMap · Community Livelihood Monitoring')</title>
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
-<body class="public-page">
+<body class="public-page" id="top">
     <a class="skip-link" href="#public-main">Skip to content</a>
     @include('partials.public-navbar')
     <main id="public-main" class="public-main" tabindex="-1">

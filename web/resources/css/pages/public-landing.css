@@ -193,12 +193,23 @@
     .public-page .public-footer-bottom > a:hover .icon, .public-page .public-footer-bottom > a:focus-visible .icon { transform: translateY(-3px) rotate(-90deg); }
 }
 .public-page .public-policy { max-width: 900px; }
+.public-page .public-policy > header { padding-bottom: 28px; border-bottom: 1px solid var(--public-border); }
+.public-page .public-policy > header .public-eyebrow { display: flex; align-items: center; gap: 12px; }
+.public-page .public-policy > header .public-eyebrow::before { content: ''; width: 28px; height: 2px; background: var(--public-secondary); }
 .public-page .public-policy h1 { font-size: clamp(36px, 4vw, 58px); font-weight: 500; line-height: 1.14; letter-spacing: -2px; }
-.public-page .public-policy-content { display: grid; gap: 32px; margin-top: 48px; }
-.public-page .public-policy-content section { border-top: 1px solid var(--public-border); padding-top: 24px; }
+.public-page .public-policy-content { display: grid; gap: 14px; margin-top: 36px; }
+.public-page .public-policy-content section { padding: 24px 28px; border: 1px solid var(--public-border); border-left: 3px solid var(--public-border); border-radius: 8px; background: #fff; }
+.public-page .public-policy-content section:hover, .public-page .public-policy-content section:focus-within { border-left-color: var(--public-secondary); background: #f3f6f9; }
 .public-page .public-policy-content h2 { font-weight: 650; color: var(--public-ink); }
 .public-page .public-policy-content p { margin-top: 12px; }
 .public-page .public-policy-content a { color: var(--public-primary); text-decoration: underline; text-underline-offset: 3px; overflow-wrap: anywhere; }
+@media (prefers-reduced-motion: no-preference) {
+    @keyframes public-policy-enter { from { opacity: .75; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+    .public-page .public-policy > header { animation: public-policy-enter 400ms ease-out both; }
+    .public-page .public-policy-content { animation: public-policy-enter 450ms 60ms ease-out both; }
+    .public-page .public-policy-content section { transition: background-color 200ms ease, border-color 200ms ease, box-shadow 200ms ease; }
+    .public-page .public-policy-content section:hover, .public-page .public-policy-content section:focus-within { box-shadow: 0 12px 26px -20px #123e6538; }
+}
 @keyframes public-hero-enter { from { opacity: .45; transform: translateY(12px); } to { opacity: 1; transform: none; } }
 @keyframes public-section-enter { from { transform: translateY(18px); } to { transform: none; } }
 @media (prefers-reduced-motion: no-preference) {
