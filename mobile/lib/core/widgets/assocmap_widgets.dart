@@ -8,21 +8,90 @@ class AssocMapMark extends StatelessWidget {
   Widget build(BuildContext context) => Semantics(
     label: 'AssocMap symbol',
     image: true,
-    child: Container(
-      width: size,
-      height: size,
-      decoration: const BoxDecoration(
-        shape: BoxShape.circle,
-        color: Color(0xFFE8F1FC),
-      ),
-      child: Icon(
-        Icons.location_on_outlined,
-        size: size * .65,
-        color: AppTheme.blue,
+    child: ClipOval(
+      child: Image.asset(
+        'assets/brand/assocmap-symbol.png',
+        width: size,
+        height: size,
+        fit: BoxFit.contain,
+        excludeFromSemantics: true,
       ),
     ),
   );
 }
+
+class StatusBadge extends StatelessWidget {
+  const StatusBadge({super.key, required this.status, this.label});
+  final String status;
+  final String? label;
+  @override
+  Widget build(BuildContext context) {
+    final color = switch (status.toLowerCase()) {
+      'pending' || 'planned' || 'not_started' => const Color(0xFF80540D),
+      'rejected' || 'cancelled' => const Color(0xFF9C3333),
+      'approved' || 'completed' || 'active' || 'ongoing' => AppTheme.green,
+      _ => AppTheme.muted,
+    };
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: .08),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Text(
+          label ?? status.replaceAll('_', ' '),
+          style: TextStyle(
+            color: color,
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class DetailRow extends StatelessWidget {
+  const DetailRow({super.key, required this.label, required this.value});
+  final String label, value;
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 8),
+    child: LayoutBuilder(
+      builder: (context, box) {
+        final stacked =
+            box.maxWidth < 300 ||
+            MediaQuery.textScalerOf(context).scale(14) > 21;
+        final labelWidget = Text(
+          label,
+          style: Theme.of(context).textTheme.bodySmall,
+        );
+        final valueWidget = Text(
+          value,
+          style: const TextStyle(fontWeight: FontWeight.w500),
+        );
+        return stacked
+            ? Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [labelWidget, const SizedBox(height: 4), valueWidget],
+              )
+            : Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(width: box.maxWidth * .38, child: labelWidget),
+                  const SizedBox(width: 12),
+                  Expanded(child: valueWidget),
+                ],
+              );
+      },
+    ),
+  );
+}
+
+String displayDate(BuildContext context, DateTime value) =>
+    '${MaterialLocalizations.of(context).formatMediumDate(value)}, ${value.year}';
 
 class AssocMapBrand extends StatelessWidget {
   const AssocMapBrand({super.key});
@@ -50,7 +119,7 @@ class InformationCard extends StatelessWidget {
   const InformationCard({
     super.key,
     required this.child,
-    this.padding = const EdgeInsets.all(18),
+    this.padding = const EdgeInsets.all(16),
   });
   final Widget child;
   final EdgeInsets padding;
@@ -72,22 +141,22 @@ class ReadOnlyNotice extends StatelessWidget {
   Widget build(BuildContext context) => Container(
     padding: const EdgeInsets.all(14),
     decoration: BoxDecoration(
-      color: const Color(0xFFEAF2FC),
+      color: AppTheme.tint,
       borderRadius: BorderRadius.circular(12),
       border: Border.all(color: AppTheme.line),
     ),
     child: Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(icon, size: 19, color: AppTheme.blue),
+        Icon(icon, size: 19, color: AppTheme.green),
         const SizedBox(width: 10),
         Expanded(
           child: Text(
             message,
             style: const TextStyle(
-              color: AppTheme.blue,
-              fontSize: 12,
-              height: 1.5,
+              color: AppTheme.green,
+              fontSize: 13,
+              height: 1.45,
             ),
           ),
         ),
@@ -137,7 +206,9 @@ class PageContent extends StatelessWidget {
   final List<Widget> children;
   @override
   Widget build(BuildContext context) => SingleChildScrollView(
-    padding: const EdgeInsets.all(16),
+    physics: const AlwaysScrollableScrollPhysics(),
+    keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+    padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
     child: Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 760),
@@ -187,9 +258,9 @@ class MetricStrip extends StatelessWidget {
                   Text(
                     entry.value?.toString() ?? '\u2014',
                     style: TextStyle(
-                      fontSize: 25,
+                      fontSize: 24,
                       fontWeight: FontWeight.w700,
-                      color: inverse ? Colors.white : AppTheme.blue,
+                      color: inverse ? Colors.white : AppTheme.green,
                     ),
                   ),
                   const SizedBox(height: 3),
@@ -197,7 +268,7 @@ class MetricStrip extends StatelessWidget {
                     entry.key,
                     textAlign: TextAlign.center,
                     style: TextStyle(
-                      fontSize: 11,
+                      fontSize: 12,
                       color: inverse ? Colors.white : AppTheme.muted,
                     ),
                   ),
@@ -227,71 +298,23 @@ class WorkspaceNavigation extends StatelessWidget {
     Icons.account_circle_outlined,
   ];
   @override
-  Widget build(BuildContext context) => Material(
-    color: Colors.white,
-    child: SafeArea(
-      top: false,
-      child: IntrinsicHeight(
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            for (var i = 0; i < labels.length; i++)
-              Expanded(
-                child: Semantics(
-                  selected: selected == i,
-                  button: true,
-                  child: InkWell(
-                    key: ValueKey('workspace-tab-$i'),
-                    onTap: () => onSelected(i),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        vertical: 10,
-                        horizontal: 2,
-                      ),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 3,
-                            ),
-                            decoration: BoxDecoration(
-                              color: selected == i
-                                  ? const Color(0xFFE8F1FC)
-                                  : Colors.transparent,
-                              borderRadius: BorderRadius.circular(18),
-                            ),
-                            child: Icon(
-                              icons[i],
-                              color: selected == i
-                                  ? AppTheme.blue
-                                  : AppTheme.muted,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            labels[i],
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: selected == i
-                                  ? FontWeight.w700
-                                  : FontWeight.w400,
-                              color: selected == i
-                                  ? AppTheme.blue
-                                  : AppTheme.muted,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ),
+  Widget build(BuildContext context) => DecoratedBox(
+    decoration: const BoxDecoration(
+      color: Colors.white,
+      border: Border(top: BorderSide(color: AppTheme.line)),
+    ),
+    child: NavigationBar(
+      selectedIndex: selected,
+      onDestinationSelected: onSelected,
+      destinations: [
+        for (var i = 0; i < labels.length; i++)
+          NavigationDestination(
+            key: ValueKey('workspace-tab-$i'),
+            icon: Icon(icons[i]),
+            label: labels[i],
+            tooltip: labels[i],
+          ),
+      ],
     ),
   );
 }

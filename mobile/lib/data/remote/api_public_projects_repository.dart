@@ -48,6 +48,7 @@ class ApiPublicProjectsRepository
       'location_type': ?locationType,
       'site_type_id': ?siteTypeId,
     };
+    final fromOverview = bounds == null;
     try {
       if (bounds == null) {
         final overview = await client.getData({'mode': 'overview', ...filters});
@@ -76,7 +77,9 @@ class ApiPublicProjectsRepository
         }
         bounds = GisBounds.fromJson(meta['bounds']);
       }
-      final extent = bounds.queryBounds;
+      final extent = fromOverview
+          ? bounds.overviewQueryBounds
+          : bounds.queryBounds;
       final json = await client.getData({
         'mode': 'map',
         ...filters,

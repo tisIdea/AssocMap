@@ -34,7 +34,7 @@ class _AssociationSectionsState extends State<AssociationSections> {
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Icon(Icons.info_outline, color: AppTheme.blue),
+        const Icon(Icons.info_outline, color: AppTheme.green),
         const SizedBox(height: 10),
         Text(title, style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 8),
@@ -82,12 +82,15 @@ class _AssociationSectionsState extends State<AssociationSections> {
   );
 
   List<Widget> _association(AssociationDashboard data) => [
-    const PhotoPlaceholder(height: 140, label: 'Association photo unavailable'),
-    const SizedBox(height: 16),
+    const Align(
+      alignment: Alignment.centerLeft,
+      child: Icon(Icons.apartment_outlined, size: 36, color: AppTheme.green),
+    ),
+    const SizedBox(height: 12),
     const Text(
       'ACTIVE ASSOCIATION',
       style: TextStyle(
-        color: AppTheme.blue,
+        color: AppTheme.green,
         fontSize: 11,
         fontWeight: FontWeight.w700,
       ),
@@ -116,10 +119,6 @@ class _AssociationSectionsState extends State<AssociationSections> {
           const Divider(),
           Text('Status', style: Theme.of(context).textTheme.bodySmall),
           Text(data.status),
-          const Divider(),
-          const Text(
-            'Additional profile information is currently unavailable.',
-          ),
         ],
       ),
     ),
@@ -152,14 +151,6 @@ class _AssociationSectionsState extends State<AssociationSections> {
         'Open applications submitted by this account to check their review status.',
       ),
     ] else ...[
-      const TextField(
-        enabled: false,
-        decoration: InputDecoration(
-          hintText: 'Search members unavailable',
-          prefixIcon: Icon(Icons.search),
-        ),
-      ),
-      const SizedBox(height: 16),
       InformationCard(
         child: MetricStrip(
           values: {'Official members': dashboardCount(data, 'members_total')},
@@ -226,7 +217,13 @@ class _AssociationSectionsState extends State<AssociationSections> {
         ),
         const SizedBox(height: 10),
         _tabs(
-          ['All', 'Ongoing', 'Completed'],
+          [
+            'All',
+            ...{
+              for (final project in data.projects ?? <DashboardProject>[])
+                project.status,
+            },
+          ],
           _status,
           (value) => setState(() => _status = value),
         ),
@@ -254,11 +251,6 @@ class _AssociationSectionsState extends State<AssociationSections> {
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const SizedBox(
-                      width: 52,
-                      child: PhotoPlaceholder(height: 56),
-                    ),
-                    const SizedBox(width: 12),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -268,10 +260,8 @@ class _AssociationSectionsState extends State<AssociationSections> {
                             style: const TextStyle(fontWeight: FontWeight.w700),
                           ),
                           const SizedBox(height: 5),
-                          Text(
-                            project.status,
-                            style: const TextStyle(color: AppTheme.blue),
-                          ),
+                          StatusBadge(status: project.status),
+                          const SizedBox(height: 8),
                           Text(
                             'Program year ${project.programYear}',
                             style: Theme.of(context).textTheme.bodySmall,

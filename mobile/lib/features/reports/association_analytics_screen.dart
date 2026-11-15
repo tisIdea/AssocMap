@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../core/widgets/feedback_panel.dart';
+import '../../core/widgets/assocmap_widgets.dart';
+import '../../app/theme/app_theme.dart';
 import '../../data/models/analytics_report.dart';
 import '../../data/repositories/analytics_repository.dart';
 
@@ -190,11 +192,11 @@ class _AssociationAnalyticsScreenState extends State<AssociationAnalyticsScreen>
       onRefresh: _load,
       child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
         children: [
           Text(
             report.scope.join('; '),
-            style: Theme.of(context).textTheme.titleLarge,
+            style: Theme.of(context).textTheme.titleMedium,
           ),
           const SizedBox(height: 12),
           if (widget.showReportTypeSelector)
@@ -206,7 +208,11 @@ class _AssociationAnalyticsScreenState extends State<AssociationAnalyticsScreen>
                   .map(
                     (entry) => DropdownMenuItem(
                       value: entry.key,
-                      child: Text(entry.value),
+                      child: Text(
+                        entry.value,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                   )
                   .toList(),
@@ -275,14 +281,13 @@ class _AssociationAnalyticsScreenState extends State<AssociationAnalyticsScreen>
               padding: EdgeInsets.symmetric(vertical: 16),
               child: Text('No recorded results match these report filters.'),
             ),
-          if (widget.showReportTypeSelector) notes,
           for (final section in report.sections)
             _ReportSection(
               key: ObjectKey(section),
               section: section,
               expanded: !widget.showReportTypeSelector,
             ),
-          if (!widget.showReportTypeSelector) notes,
+          notes,
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 16),
             child: Text(
@@ -308,8 +313,24 @@ class _ReportSection extends StatefulWidget {
   State<_ReportSection> createState() => _ReportSectionState();
 }
 
-class _ReportSectionState extends State<_ReportSection> {
+class _ReportSectionState extends State<_ReportSection>
+    with AutomaticKeepAliveClientMixin {
   int _page = 0;
+
+  @override
+  bool get wantKeepAlive => true;
+
+  void _changePage(int delta) {
+    setState(() => _page += delta);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        Scrollable.ensureVisible(
+          context,
+          duration: const Duration(milliseconds: 200),
+        );
+      }
+    });
+  }
 
   Widget _chart(BuildContext context) {
     final section = widget.section;
@@ -402,7 +423,7 @@ class _ReportSectionState extends State<_ReportSection> {
               ),
             ),
         const Text(
-          'Up to 20 groups shown. The table contains all recorded values.',
+          'Up to 20 groups shown. The records below contain all recorded values.',
         ),
       ],
     );
@@ -410,6 +431,7 @@ class _ReportSectionState extends State<_ReportSection> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final section = widget.section;
     final start = _page * 25;
     final rows = section.rows.skip(start).take(25);
@@ -420,30 +442,40 @@ class _ReportSectionState extends State<_ReportSection> {
         title: Text(section.title),
         childrenPadding: const EdgeInsets.all(16),
         children: [
-          Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: [
-              for (final measure in section.measures)
-                SizedBox(
-                  width: 180,
-                  child: Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(measure.label),
-                          Text(
-                            measure.value ?? 'Unobserved',
-                            style: Theme.of(context).textTheme.titleLarge,
-                          ),
-                        ],
+          LayoutBuilder(
+            builder: (context, box) => Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: [
+                for (final measure in section.measures)
+                  SizedBox(
+                    width:
+                        box.maxWidth >= 420 &&
+                            MediaQuery.textScalerOf(context).scale(14) < 21
+                        ? (box.maxWidth - 12) / 2
+                        : box.maxWidth,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: AppTheme.tint,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(measure.label),
+                            Text(
+                              measure.value ?? 'Unobserved',
+                              style: Theme.of(context).textTheme.titleLarge,
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
-                ),
-            ],
+              ],
+            ),
           ),
           for (final note in section.notes)
             Padding(
@@ -454,41 +486,73 @@ class _ReportSectionState extends State<_ReportSection> {
           if (section.rows.isEmpty)
             const Text('No recorded rows for this section.')
           else ...[
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: DataTable(
-                columns: section.columns
-                    .map((c) => DataColumn(label: Text(c.label)))
-                    .toList(),
-                dataRowMinHeight: 48,
-                dataRowMaxHeight: 180,
-                rows: rows
-                    .map(
-                      (row) => DataRow(
-                        cells: section.columns
-                            .map(
-                              (column) => DataCell(
-                                SizedBox(
-                                  width: column.type == 'text' ? 190 : 110,
-                                  child: Text(
-                                    row[column.key]?.toString() ??
-                                        'Unobserved / N/A',
-                                  ),
+            LayoutBuilder(
+              builder: (context, box) {
+                if (box.maxWidth < 720) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      for (final row in rows)
+                        Container(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          decoration: const BoxDecoration(
+                            border: Border(
+                              bottom: BorderSide(color: AppTheme.line),
+                            ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              for (final column in section.columns)
+                                DetailRow(
+                                  label: column.label,
+                                  value:
+                                      row[column.key]?.toString() ??
+                                      'Unobserved / N/A',
                                 ),
-                              ),
-                            )
-                            .toList(),
-                      ),
-                    )
-                    .toList(),
-              ),
+                            ],
+                          ),
+                        ),
+                    ],
+                  );
+                }
+                return SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: DataTable(
+                    columns: section.columns
+                        .map((c) => DataColumn(label: Text(c.label)))
+                        .toList(),
+                    dataRowMinHeight: 48,
+                    dataRowMaxHeight: 180,
+                    rows: rows
+                        .map(
+                          (row) => DataRow(
+                            cells: section.columns
+                                .map(
+                                  (column) => DataCell(
+                                    SizedBox(
+                                      width: column.type == 'text' ? 190 : 110,
+                                      child: Text(
+                                        row[column.key]?.toString() ??
+                                            'Unobserved / N/A',
+                                      ),
+                                    ),
+                                  ),
+                                )
+                                .toList(),
+                          ),
+                        )
+                        .toList(),
+                  ),
+                );
+              },
             ),
             Wrap(
               spacing: 12,
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 TextButton(
-                  onPressed: _page == 0 ? null : () => setState(() => _page--),
+                  onPressed: _page == 0 ? null : () => _changePage(-1),
                   child: const Text('Previous'),
                 ),
                 Text(
@@ -497,7 +561,7 @@ class _ReportSectionState extends State<_ReportSection> {
                 TextButton(
                   onPressed: start + 25 >= section.rows.length
                       ? null
-                      : () => setState(() => _page++),
+                      : () => _changePage(1),
                   child: const Text('Next'),
                 ),
               ],

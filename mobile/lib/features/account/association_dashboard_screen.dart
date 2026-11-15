@@ -38,7 +38,7 @@ class AssociationDashboardScreen extends StatelessWidget {
       onRefresh: refresh,
       child: SingleChildScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
         child: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 760),
@@ -60,15 +60,8 @@ class AssociationDashboardScreen extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.all(20),
                   decoration: BoxDecoration(
-                    color: AppTheme.blue,
-                    borderRadius: BorderRadius.circular(20),
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppTheme.blue.withValues(alpha: .15),
-                        blurRadius: 14,
-                        offset: const Offset(0, 6),
-                      ),
-                    ],
+                    color: AppTheme.green,
+                    borderRadius: BorderRadius.circular(16),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -77,11 +70,11 @@ class AssociationDashboardScreen extends StatelessWidget {
                         'YOUR ASSOCIATION',
                         style: TextStyle(fontSize: 11, color: Colors.white),
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 8),
                       Text(
                         data.name,
                         style: const TextStyle(
-                          fontSize: 22,
+                          fontSize: 20,
                           fontWeight: FontWeight.w700,
                           color: Colors.white,
                         ),
@@ -107,16 +100,15 @@ class AssociationDashboardScreen extends StatelessWidget {
                     ],
                   ),
                 ),
-                const SizedBox(height: 14),
-                const ReadOnlyNotice(
-                  message:
-                      'Member records are read-only. Registrations are subject to Field Officer review.',
-                  icon: Icons.info_outline,
-                ),
                 const SectionHeading('Quick access'),
                 LayoutBuilder(
                   builder: (context, box) {
-                    final columns = box.maxWidth >= 600 ? 3 : 2;
+                    final columns =
+                        MediaQuery.textScalerOf(context).scale(14) > 21
+                        ? 1
+                        : box.maxWidth >= 600
+                        ? 3
+                        : 2;
                     final entries = <(String, String, IconData, VoidCallback)>[
                       (
                         'Association',
@@ -173,8 +165,8 @@ class AssociationDashboardScreen extends StatelessWidget {
                                     crossAxisAlignment:
                                         CrossAxisAlignment.start,
                                     children: [
-                                      Icon(item.$3, color: AppTheme.blue),
-                                      const SizedBox(height: 12),
+                                      Icon(item.$3, color: AppTheme.green),
+                                      const SizedBox(height: 8),
                                       Text(
                                         item.$1,
                                         style: const TextStyle(
@@ -198,10 +190,12 @@ class AssociationDashboardScreen extends StatelessWidget {
                     );
                   },
                 ),
-                const SectionHeading('Association summary'),
-                InformationCard(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                const SizedBox(height: 16),
+                Card(
+                  child: ExpansionTile(
+                    title: const Text('Association summary'),
+                    subtitle: const Text('Count definitions and last update'),
+                    childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                     children: [
                       for (final metric in data.metrics)
                         Padding(
@@ -218,7 +212,7 @@ class AssociationDashboardScreen extends StatelessWidget {
                               Text(
                                 metric.value?.toString() ?? 'Unavailable',
                                 style: const TextStyle(
-                                  color: AppTheme.blue,
+                                  color: AppTheme.green,
                                   fontWeight: FontWeight.w700,
                                 ),
                               ),
@@ -230,12 +224,27 @@ class AssociationDashboardScreen extends StatelessWidget {
                           ),
                         ),
                       Text(
-                        'Updated ${data.generatedAt.toIso8601String()}',
+                        'Updated ${displayDate(context, data.generatedAt.toLocal())}',
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
                     ],
                   ),
                 ),
+                ..._statistics(context, data),
+                ..._monitoring(context, data.monitoring),
+                const SectionHeading('Recent program activities'),
+                if (data.activities == null)
+                  const Text('Program activities are currently unavailable.')
+                else if (data.activities!.isEmpty)
+                  const Text('No program activities recorded.')
+                else
+                  for (final activity in data.activities!)
+                    _recordCard(
+                      context,
+                      title: activity.title,
+                      detail: activity.date,
+                      status: activity.status,
+                    ),
                 const SizedBox(height: 12),
                 OutlinedButton.icon(
                   onPressed: onOpenMap,
@@ -246,6 +255,92 @@ class AssociationDashboardScreen extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    ),
+  );
+
+  List<Widget> _statistics(BuildContext context, AssociationDashboard data) => [
+    for (final chart in data.charts.whereType<DashboardChart>()) ...[
+      SectionHeading(chart.title),
+      InformationCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(chart.note, style: Theme.of(context).textTheme.bodySmall),
+            if (chart.rows.isEmpty) const Text('No projects recorded.'),
+            for (final row in chart.rows)
+              Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: Row(
+                  children: [
+                    Expanded(child: Text(row.label)),
+                    const SizedBox(width: 12),
+                    Text(
+                      '${row.value}',
+                      style: const TextStyle(
+                        color: AppTheme.green,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
+    ],
+  ];
+
+  List<Widget> _monitoring(
+    BuildContext context,
+    DashboardMonitoring? monitoring,
+  ) => [
+    const SectionHeading('Monitoring overview'),
+    if (monitoring == null)
+      const Text('Monitoring information is currently unavailable.')
+    else ...[
+      InformationCard(
+        child: MetricStrip(
+          values: {
+            'Records': monitoring.records,
+            'Periods': monitoring.periods,
+            'Visits': monitoring.visits,
+          },
+        ),
+      ),
+      const SectionHeading('Recent quarterly monitoring'),
+      if (monitoring.recent.isEmpty)
+        const Text('No quarterly monitoring records available.'),
+      for (final record in monitoring.recent)
+        _recordCard(
+          context,
+          title: record.title,
+          detail: '${record.year} · Q${record.quarter} · ${record.date}',
+          status: 'Recorded status: ${record.status}',
+        ),
+    ],
+  ];
+
+  Widget _recordCard(
+    BuildContext context, {
+    required String title,
+    required String detail,
+    required String status,
+  }) => Padding(
+    padding: const EdgeInsets.only(bottom: 12),
+    child: InformationCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
+          const SizedBox(height: 6),
+          Text(detail, style: Theme.of(context).textTheme.bodySmall),
+          const SizedBox(height: 8),
+          StatusBadge(
+            status: status.replaceFirst('Recorded status: ', ''),
+            label: status,
+          ),
+        ],
       ),
     ),
   );

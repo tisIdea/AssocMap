@@ -53,9 +53,153 @@ Future<void> _open(
       ),
     ),
   );
+  await tester.tap(find.byKey(const ValueKey('public-map-filters')));
+  await tester.pump(const Duration(milliseconds: 250));
 }
 
 void main() {
+  testWidgets(
+    'A late background map cannot take focus from the active editor',
+    (tester) async {
+      tester.view.physicalSize = const Size(720, 1600);
+      tester.view.devicePixelRatio = 2;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetViewInsets);
+      final pendingOverview = Completer<http.Response>();
+      await _open(
+        tester,
+        (request) async => request.url.queryParameters['mode'] == 'overview'
+            ? pendingOverview.future
+            : _json(mapResponse(features: [pointFeature()])),
+      );
+      await tester.tap(find.byKey(const ValueKey('public-map-filters')));
+      await tester.pump(const Duration(milliseconds: 250));
+      unawaited(
+        Navigator.of(tester.element(find.text('Log in'))).push<void>(
+          MaterialPageRoute(
+            builder: (_) => const Scaffold(
+              body: SafeArea(
+                child: TextField(key: ValueKey('foreground-editor')),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final field = find.byKey(const ValueKey('foreground-editor'));
+      await tester.enterText(field, 'Synthetic local draft');
+      await tester.showKeyboard(field);
+      tester.view.viewInsets = const FakeViewPadding(bottom: 640);
+      await tester.pump(const Duration(milliseconds: 100));
+      pendingOverview.complete(_json(overview()));
+      await tester.pumpAndSettle();
+      final editable = tester.widget<EditableText>(find.byType(EditableText));
+      expect(FocusManager.instance.primaryFocus, editable.focusNode);
+      expect(editable.controller.text, 'Synthetic local draft');
+      expect(tester.testTextInput.isVisible, isTrue);
+      expect(tester.takeException(), isNull);
+    },
+  );
+  testWidgets(
+    'Repeated classification resets restore all markers and map extent',
+    (tester) async {
+      final requests = <http.Request>[];
+      await _open(tester, (request) async {
+        requests.add(request);
+        final filtered = request.url.queryParameters['site_type_id'] == '87';
+        if (request.url.queryParameters['mode'] == 'overview') {
+          return _json(overview());
+        }
+        return _json(
+          mapResponse(
+            features: [if (!filtered) pointFeature(), classifiedBoundary()],
+          ),
+        );
+      });
+      await tester.pumpAndSettle();
+      for (var repeat = 0; repeat < 3; repeat++) {
+        final filter = find.byType(DropdownButtonFormField<String>);
+        await tester.ensureVisible(filter);
+        await tester.tap(filter);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Synthetic cage').last);
+        await tester.pumpAndSettle();
+        expect(
+          tester.widget<MarkerLayer>(find.byType(MarkerLayer)).markers,
+          hasLength(1),
+        );
+        expect(requests.last.url.queryParameters['site_type_id'], '87');
+        await tester.tap(filter);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('All site classifications').last);
+        await tester.pumpAndSettle();
+        expect(
+          requests.last.url.queryParameters.containsKey('site_type_id'),
+          isFalse,
+        );
+        expect(
+          tester.widget<MarkerLayer>(find.byType(MarkerLayer)).markers,
+          hasLength(2),
+        );
+        expect(find.byKey(const ValueKey('marker-$pointId')), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey('marker-$boundaryId')),
+          findsOneWidget,
+        );
+        expect(tester.takeException(), isNull);
+      }
+    },
+  );
+
+  for (final multipart in [false, true]) {
+    testWidgets(
+      'Street Map can show published boundaries and holes without refetching (multipart=$multipart)',
+      (tester) async {
+        var calls = 0;
+        await _open(tester, (request) async {
+          calls++;
+          return _json(
+            request.url.queryParameters['mode'] == 'overview'
+                ? overview()
+                : mapResponse(
+                    features: [classifiedBoundary(multipart: multipart)],
+                  ),
+          );
+        });
+        await tester.pumpAndSettle();
+        expect(find.text('Street Map'), findsOneWidget);
+        expect(
+          tester.widget<TileLayer>(find.byType(TileLayer)).urlTemplate,
+          'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+        );
+        expect(find.text('© OpenStreetMap contributors'), findsOneWidget);
+        expect(find.byType(PolygonLayer), findsNothing);
+        final requestCount = calls;
+        final toggle = find.byKey(const ValueKey('public-boundaries'));
+        await tester.ensureVisible(toggle);
+        await tester.tap(toggle);
+        await tester.pumpAndSettle();
+        final polygons = tester
+            .widget<PolygonLayer>(find.byType(PolygonLayer))
+            .polygons;
+        expect(polygons, hasLength(multipart ? 2 : 1));
+        expect(polygons.first.holePointsList, hasLength(1));
+        expect(polygons.first.borderColor, gisSiteColor('fish_cage'));
+        expect(
+          tester.widget<MarkerLayer>(find.byType(MarkerLayer)).markers,
+          hasLength(1),
+        );
+        expect(calls, requestCount);
+        await tester.tap(toggle);
+        await tester.pumpAndSettle();
+        expect(find.byType(PolygonLayer), findsNothing);
+        expect(calls, requestCount);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
   testWidgets(
     'Classification visuals stay consistent across legend, markers, list and selected details',
     (tester) async {

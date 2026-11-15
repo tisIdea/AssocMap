@@ -41,7 +41,7 @@ void main() {
         publicProjects: repository ?? _Repository(() async => projects),
       ),
     );
-    await tester.ensureVisible(find.text('Explore map'));
+    await tester.ensureVisible(find.text('Log in'));
     await tester.pumpAndSettle();
   }
 
@@ -68,6 +68,8 @@ void main() {
     final layer = tester.widget<PolygonLayer>(find.byType(PolygonLayer));
     expect(layer.polygons, hasLength(3));
     expect(layer.polygons.first.holePointsList, hasLength(1));
+    await tester.tap(find.byKey(const ValueKey('public-map-filters')));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Boundaries'));
     await tester.pumpAndSettle();
     expect(find.byType(PolygonLayer), findsNothing);
@@ -126,6 +128,8 @@ void main() {
     tester,
   ) async {
     await openMap(tester);
+    await tester.tap(find.byKey(const ValueKey('public-map-filters')));
+    await tester.pumpAndSettle();
     await tester.ensureVisible(find.text('Agriculture'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Agriculture'));
@@ -174,7 +178,7 @@ void main() {
         publicProjects: _Repository(() => completer.future),
       ),
     );
-    await tester.tap(find.text('Explore map'));
+    await tester.tap(find.byTooltip('Reload public locations'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.text('Loading public projects…'), findsOneWidget);
@@ -250,9 +254,9 @@ void main() {
         publicProjects: _Repository(() async => projects),
       ),
     );
-    await tester.ensureVisible(find.text('Association access'));
+    await tester.ensureVisible(find.text('Log in'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Association access'));
+    await tester.tap(find.text('Log in'));
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('login-email')), findsOneWidget);
     await tester.ensureVisible(find.text('Open public map'));
@@ -262,7 +266,7 @@ void main() {
     expect(find.byType(FlutterMap), findsOneWidget);
     await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
-    expect(find.text('Explore map'), findsOneWidget);
+    expect(find.text('Log in'), findsOneWidget);
   });
 
   for (final size in [

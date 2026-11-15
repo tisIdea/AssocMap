@@ -222,16 +222,19 @@ void main() {
           File(
             Platform.resolvedExecutable,
           ).parent.parent.parent.parent.parent.parent.path;
-      final loader = FontLoader('Roboto');
-      for (final weight in ['regular', 'bold']) {
-        final file = File(
-          '$sdkRoot/bin/cache/artifacts/material_fonts/roboto-$weight.ttf',
-        );
-        loader.addFont(
-          Future.value(ByteData.sublistView(file.readAsBytesSync())),
-        );
+      // Android's default font is Roboto; avoid Ahem blocks in captured labels.
+      for (final family in ['Roboto', 'Ahem']) {
+        final loader = FontLoader(family);
+        for (final weight in ['regular', 'bold']) {
+          final file = File(
+            '$sdkRoot/bin/cache/artifacts/material_fonts/roboto-$weight.ttf',
+          );
+          loader.addFont(
+            Future.value(ByteData.sublistView(file.readAsBytesSync())),
+          );
+        }
+        await loader.load();
       }
-      await loader.load();
       final icons = FontLoader('MaterialIcons');
       icons.addFont(
         Future.value(
@@ -303,7 +306,7 @@ void main() {
     () {
       expect(const AppConfig.fromEnvironment().mode, DataMode.api);
       expect(const AppConfig.fromEnvironment().gisMode, GisDataMode.live);
-      expect(AppTheme.blue, const Color(0xFF0B4C8C));
+      expect(AppTheme.light.colorScheme.primary, AppTheme.green);
     },
   );
 
@@ -386,7 +389,7 @@ void main() {
       final reports = await workspace(tester);
       await _snapshot(tester, '03-dashboard');
       await quick(tester, 'Association');
-      expect(find.byType(PhotoPlaceholder), findsOneWidget);
+      expect(find.byType(PhotoPlaceholder), findsNothing);
       await _snapshot(tester, '04-association');
       await tester.binding.handlePopRoute();
       await tester.pumpAndSettle();
@@ -398,7 +401,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('View my applications'));
       await tester.pumpAndSettle();
-      expect(find.text('My member applications'), findsNWidgets(2));
+      expect(find.text('My member applications'), findsOneWidget);
       expect(find.text('Status: pending'), findsOneWidget);
       await _snapshot(tester, '05b-registrations');
       await tab(tester, 2);

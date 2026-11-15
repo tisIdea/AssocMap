@@ -161,7 +161,17 @@ class _MemberRegistrationScreenState extends State<MemberRegistrationScreen> {
       autocorrect: false,
       enableSuggestions: false,
       keyboardType: keyboard,
-      decoration: InputDecoration(labelText: label),
+      textInputAction: lines == 1
+          ? TextInputAction.next
+          : TextInputAction.newline,
+      scrollPadding: const EdgeInsets.only(bottom: 100),
+      decoration: InputDecoration(
+        labelText: label,
+        counterText: lines == 1 ? '' : null,
+        helperText: key == 'birth_date'
+            ? 'Use year-month-day, for example 1995-06-15.'
+            : null,
+      ),
       onChanged: (_) {
         if (_errors.containsKey(key)) setState(() => _errors.remove(key));
       },
@@ -304,6 +314,11 @@ class _MemberRegistrationScreenState extends State<MemberRegistrationScreen> {
     if (receipt != null) {
       return PageContent(
         children: [
+          const Align(
+            alignment: Alignment.centerLeft,
+            child: Icon(Icons.check_circle_outline, size: 48),
+          ),
+          const SizedBox(height: 16),
           Semantics(
             liveRegion: true,
             child: Text(
@@ -313,7 +328,8 @@ class _MemberRegistrationScreenState extends State<MemberRegistrationScreen> {
           ),
           const SizedBox(height: 16),
           Text('Reference: ${receipt.id}'),
-          const Text('Status: Pending'),
+          const StatusBadge(status: 'pending', label: 'Status: Pending'),
+          const SizedBox(height: 16),
           const Text(
             'This submission has not created an official member. Approval is handled by your Field Officer.',
           ),
@@ -334,12 +350,17 @@ class _MemberRegistrationScreenState extends State<MemberRegistrationScreen> {
         children: [
           const ReadOnlyNotice(
             message:
-                'Submit a membership application for Field Officer review. Your association is assigned by the server.',
+                'Submit a membership application for Field Officer review. Approval creates the official membership record.',
           ),
           const SizedBox(height: 16),
           Text(
             widget.associationName,
             style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Fields marked * are required.',
+            style: Theme.of(context).textTheme.bodySmall,
           ),
           const SectionHeading('Personal information'),
           _field('first_name', 'First name *', required: true),
@@ -348,10 +369,10 @@ class _MemberRegistrationScreenState extends State<MemberRegistrationScreen> {
           _field('suffix', 'Suffix (optional)', max: 20),
           _field(
             'birth_date',
-            'Birth date (YYYY-MM-DD) *',
+            'Birth date *',
             required: true,
             max: 10,
-            keyboard: TextInputType.datetime,
+            keyboard: TextInputType.text,
           ),
           _choice(
             'sex_id',
@@ -414,9 +435,9 @@ class _MemberRegistrationScreenState extends State<MemberRegistrationScreen> {
             lines: 5,
             keyboard: TextInputType.multiline,
           ),
-          const Text(
-            'Applicant photo (optional) · JPEG/PNG · up to 2 MiB · up to 2048 × 2048 pixels',
-          ),
+          const SectionHeading('Applicant photo'),
+          const Text('JPEG/PNG · up to 2 MiB · up to 2048 × 2048 pixels'),
+          const SizedBox(height: 12),
           if (_photo != null)
             Image.memory(
               _photo!.bytes,
@@ -447,8 +468,9 @@ class _MemberRegistrationScreenState extends State<MemberRegistrationScreen> {
               padding: const EdgeInsets.symmetric(vertical: 12),
               child: Semantics(
                 liveRegion: true,
-                child: Text(
-                  [
+                child: ReadOnlyNotice(
+                  icon: Icons.error_outline,
+                  message: [
                     _failure!.message,
                     ..._errors.values.expand((messages) => messages),
                   ].join('\n'),
@@ -458,7 +480,20 @@ class _MemberRegistrationScreenState extends State<MemberRegistrationScreen> {
           const SizedBox(height: 16),
           FilledButton(
             onPressed: _submitting || _locked || _picking ? null : _submit,
-            child: Text(_submitting ? 'Submitting…' : 'Submit for Review'),
+            child: _submitting
+                ? const Wrap(
+                    spacing: 12,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                      Text('Submitting…'),
+                    ],
+                  )
+                : const Text('Submit for Review'),
           ),
           if (widget.onApplications != null)
             TextButton(

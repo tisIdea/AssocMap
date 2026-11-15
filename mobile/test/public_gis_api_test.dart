@@ -32,6 +32,39 @@ class _Transport extends http.BaseClient {
 }
 
 void main() {
+  test('Repeated All and Seaweed queries retain points on rounded overview edges', () async {
+    const longitude = 123.38758372794214;
+    const latitude = 9.857884543066508;
+    final edge = pointFeature()
+      ..['geometry'] = {'type': 'Point', 'coordinates': [longitude, latitude]};
+    final repository = ApiPublicProjectsRepository(clientFor((request) async {
+      final query = request.url.queryParameters;
+      if (query['mode'] == 'overview') {
+        return jsonResponse({
+          'type': 'FeatureCollection', 'features': <Object>[],
+          'meta': {
+            'bounds': query['site_type_id'] == '4'
+              ? [longitude, latitude, longitude, latitude]
+              : [123.387583727942, 9.85788454306651, 124.023332593689, 10.9427648403703],
+            'empty_reason': null,
+          },
+        });
+      }
+      final west = double.parse(query['bbox[0]']!);
+      final south = double.parse(query['bbox[1]']!);
+      final east = double.parse(query['bbox[2]']!);
+      final north = double.parse(query['bbox[3]']!);
+      final containsEdge = west <= longitude && east >= longitude &&
+          south <= latitude && north >= latitude;
+      return jsonResponse(mapResponse(features: containsEdge ? [edge] : [],
+        emptyReason: containsEdge ? null : 'outside_view'));
+    }));
+    for (final siteType in <String?>[null, '4', null, '4', null]) {
+      final result = await repository.getMap(siteTypeId: siteType);
+      expect(result.projects.map((project) => project.id), [pointId]);
+    }
+  });
+
   test('Overview then map use only the public route and supported filters', () async {
     final requests = <http.Request>[];
     final repository = ApiPublicProjectsRepository(clientFor((request) async {
@@ -52,10 +85,10 @@ void main() {
       expect(request.url.queryParameters['location_type'], 'project_boundary');
     }
     final query = requests.last.url.queryParameters;
-    expect(query['bbox[0]'], '124.9');
-    expect(query['bbox[1]'], '11.0');
-    expect(query['bbox[2]'], '125.2');
-    expect(query['bbox[3]'], '11.1');
+    expect(double.parse(query['bbox[0]']!), closeTo(124.899999, 1e-10));
+    expect(double.parse(query['bbox[1]']!), closeTo(10.999999, 1e-10));
+    expect(double.parse(query['bbox[2]']!), closeTo(125.200001, 1e-10));
+    expect(double.parse(query['bbox[3]']!), closeTo(11.100001, 1e-10));
     expect(query.keys, unorderedEquals(['mode', 'q', 'location_type',
       'bbox[0]', 'bbox[1]', 'bbox[2]', 'bbox[3]']));
   });
@@ -78,6 +111,10 @@ void main() {
     final repository = ApiPublicProjectsRepository(clientFor((request) async {
       calls++;
       expect(request.url.queryParameters['mode'], 'map');
+      for (var index = 0; index < 4; index++) {
+        expect(double.parse(request.url.queryParameters['bbox[$index]']!),
+          [124, 10, 126, 12][index]);
+      }
       return jsonResponse(mapResponse(features: [], truncated: true, emptyReason: 'display_limit'));
     }));
     final result = await repository.getMap(bounds: GisBounds.fromJson([124, 10, 126, 12]));

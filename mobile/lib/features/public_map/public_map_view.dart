@@ -3,7 +3,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../../app/configuration/app_config.dart';
-import '../../app/configuration/satellite_basemap.dart';
+import '../../app/configuration/street_basemap.dart';
 import '../../core/networking/bounded_http_client.dart';
 import '../../data/models/public_gis_feature.dart';
 import '../../data/models/geo_boundary.dart';
@@ -61,7 +61,7 @@ class _PublicMapViewState extends State<PublicMapView> {
         httpClient: _tileClient,
         attemptDecodeOfHttpErrorResponses: false,
       );
-  bool _imageryUnavailable = false;
+  bool _tilesUnavailable = false;
   final LayerHitNotifier<Object> _polygonHits = ValueNotifier(null);
   List<PublicProject> get projects => widget.projects;
   MapController get controller => widget.controller;
@@ -95,9 +95,10 @@ class _PublicMapViewState extends State<PublicMapView> {
 
   List<LatLng> get _allPoints => [
     for (final project in projects)
-      ...(_mock ? project.geometryPoints : project.publicDisplayPoints).map(
-        mapPoint,
-      ),
+      ...(_mock || showBoundaries
+              ? project.geometryPoints
+              : project.publicDisplayPoints)
+          .map(mapPoint),
   ];
 
   void _fit() => controller.fitCamera(
@@ -137,23 +138,26 @@ class _PublicMapViewState extends State<PublicMapView> {
             backgroundColor: const Color(0xFFE8EFEC),
             interactionOptions: const InteractionOptions(
               flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
+              // A background map must not take focus from an active form.
+              keyboardOptions: KeyboardOptions(autofocus: false),
             ),
           ),
           children: [
             TileLayer(
-              urlTemplate: SatelliteBasemap.urlTemplate,
-              userAgentPackageName: 'com.assocmap.mobile',
+              urlTemplate: StreetBasemap.urlTemplate,
+              userAgentPackageName: 'com.example.mobile',
               tileProvider: _tiles,
               errorTileCallback: (_, _, _) {
-                if (_imageryUnavailable) return;
+                if (_tilesUnavailable) return;
                 WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (mounted && !_imageryUnavailable) {
-                    setState(() => _imageryUnavailable = true);
+                  if (mounted && !_tilesUnavailable) {
+                    setState(() => _tilesUnavailable = true);
                   }
                 });
               },
             ),
-            if (_mock && showBoundaries)
+            if (showBoundaries &&
+                projects.any((project) => project.boundary != null))
               GestureDetector(
                 onTap: () {
                   final hits = _polygonHits.value?.hitValues;
@@ -179,10 +183,12 @@ class _PublicMapViewState extends State<PublicMapView> {
                           holePointsList: polygon.holes
                               .map((ring) => ring.map(mapPoint).toList())
                               .toList(),
-                          color: projectColor(
-                            project.category,
-                          ).withValues(alpha: .2),
-                          borderColor: projectColor(project.category),
+                          color:
+                              (_mock
+                                      ? projectColor(project.category)
+                                      : gisSiteColor(project.siteTypeCode))
+                                  .withValues(alpha: .2),
+                          borderColor: _markerColor(project),
                           borderStrokeWidth: 2,
                         ),
                   ],
@@ -259,9 +265,9 @@ class _PublicMapViewState extends State<PublicMapView> {
               child: Padding(
                 padding: const EdgeInsets.all(10),
                 child: Text(
-                  _imageryUnavailable
-                      ? 'Satellite imagery unavailable. Check your connection.'
-                      : 'Satellite map',
+                  _tilesUnavailable
+                      ? 'Street map unavailable. Check your connection or reload.'
+                      : 'Street Map',
                   style: const TextStyle(fontSize: 12),
                 ),
               ),
@@ -311,7 +317,7 @@ class _PublicMapViewState extends State<PublicMapView> {
               child: Padding(
                 padding: const EdgeInsets.all(10),
                 child: Text(
-                  SatelliteBasemap.attribution,
+                  StreetBasemap.attribution,
                   style: const TextStyle(fontSize: 11),
                 ),
               ),

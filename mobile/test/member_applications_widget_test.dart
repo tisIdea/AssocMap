@@ -102,6 +102,34 @@ void main() {
     );
     expect(repository.submissions, 0);
   });
+  testWidgets('Keyboard resizing retains date focus and local form input', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(720, 1600);
+    tester.view.devicePixelRatio = 2;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetViewInsets);
+    final repository = TestMemberApplicationsRepository();
+    await open(tester, repository);
+    final birthDate = find.byKey(const ValueKey('application-birth_date'));
+    await tester.ensureVisible(birthDate);
+    await tester.enterText(birthDate, '2000-01-02');
+    await tester.showKeyboard(birthDate);
+    for (final bottom in [160.0, 320.0, 640.0]) {
+      tester.view.viewInsets = FakeViewPadding(bottom: bottom);
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    await tester.pumpAndSettle();
+    final editable = tester.widget<EditableText>(
+      find.descendant(of: birthDate, matching: find.byType(EditableText)),
+    );
+    expect(editable.focusNode.hasFocus, isTrue);
+    expect(editable.controller.text, '2000-01-02');
+    expect(tester.testTextInput.isVisible, isTrue);
+    expect(repository.submissions, 0);
+    expect(tester.takeException(), isNull);
+  });
   testWidgets('Required fields and invalid birth dates prevent writes', (
     tester,
   ) async {
@@ -311,6 +339,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('Status: pending'), findsOneWidget);
+    expect(find.textContaining(RegExp(r'Submitted:.*2026')), findsOneWidget);
     final next = find.text('Next');
     await tester.ensureVisible(next);
     await tester.tap(next);

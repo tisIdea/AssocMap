@@ -40,7 +40,7 @@ class _PublicMapScreenState extends State<PublicMapScreen> {
   bool get _live => widget.config.gisMode == GisDataMode.live;
   String? _category;
   String? _selectedId;
-  bool _showBoundaries = true;
+  late bool _showBoundaries;
   String? _siteTypeId;
   List<GisSiteType> _siteTypes = const [];
   bool _catalogLoading = false;
@@ -49,6 +49,7 @@ class _PublicMapScreenState extends State<PublicMapScreen> {
   @override
   void initState() {
     super.initState();
+    _showBoundaries = !_live;
     _projects = _loadProjects();
     if (_live) _loadSiteTypes();
   }
@@ -169,36 +170,19 @@ class _PublicMapScreenState extends State<PublicMapScreen> {
         maxWidth: 640,
         maxHeight: MediaQuery.sizeOf(context).height * .85,
       ),
-      builder: (_) =>
-          PublicProjectDetails(project: project, mode: widget.config.gisMode),
+      builder: (_) => PublicProjectDetails(
+        project: project,
+        mode: widget.config.gisMode,
+        baseUri: widget.config.backendBaseUri,
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    bottomNavigationBar: NavigationBar(
-      selectedIndex: 0,
-      onDestinationSelected: (value) {
-        if (value == 1) {
-          Navigator.of(context).pushNamed(AppRoutes.associationAccess);
-        } else {
-          _reload(resetView: true);
-        }
-      },
-      destinations: const [
-        NavigationDestination(
-          icon: Icon(Icons.map_outlined),
-          label: 'Explore map',
-        ),
-        NavigationDestination(
-          icon: Icon(Icons.login),
-          label: 'Association access',
-        ),
-      ],
-    ),
     appBar: AppBar(
       toolbarHeight: MediaQuery.textScalerOf(context).scale(56).clamp(56, 112),
-      automaticallyImplyLeading: false,
+      automaticallyImplyLeading: true,
       title: const AssocMapBrand(),
       actions: [
         TextButton(
@@ -466,6 +450,7 @@ class _PublicMapScreenState extends State<PublicMapScreen> {
         child: TextField(
           key: const ValueKey('map-search'),
           controller: _search,
+          textInputAction: TextInputAction.search,
           maxLength: _live ? 100 : null,
           onSubmitted: _live ? (_) => _reload(resetView: true) : null,
           onChanged: (_) => setState(() {
@@ -494,82 +479,98 @@ class _PublicMapScreenState extends State<PublicMapScreen> {
           ),
         ),
       ),
-      Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        child: Row(
-          children: [
-            Expanded(
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: [
-                    FilterChip(
-                      label: Text(
-                        _live ? 'All geometry types' : 'All projects',
-                      ),
-                      selected: _category == null,
-                      onSelected: (_) => _setCategory(null),
+      ExpansionTile(
+        key: const ValueKey('public-map-filters'),
+        tilePadding: const EdgeInsets.symmetric(horizontal: 16),
+        title: const Text('Filters and legend'),
+        leading: const Icon(Icons.tune, size: 20),
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              children: [
+                Expanded(
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        FilterChip(
+                          label: Text(
+                            _live ? 'All geometry types' : 'All projects',
+                          ),
+                          selected: _category == null,
+                          onSelected: (_) => _setCategory(null),
+                        ),
+                        for (final category
+                            in _live
+                                ? ['project_point', 'project_boundary']
+                                : categories) ...[
+                          const SizedBox(width: 8),
+                          FilterChip(
+                            label: Text(switch (category) {
+                              'project_point' => 'Project Point',
+                              'project_boundary' => 'Project Boundary',
+                              _ => category,
+                            }),
+                            selected: _category == category,
+                            onSelected: (value) =>
+                                _setCategory(value ? category : null),
+                          ),
+                        ],
+                      ],
                     ),
-                    for (final category
-                        in _live
-                            ? ['project_point', 'project_boundary']
-                            : categories) ...[
-                      const SizedBox(width: 8),
-                      FilterChip(
-                        label: Text(switch (category) {
-                          'project_point' => 'Project Point',
-                          'project_boundary' => 'Project Boundary',
-                          _ => category,
-                        }),
-                        selected: _category == category,
-                        onSelected: (value) =>
-                            _setCategory(value ? category : null),
-                      ),
-                    ],
-                  ],
+                  ),
                 ),
+                const SizedBox(width: 8),
+                if (!_live)
+                  FilterChip(
+                    label: const Text('Boundaries'),
+                    avatar: const Icon(Icons.layers_outlined, size: 18),
+                    selected: _showBoundaries,
+                    onSelected: (value) => setState(() {
+                      _showBoundaries = value;
+                    }),
+                  ),
+              ],
+            ),
+          ),
+          if (_live) _siteFilters(),
+          if (_live)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Wrap(
+                spacing: 8,
+                children: [
+                  FilterChip(
+                    key: const ValueKey('public-boundaries'),
+                    label: const Text('Show boundaries'),
+                    avatar: const Icon(Icons.layers_outlined, size: 18),
+                    selected: _showBoundaries,
+                    onSelected: (value) =>
+                        setState(() => _showBoundaries = value),
+                  ),
+                  TextButton.icon(
+                    key: const ValueKey('search-map-view'),
+                    onPressed: _mapReady ? _searchView : null,
+                    icon: const Icon(Icons.search),
+                    label: const Text('Search this view'),
+                  ),
+                  TextButton(
+                    onPressed: () => _reload(resetView: true),
+                    child: const Text('Show all locations'),
+                  ),
+                  if (_search.text.isNotEmpty ||
+                      _category != null ||
+                      _siteTypeId != null)
+                    TextButton(
+                      onPressed: _clearFilters,
+                      child: const Text('Clear filters'),
+                    ),
+                ],
               ),
             ),
-            const SizedBox(width: 8),
-            if (!_live)
-              FilterChip(
-                label: const Text('Boundaries'),
-                avatar: const Icon(Icons.layers_outlined, size: 18),
-                selected: _showBoundaries,
-                onSelected: (value) => setState(() {
-                  _showBoundaries = value;
-                }),
-              ),
-          ],
-        ),
+        ],
       ),
-      if (_live) _siteFilters(),
-      if (_live)
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Wrap(
-            spacing: 8,
-            children: [
-              TextButton.icon(
-                key: const ValueKey('search-map-view'),
-                onPressed: _mapReady ? _searchView : null,
-                icon: const Icon(Icons.search),
-                label: const Text('Search this view'),
-              ),
-              TextButton(
-                onPressed: () => _reload(resetView: true),
-                child: const Text('Show all locations'),
-              ),
-              if (_search.text.isNotEmpty ||
-                  _category != null ||
-                  _siteTypeId != null)
-                TextButton(
-                  onPressed: _clearFilters,
-                  child: const Text('Clear filters'),
-                ),
-            ],
-          ),
-        ),
     ],
   );
 
@@ -712,10 +713,12 @@ class _PublicMapScreenState extends State<PublicMapScreen> {
           trailing: const Icon(Icons.chevron_right),
           selected: _selectedId == project.id,
           selectedTileColor: gisSelectionColor.withValues(alpha: .08),
-          isThreeLine: true,
+          isThreeLine: false,
           onTap: () {
             final points =
-                (_live ? project.publicDisplayPoints : project.geometryPoints)
+                (_live && !_showBoundaries
+                        ? project.publicDisplayPoints
+                        : project.geometryPoints)
                     .map(mapPoint)
                     .toList();
             if (points.length == 1) {

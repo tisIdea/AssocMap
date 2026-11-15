@@ -1,18 +1,20 @@
 import 'package:flutter/material.dart';
 
 import '../../app/configuration/app_config.dart';
-import '../../core/widgets/assocmap_widgets.dart';
 import '../../data/models/public_project.dart';
 import 'gis_site_symbols.dart';
+import 'public_location_photos.dart';
 
 class PublicProjectDetails extends StatelessWidget {
   const PublicProjectDetails({
     super.key,
     required this.project,
     required this.mode,
+    this.baseUri,
   });
   final PublicProject project;
   final GisDataMode mode;
+  final Uri? baseUri;
 
   @override
   Widget build(BuildContext context) => SafeArea(
@@ -20,12 +22,8 @@ class PublicProjectDetails extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const PhotoPlaceholder(
-            height: 120,
-            label: 'Location photo unavailable',
-          ),
           Padding(
-            padding: const EdgeInsets.all(24),
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -96,6 +94,13 @@ class PublicProjectDetails extends StatelessWidget {
                   style: const TextStyle(height: 1.6),
                 ),
                 const SizedBox(height: 16),
+                if (mode == GisDataMode.live && baseUri != null) ...[
+                  PublicLocationPhotos(
+                    baseUri: baseUri!,
+                    locationId: project.id,
+                  ),
+                  const SizedBox(height: 16),
+                ],
                 Text(
                   mode == GisDataMode.live && project.isBoundary
                       ? project.displayPoint == null

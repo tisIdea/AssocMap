@@ -97,6 +97,23 @@ void main() {
     }
   });
 
+  test('Overview margins include rounded edges and stay within world bounds', () {
+    final bounds = GisBounds.fromJson([124, 10, 126, 12]);
+    final padded = bounds.overviewQueryBounds;
+    expect(padded.west, lessThan(bounds.west));
+    expect(padded.south, lessThan(bounds.south));
+    expect(padded.east, greaterThan(bounds.east));
+    expect(padded.north, greaterThan(bounds.north));
+    expect(bounds.values, [124, 10, 126, 12]);
+    expect(GisBounds.fromJson([-180, -90, 180, 90])
+      .overviewQueryBounds.values, [-180, -90, 180, 90]);
+    final point = GisBounds.fromJson([180, 90, 180, 90]).overviewQueryBounds;
+    expect(point.west, lessThan(point.east));
+    expect(point.south, lessThan(point.north));
+    expect(point.east, 180);
+    expect(point.north, 90);
+  });
+
   test('Empty and truncated datasets retain source metadata', () {
     final bounds = GisBounds.fromJson([124, 10, 126, 12]);
     final empty = PublicGisResult.fromMapJson(

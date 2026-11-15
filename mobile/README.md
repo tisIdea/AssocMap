@@ -13,10 +13,11 @@ From this checkout's `mobile` directory:
 flutter pub get
 flutter analyze --no-pub
 flutter test --no-pub --concurrency=1
-flutter build apk --release --no-pub --dart-define-from-file=config/staging.json
+flutter build apk --release --dart-define-from-file=config/staging.json
 ```
 
-`config/staging.json` contains the approved staging origin, Supabase origin and
+`config/staging.json` now selects the approved Railway UAT backend
+(`https://portal-assocmap.up.railway.app`), the existing Supabase origin and
 user-supplied **public publishable key**. Public client configuration is embedded
 in the APK. Never put a secret/service-role key, password, signing key, database
 credential, or user token in this file or a Dart define.
@@ -24,6 +25,15 @@ credential, or user token in this file or a Dart define.
 APK output: `build/app/outputs/flutter-apk/app-release.apk`. The repository's
 existing release configuration uses its debug signing configuration for local
 evaluation. No private signing configuration is supplied here.
+
+Keep dependency setup enabled for Android release builds. `--no-pub` skips
+native tooling generation in this Flutter SDK; cached dependency metadata alone
+does not recreate the ignored `GeneratedPluginRegistrant.java` in a fresh
+checkout. Missing native registration can prevent JNI initialization and crash
+before the app opens. Android builds now stop if this generated file is absent.
+The app's release rules also preserve the six Kotlin types looked up by the
+locked JNI bindings. Recheck those rules when upgrading the JNI/preferences
+packages. See the [startup crash correction](../docs/mobile-android-startup-fix-2026-11-13.md).
 
 For this development laptop, the successful build used a 1 GB Gradle heap,
 768 MB Metaspace and one worker through process-only settings. The exact command,
@@ -55,19 +65,28 @@ configuration is absent. Release mode also rejects an explicitly selected mock
 GIS repository. Synthetic identities and organizational records are not a live
 data fallback. Use the staging configuration explicitly for an evaluation APK.
 
-## Proposed mobile UI
+The Android launcher label is **AssocMap Mobile**, with legacy and adaptive icons derived from the existing AssocMap logo. The package remains
+`com.example.mobile` and uses debug signing, so this is an internal evaluation
+build. UAT artifact details and remaining device checks are recorded in
+[the finalization handoff](../docs/mobile-uat-2026-11-15.md).
 
-The public satellite map is the entry screen. The authenticated workspace follows
+## Mobile UI
+
+The green mobile presentation, Android branding, public-photo viewer, exact file
+list and verification boundaries are recorded in the
+[November 14 UI handoff](UI_REFRESH_2026_11_14.md).
+
+The public Street Map is the entry screen. The authenticated workspace follows
 the five destinations Home, Members, Programs, Register and Profile. See the
 [ten-page design comparison and missing backend contracts](../docs/mobile-proposed-ui-comparison.md).
 
-Satellite imagery is independent of Laravel business data. The default public
-Esri World Imagery URL and visible attribution can be replaced using
-`ASSOCMAP_SATELLITE_TILE_URL` and `ASSOCMAP_SATELLITE_ATTRIBUTION` at build time.
-Use an HTTPS tile service, retain the provider's required attribution, and confirm
-deployment usage terms and quotas. Tile requests carry no Laravel bearer token;
+Street Map uses the same OpenStreetMap tile source as the web map, with visible
+attribution. Tile requests carry no Laravel bearer token;
 they have separate 15-second / 1 MiB limits and no automatic transport retries.
-An imagery outage is displayed explicitly and does not substitute a street map.
+A tile outage is displayed explicitly. Live GIS initially shows representative
+markers; **Show boundaries** displays the published Polygon/MultiPolygon geometry,
+including holes, without another API request. Classification symbols and server
+publication rules remain unchanged.
 
 ## Verification
 

@@ -77,8 +77,8 @@ class _AssociationAccessScreenState extends State<AssociationAccessScreen> {
           toolbarHeight: MediaQuery.textScalerOf(
             context,
           ).scale(56).clamp(56, 112),
-          backgroundColor: AppTheme.blue,
-          foregroundColor: Colors.white,
+          backgroundColor: Colors.white,
+          foregroundColor: AppTheme.ink,
           leading: IconButton(
             tooltip: 'Back to public map',
             onPressed: _publicMap,
@@ -86,11 +86,12 @@ class _AssociationAccessScreenState extends State<AssociationAccessScreen> {
           ),
           title: const Text(
             'Association login',
-            style: TextStyle(color: Colors.white),
+            style: TextStyle(color: AppTheme.ink),
           ),
         ),
         body: SafeArea(
           child: SingleChildScrollView(
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
             child: Center(
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 520),
@@ -98,18 +99,18 @@ class _AssociationAccessScreenState extends State<AssociationAccessScreen> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Container(
-                      color: AppTheme.blue,
-                      padding: const EdgeInsets.fromLTRB(24, 24, 24, 30),
+                      color: AppTheme.canvas,
+                      padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const AssocMapMark(size: 48),
-                          const SizedBox(height: 18),
+                          const AssocMapMark(size: 56),
+                          const SizedBox(height: 16),
                           const Text(
                             'Welcome to AssocMap',
                             style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 26,
+                              color: AppTheme.ink,
+                              fontSize: 24,
                               fontWeight: FontWeight.w700,
                             ),
                           ),
@@ -117,7 +118,7 @@ class _AssociationAccessScreenState extends State<AssociationAccessScreen> {
                           Text(
                             "Sign in to access your association's projects, activities and production data.",
                             style: TextStyle(
-                              color: Colors.white.withValues(alpha: .9),
+                              color: AppTheme.muted,
                               height: 1.5,
                             ),
                           ),
@@ -156,6 +157,7 @@ class _AssociationAccessScreenState extends State<AssociationAccessScreen> {
                               decoration: const InputDecoration(
                                 labelText: 'Email address',
                                 prefixIcon: Icon(Icons.mail_outline),
+                                counterText: '',
                               ),
                               validator: (value) {
                                 final email = value?.trim() ?? '';
@@ -260,13 +262,6 @@ class _AssociationAccessScreenState extends State<AssociationAccessScreen> {
                               message:
                                   'Accounts are provisioned by the system administrator. Account self-registration is not available.',
                               icon: Icons.info_outline,
-                            ),
-                            const SizedBox(height: 24),
-                            const Center(
-                              child: Text(
-                                'AssocMap',
-                                style: TextStyle(color: AppTheme.muted),
-                              ),
                             ),
                           ],
                         ),

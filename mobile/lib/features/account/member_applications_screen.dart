@@ -89,7 +89,10 @@ class _MemberApplicationsScreenState extends State<MemberApplicationsScreen> {
       onRefresh: _load,
       child: PageContent(
         children: [
-          const SectionHeading('My member applications'),
+          Text(
+            'Application history',
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
           const Text(
             'Only applications submitted by this account to its current association are shown. Field Officers handle approvals.',
           ),
@@ -132,11 +135,22 @@ class _MemberApplicationsScreenState extends State<MemberApplicationsScreen> {
                       application.name,
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
-                    Text('Status: ${application.status}'),
-                    Text(
-                      'Submitted: ${application.submittedAt.toLocal().toString().substring(0, 10)}',
+                    const SizedBox(height: 8),
+                    StatusBadge(
+                      status: application.status,
+                      label: 'Status: ${application.status}',
                     ),
-                    Text('Reference: ${application.id}'),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Submitted: ${displayDate(context, application.submittedAt.toLocal())}',
+                    ),
+                    ExpansionTile(
+                      tilePadding: EdgeInsets.zero,
+                      title: const Text('Application details'),
+                      children: [
+                        SelectableText('Reference: ${application.id}'),
+                      ],
+                    ),
                     if (application.rejectionReason != null)
                       Text('Review reason: ${application.rejectionReason}'),
                     Text(

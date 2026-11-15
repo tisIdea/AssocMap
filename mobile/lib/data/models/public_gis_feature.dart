@@ -187,6 +187,18 @@ class GisBounds {
     south == north ? (north + .001).clamp(-90, 90).toDouble() : north,
   );
 
+  GisBounds get overviewQueryBounds {
+    final extent = queryBounds;
+    // Rounded overview coordinates can otherwise exclude locations on an edge.
+    const margin = .000001;
+    return GisBounds._(
+      (extent.west - margin).clamp(-180, 180).toDouble(),
+      (extent.south - margin).clamp(-90, 90).toDouble(),
+      (extent.east + margin).clamp(-180, 180).toDouble(),
+      (extent.north + margin).clamp(-90, 90).toDouble(),
+    );
+  }
+
   List<double> get values => [west, south, east, north];
 }
 

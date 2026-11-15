@@ -43,3 +43,11 @@ kotlin {
 flutter {
     source = "../.."
 }
+
+tasks.named("preBuild") {
+    doFirst {
+        check(file("src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java").isFile) {
+            "Missing Flutter plugin registration. Run flutter pub get from mobile/ before building."
+        }
+    }
+}

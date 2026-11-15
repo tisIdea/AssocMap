@@ -82,28 +82,33 @@ class _AssociationHomeScreenState extends State<AssociationHomeScreen> {
   Widget _account() => PageContent(
     children: [
       Container(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
-          color: AppTheme.blue,
-          borderRadius: BorderRadius.circular(18),
+          color: Colors.white,
+          border: Border.all(color: AppTheme.line),
+          borderRadius: BorderRadius.circular(14),
         ),
         child: Column(
           children: [
-            const AssocMapMark(size: 64),
-            const SizedBox(height: 16),
+            const Icon(
+              Icons.account_circle_outlined,
+              size: 40,
+              color: AppTheme.green,
+            ),
+            const SizedBox(height: 12),
             Text(
               widget.session.displayName,
               textAlign: TextAlign.center,
               style: const TextStyle(
-                color: Colors.white,
-                fontSize: 22,
+                color: AppTheme.ink,
+                fontSize: 20,
                 fontWeight: FontWeight.w700,
               ),
             ),
             const SizedBox(height: 6),
             const Text(
               'Association Account',
-              style: TextStyle(color: Colors.white),
+              style: TextStyle(color: AppTheme.muted),
             ),
           ],
         ),
@@ -126,13 +131,6 @@ class _AssociationHomeScreenState extends State<AssociationHomeScreen> {
             ),
             const SizedBox(height: 6),
             const Text('Association Account'),
-            const Divider(),
-            const Text(
-              'Email',
-              style: TextStyle(fontSize: 12, color: AppTheme.muted),
-            ),
-            const SizedBox(height: 6),
-            const Text('Not available in account details'),
           ],
         ),
       ),
@@ -152,10 +150,6 @@ class _AssociationHomeScreenState extends State<AssociationHomeScreen> {
         icon: const Icon(Icons.logout),
         label: const Text('Sign out'),
       ),
-      const SizedBox(height: 24),
-      const Center(
-        child: Text('AssocMap', style: TextStyle(color: AppTheme.muted)),
-      ),
     ],
   );
   @override
@@ -166,12 +160,11 @@ class _AssociationHomeScreenState extends State<AssociationHomeScreen> {
       'registrations' => 'My member applications',
       'projects' || 'trainings' => 'Programs',
       'production' => 'Production monitoring',
-      'register' => 'New Member Registration',
+      'register' => 'Member application',
       'profile' => 'Profile',
       'reports' => 'Reports & Analytics',
       _ => 'AssocMap',
     };
-    final blueHeader = ['production', 'register', 'profile'].contains(_section);
     final Widget body = switch (_section) {
       'home' => AssociationDashboardScreen(
         repository: widget.dashboard,
@@ -230,8 +223,8 @@ class _AssociationHomeScreenState extends State<AssociationHomeScreen> {
             context,
           ).scale(56).clamp(56, 112),
           automaticallyImplyLeading: false,
-          backgroundColor: blueHeader ? AppTheme.blue : Colors.white,
-          foregroundColor: blueHeader ? Colors.white : AppTheme.ink,
+          backgroundColor: Colors.white,
+          foregroundColor: AppTheme.ink,
           leading: _section == 'home'
               ? null
               : IconButton(
@@ -244,10 +237,7 @@ class _AssociationHomeScreenState extends State<AssociationHomeScreen> {
               : Text(
                   title,
                   maxLines: 2,
-                  style: TextStyle(
-                    fontSize: 17,
-                    color: blueHeader ? Colors.white : AppTheme.ink,
-                  ),
+                  style: TextStyle(fontSize: 17, color: AppTheme.ink),
                 ),
           actions: _section != 'home'
               ? null

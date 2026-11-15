@@ -73,7 +73,7 @@ void main() {
         authentication: authentication,
       ),
     );
-    final navigator = Navigator.of(tester.element(find.text('Explore map')));
+    final navigator = Navigator.of(tester.element(find.text('Log in')));
     navigator.pushNamed(
       directProtectedRoute
           ? AppRoutes.associationHome
